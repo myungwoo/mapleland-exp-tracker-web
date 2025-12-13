@@ -203,21 +203,25 @@ export default function ExpTracker() {
 			alert("먼저 레벨/경험치 영역(ROI)을 설정해주세요.");
 			return;
 		}
-		// First start: set baselines
-		if (!hasStarted) {
-			const first = await readRoisOnce();
-			setCurrentLevel(first.level);
-			setCurrentExp(first.expPercent);
-			setCurrentExpValue(first.expValue);
-			const firstValid = first.level != null && first.expValue != null && first.expPercent != null;
-			const firstSample: Sample = { ts: first.ts, level: first.level, expPercent: first.expPercent, expValue: first.expValue, isValid: firstValid };
-			lastValidSampleRef.current = firstValid ? firstSample : null;
-			setCumExpPct(0);
-			setCumExpValue(0);
-			setHasStarted(true);
-			setBaseElapsedMs(0);
-			setElapsedMs(0);
-		}
+		// Baseline capture: used for both first start and resume
+		const captureBaseline = async (resetTotals: boolean) => {
+			const s = await readRoisOnce();
+			setCurrentLevel(s.level);
+			setCurrentExp(s.expPercent);
+			setCurrentExpValue(s.expValue);
+			const isValid = s.level != null && s.expValue != null && s.expPercent != null;
+			const sample: Sample = { ts: s.ts, level: s.level, expPercent: s.expPercent, expValue: s.expValue, isValid };
+			lastValidSampleRef.current = isValid ? sample : null;
+			if (resetTotals) {
+				setCumExpPct(0);
+				setCumExpValue(0);
+				setHasStarted(true);
+				setBaseElapsedMs(0);
+				setElapsedMs(0);
+			}
+		};
+		// First start resets totals; resume only resets baseline
+		await captureBaseline(!hasStarted);
 
 		// Start clock with base offset
 		startAtRef.current = Date.now() - baseElapsedMs;
