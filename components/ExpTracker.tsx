@@ -16,6 +16,7 @@ type Sample = {
 	level: number | null;
 	expPercent: number | null;
 	expValue?: number | null;
+	isValid?: boolean;
 };
 
 export default function ExpTracker() {
@@ -43,7 +44,7 @@ export default function ExpTracker() {
 	const [currentExp, setCurrentExp] = useState<number | null>(null);
 	const [currentExpValue, setCurrentExpValue] = useState<number | null>(null);
 	const [samples, setSamples] = useState<Sample[]>([]);
-	const lastSampleRef = useRef<Sample | null>(null);
+	const lastValidSampleRef = useRef<Sample | null>(null);
 	const [cumExpPct, setCumExpPct] = useState(0);
 	const [cumExpValue, setCumExpValue] = useState(0);
 
@@ -176,9 +177,10 @@ export default function ExpTracker() {
 			setCurrentLevel(first.level);
 			setCurrentExp(first.expPercent);
 			setCurrentExpValue(first.expValue ?? null);
-			const firstSample: Sample = { ts: first.ts, level: first.level, expPercent: first.expPercent, expValue: first.expValue ?? null };
+			const firstValid = first.level != null && first.expPercent != null;
+			const firstSample: Sample = { ts: first.ts, level: first.level, expPercent: first.expPercent, expValue: first.expValue ?? null, isValid: firstValid };
 			setSamples([firstSample]);
-			lastSampleRef.current = firstSample;
+			lastValidSampleRef.current = firstValid ? firstSample : null;
 			setCumExpPct(0);
 			setCumExpValue(0);
 			setStartAt(Date.now());
@@ -202,13 +204,15 @@ export default function ExpTracker() {
 
 		const runner = async () => {
 			const s = await readRoisOnce();
-			setSamples(prev => [...prev.slice(-600), s]); // keep more samples for window averages
+			const isValid = s.level != null && s.expPercent != null;
+			const sample: Sample = { ...s, isValid };
+			setSamples(prev => [...prev.slice(-600), sample]); // keep more samples for window averages
 			setCurrentLevel(s.level);
 			setCurrentExp(s.expPercent);
 			setCurrentExpValue(s.expValue ?? null);
 			// accumulate deltas
-			const prev = lastSampleRef.current;
-			if (prev && s.expPercent != null && prev.expPercent != null) {
+			const prev = lastValidSampleRef.current;
+			if (prev && isValid && s.expPercent != null && prev.expPercent != null) {
 				let deltaPct = 0;
 				if ((s.level ?? prev.level) != null && (prev.level ?? null) != null && s.level != null && prev.level != null && s.level > prev.level) {
 					deltaPct = (100 - prev.expPercent) + s.expPercent;
@@ -218,11 +222,14 @@ export default function ExpTracker() {
 				}
 				setCumExpPct(v => v + deltaPct);
 			}
-			if (prev && s.expValue != null && prev.expValue != null) {
+			if (prev && isValid && s.expValue != null && prev.expValue != null) {
 				const dv = s.expValue - prev.expValue;
 				if (dv > 0) setCumExpValue(v => v + dv);
 			}
-			lastSampleRef.current = s;
+			// update last valid pointer only when the current sample is valid
+			if (isValid) {
+				lastValidSampleRef.current = sample;
+			}
 		};
 
 		// Start sampling interval
@@ -327,7 +334,7 @@ export default function ExpTracker() {
 		for (let i = 1; i < filtered.length; i++) {
 			const prev = filtered[i - 1];
 			const cur = filtered[i];
-			if (prev.expPercent != null && cur.expPercent != null) {
+			if (prev.isValid && cur.isValid && prev.expPercent != null && cur.expPercent != null) {
 				let d = 0;
 				if (cur.level != null && prev.level != null && cur.level > prev.level) {
 					d = (100 - prev.expPercent) + cur.expPercent;
@@ -337,7 +344,7 @@ export default function ExpTracker() {
 				}
 				sumPct += d;
 			}
-			if (prev.expValue != null && cur.expValue != null) {
+			if (prev.isValid && cur.isValid && prev.expValue != null && cur.expValue != null) {
 				const dv = cur.expValue - prev.expValue;
 				if (dv > 0) sumVal += dv;
 			}
