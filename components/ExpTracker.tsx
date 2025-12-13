@@ -55,9 +55,29 @@ export default function ExpTracker() {
 	const [levelOcrText, setLevelOcrText] = useState<string>("");
 	const [expOcrText, setExpOcrText] = useState<string>("");
 	const startAtRef = useRef<number | null>(null);
+	const autoInitDoneRef = useRef<boolean>(false);
 
 	useEffect(() => {
 		initOcr(); // warm up worker lazily
+	}, []);
+
+	// On first load, automatically open settings and prompt for window selection
+	useEffect(() => {
+		if (autoInitDoneRef.current) return;
+		autoInitDoneRef.current = true;
+		setSettingsOpen(true);
+		// Try to immediately start capture so the "게임 창 선택" prompt opens
+		// Some browsers might require a user gesture; if so, the user can click the button.
+		void (async () => {
+			try {
+				if (!stream) {
+					await startCapture();
+				}
+			} catch {
+				// Permission or gesture required; leave modal open.
+			}
+		})();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const startCapture = useCallback(async () => {
