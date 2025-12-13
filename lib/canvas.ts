@@ -140,7 +140,7 @@ export function preprocessLevelCanvas(
 		const mean = (r + g + b) / 3;
 		const chroma = maxc - minc;
 		// Thresholds tuned for white digits with slight antialiasing (relaxed)
-		if (chroma <= 70 && mean >= 140) {
+		if (chroma <= 90 && mean >= 120) {
 			mask[p] = 1;
 		}
 	}
