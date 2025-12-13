@@ -1,10 +1,11 @@
 # 메이플 경험치 측정기 ⏱️📈
 
+[![Website - Live](https://img.shields.io/badge/Website-Live-2ea44f?style=flat&logo=githubpages)](https://myungwoo.github.io/mapleland-exp-tracker-web/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-3.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Deploy](https://github.com/${USER}/${REPO}/actions/workflows/gh-pages.yml/badge.svg)](.github/workflows/gh-pages.yml)
+[![Deploy](https://github.com/myungwoo/mapleland-exp-tracker-web/actions/workflows/gh-pages.yml/badge.svg)](.github/workflows/gh-pages.yml)
 
 게임 창을 선택하고 레벨/경험치 영역(ROI)을 OCR로 읽어, 경과 시간 동안 얻은 경험치를 측정·예측하는 웹앱입니다.
 설치 없이 브라우저에서 동작하며, GitHub Pages로 정적 호스팅이 가능합니다.
