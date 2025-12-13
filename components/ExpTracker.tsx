@@ -9,6 +9,8 @@ import { EXP_TABLE, computeExpDeltaFromTable } from "@/lib/expTable";
 import { usePersistentState } from "@/lib/persist";
 import clsx from "classnames";
 import Modal from "./Modal";
+import { useDocumentPip } from "@/lib/pip/useDocumentPip";
+import type { PipState } from "@/lib/pip/types";
 
 type IntervalSec = 1 | 5 | 10;
 
@@ -56,8 +58,19 @@ export default function ExpTracker() {
 	const [expOcrText, setExpOcrText] = useState<string>("");
 	const startAtRef = useRef<number | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
-	// Document Picture-in-Picture window ref
-	const pipWindowRef = useRef<Window | null>(null);
+	// Document Picture-in-Picture via service + hook
+	const { open: pipOpen, update: pipUpdate, close: pipClose } = useDocumentPip({
+		onToggle: () => {
+			if (isSamplingRef.current) {
+				pauseSamplingRef.current();
+			} else {
+				startOrResumeRef.current();
+			}
+		},
+		onReset: () => {
+			resetSamplingRef.current();
+		}
+	});
 	// Live sampling state for PiP event handlers (avoid stale closures)
 	const isSamplingRef = useRef<boolean>(false);
 	useEffect(() => { isSamplingRef.current = isSampling; }, [isSampling]);
@@ -409,49 +422,20 @@ export default function ExpTracker() {
 
 	// --- Document Picture-in-Picture helpers ---
 	const closePip = useCallback(() => {
-		try {
-			if (pipWindowRef.current) {
-				pipWindowRef.current.close();
-			}
-		} catch {}
-		pipWindowRef.current = null;
-	}, []);
+		pipClose();
+	}, [pipClose]);
 
 	const updatePipContents = useCallback(() => {
-		const win = pipWindowRef.current;
-		if (!win) return;
-		try {
-			const d = win.document;
-			const qs = (id: string) => d.getElementById(id);
-			const estText = `${formatNumber(avgEstimate.val)} [${avgEstimate.pct.toFixed(2)}%] / ${avgWindowMin}분`;
-			const gainedText = `${formatNumber(cumExpValue)} [${cumExpPct.toFixed(2)}%]`;
-			const playBtn = qs("pip-toggle");
-			if (playBtn) {
-				playBtn.textContent = isSampling ? "⏸" : "▶";
-				playBtn.setAttribute("aria-label", isSampling ? "일시정지" : "시작");
-				// toggle color state
-				playBtn.classList.remove("play", "pause");
-				playBtn.classList.add(isSampling ? "pause" : "play");
-			}
-			const timerEl = qs("pip-timer");
-			if (timerEl) timerEl.textContent = formatElapsed(elapsedMs);
-			const nextEl = qs("pip-next");
-			if (nextEl) nextEl.textContent = stats ? stats.nextAt.toLocaleTimeString() : "-";
-			const nextLabelEl = qs("pip-next-label");
-			if (nextLabelEl) nextLabelEl.textContent = stats ? `${stats.nextHours}시간 되는 시각` : "다음 시간 되는 시각";
-			const estEl = qs("pip-est");
-			if (estEl) estEl.textContent = estText;
-			const gainedEl = qs("pip-gained");
-			if (gainedEl) gainedEl.textContent = gainedText;
-			const resetBtn = qs("pip-reset");
-			if (resetBtn) {
-				// ensure reset button keeps red style
-				resetBtn.classList.add("reset");
-			}
-		} catch {
-			// ignore
-		}
-	}, [avgEstimate.val, avgEstimate.pct, avgWindowMin, cumExpValue, cumExpPct, elapsedMs, isSampling, stats]);
+		const state: PipState = {
+			isSampling,
+			elapsedMs,
+			nextAt: stats ? stats.nextAt : null,
+			nextHours: stats ? stats.nextHours : null,
+			gainedText: `${formatNumber(cumExpValue)} [${cumExpPct.toFixed(2)}%]`,
+			estText: `${formatNumber(avgEstimate.val)} [${avgEstimate.pct.toFixed(2)}%] / ${avgWindowMin}분`
+		};
+		pipUpdate(state);
+	}, [isSampling, elapsedMs, stats, cumExpValue, cumExpPct, avgEstimate.val, avgEstimate.pct, avgWindowMin, pipUpdate]);
 
 	// Keep PiP contents in sync whenever relevant values change
 	useEffect(() => {
@@ -459,124 +443,9 @@ export default function ExpTracker() {
 	}, [updatePipContents]);
 
 	const openPip = useCallback(async () => {
-		// @ts-ignore: experimental API lives on window, not document
-		const dpi: any = (window as any).documentPictureInPicture;
-		if (!dpi || typeof dpi.requestWindow !== "function") {
-			alert("이 브라우저는 문서 PIP(Document Picture-in-Picture)를 지원하지 않습니다. 크롬 최신 버전을 사용해 주세요.");
-			return;
-		}
-		// New policy: always close any existing PiP window first, then recreate.
-		const existing: Window | null = dpi.window ?? null;
-		if (existing) {
-			try {
-				existing.close();
-			} catch (e) {
-				// ignore
-			}
-			pipWindowRef.current = null;
-			// Give the UA a brief moment to settle the state
-			await new Promise(r => setTimeout(r, 50));
-		}
-		// Request a fresh window (with a robust fallback in case UA still thinks one is open)
-		let win: Window;
-		try {
-			win = await dpi.requestWindow({ width: 380, height: 220 });
-		} catch (e: any) {
-			// If UA still claims a window exists, try to close it and retry once more.
-			try {
-				const still: Window | null = dpi.window ?? null;
-				if (still) {
-					try {
-						still.close();
-					} catch (e2) {
-						// ignore
-					}
-					await new Promise(r => setTimeout(r, 80));
-				}
-			} catch {}
-			win = await dpi.requestWindow({ width: 380, height: 220 });
-		}
-		pipWindowRef.current = win;
-		// Basic styles and markup
-		const style = win.document.createElement("style");
-		style.textContent = `
-			:root { color-scheme: dark; }
-			html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-			.container { display: grid; grid-template-rows: auto auto auto; gap: 8px; padding: 10px 12px; text-align: center; }
-			.row { display: flex; align-items: center; justify-content: center; }
-			.timer { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 36px; line-height: 1; letter-spacing: 0.5px; }
-			.meta { font-size: 12px; opacity: 0.85; display: flex; gap: 12px; justify-content: center; }
-			.bigger { color: #ffcf33; font-weight: 800; font-size: 24px; }
-			.big { color: #ffcf33; font-weight: 800; font-size: 16px; }
-			button.pip { background: #ffffff14; color: white; border: 1px solid #ffffff22; border-radius: 8px; width: 40px; height: 40px; font-size: 18px; transition: background-color 120ms ease; }
-			button.pip.play { background: #22c55e; border-color: #16a34a; }   /* green */
-			button.pip.pause { background: #f59e0b; border-color: #d97706; }  /* yellow/amber */
-			button.pip.reset { background: #ef4444; border-color: #dc2626; }  /* red */
-			button.pip:active { transform: translateY(1px); }
-			.label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
-		`;
-		win.document.head.appendChild(style);
-		const root = win.document.createElement("div");
-		root.id = "pip-root";
-		root.className = "container";
-		root.innerHTML = `
-			<div class="row" style="gap:10px;">
-				<button id="pip-toggle" class="pip play" aria-label="시작">▶</button>
-				<button id="pip-reset" class="pip reset" aria-label="초기화">↺</button>
-				<div class="timer" id="pip-timer">00:00:00</div>
-			</div>
-			<div class="row meta">
-				<span id="pip-next-label">다음 시간 되는 시각</span>
-				<span id="pip-next">-</span>
-			</div>
-			<div class="row">
-				<div class="bigger" id="pip-gained">-</div>
-			</div>
-			<div class="row">
-				<div class="big" id="pip-est">-</div>
-			</div>
-		`;
-		win.document.body.appendChild(root);
-		// Wire controls
-		const btn = win.document.getElementById("pip-toggle");
-		if (btn) {
-			btn.addEventListener("click", () => {
-				// Use ref to avoid stale state captured at creation time
-				if (isSamplingRef.current) {
-					pauseSamplingRef.current();
-				} else {
-					startOrResumeRef.current();
-				}
-			});
-		}
-		const resetBtn = win.document.getElementById("pip-reset");
-		if (resetBtn) {
-			resetBtn.addEventListener("click", () => {
-				resetSamplingRef.current();
-				updatePipContents();
-			});
-		}
-		// Close handler
-		const cleanup = () => {
-			pipWindowRef.current = null;
-		};
-		win.addEventListener("pagehide", cleanup);
-		win.addEventListener("unload", cleanup);
-		// If UA signals that there is no longer an active PiP window, reflect it
-		try {
-			win.addEventListener("visibilitychange", () => {
-				// When PiP gets closed by the browser, we may get hidden then pagehide.
-				// Synchronize ref with dpi.window so re-open works reliably.
-				const cur = (window as any).documentPictureInPicture?.window ?? null;
-				if (!cur || cur.closed) {
-					pipWindowRef.current = null;
-				}
-			});
-			win.addEventListener("beforeunload", () => {});
-		} catch {}
-		// Initial paint
-		updatePipContents();
-	}, [isSampling, pauseSampling, startOrResume, updatePipContents]);
+		await pipOpen();
+		updatePipContents(); // initial paint
+	}, [pipOpen, updatePipContents]);
 
 	return (
 		<div className="space-y-4">
