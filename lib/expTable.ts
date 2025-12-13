@@ -49,12 +49,16 @@ export function computeExpDeltaFromTable(
 	curLevel: number,
 	curValue: number
 ): number | null {
-	if (curLevel < prevLevel) return null;
+	// Same level: signed difference
 	if (curLevel === prevLevel) {
-		const dv = curValue - prevValue;
-		return dv > 0 ? dv : 0;
+		return curValue - prevValue;
 	}
-	// curLevel > prevLevel: sum across levels
+	// If decreased (likely OCR miss), compute symmetric negative of upward sum
+	if (curLevel < prevLevel) {
+		const up = computeExpDeltaFromTable(table, curLevel, curValue, prevLevel, prevValue);
+		return up == null ? null : -up;
+	}
+	// curLevel > prevLevel: sum across levels (non-negative)
 	let sum = 0;
 	const prevReq = requiredExpForLevel(table, prevLevel);
 	if (prevReq == null) return null;

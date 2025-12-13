@@ -166,7 +166,7 @@ export default function ExpTracker() {
 			}
 		}
 
-		// If EXP is recognized but level is not, assume level = 1
+		// If EXP is recognized but level is not, assume level = 1 to keep tracking
 		const inferredLevel =
 			levelRes.value != null
 				? levelRes.value
@@ -230,26 +230,36 @@ export default function ExpTracker() {
 			setCurrentLevel(s.level);
 			setCurrentExp(s.expPercent);
 			setCurrentExpValue(s.expValue ?? null);
-			// accumulate deltas
+			// accumulate deltas (signed for same-level to cancel spikes)
 			const prev = lastValidSampleRef.current;
-			if (prev && isValid && s.expPercent != null && prev.expPercent != null) {
-				let deltaPct = 0;
-				if ((s.level ?? prev.level) != null && (prev.level ?? null) != null && s.level != null && prev.level != null && s.level > prev.level) {
-					deltaPct = (100 - prev.expPercent) + s.expPercent;
-				} else {
-					deltaPct = s.expPercent - prev.expPercent;
-					if (deltaPct < 0) deltaPct = 0; // ignore negative due to noise/reset
+			if (prev && isValid) {
+				// Percent-based
+				if (prev.expPercent != null && s.expPercent != null) {
+					let deltaPct = 0;
+					if (
+						prev.level != null &&
+						s.level != null &&
+						s.level > prev.level
+					) {
+						deltaPct = (100 - prev.expPercent) + s.expPercent;
+					} else if (
+						prev.level != null &&
+						s.level != null &&
+						s.level < prev.level
+					) {
+						// symmetric negative across-level when level appears to drop
+						deltaPct = -((100 - s.expPercent) + prev.expPercent);
+					} else {
+						deltaPct = s.expPercent - prev.expPercent; // allow negative generally
+					}
+					setCumExpPct(v => v + deltaPct);
 				}
-				setCumExpPct(v => v + deltaPct);
-			}
-			if (prev && isValid && s.expValue != null && prev.expValue != null && prev.level != null && s.level != null) {
-				// Prefer table-based exact delta; fallback to same-level positive diff
-				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, s.level, s.expValue);
-				if (dvFromTable != null) {
-					if (dvFromTable > 0) setCumExpValue(v => v + dvFromTable);
-				} else if (s.level === prev.level) {
-					const dv = s.expValue - prev.expValue;
-					if (dv > 0) setCumExpValue(v => v + dv);
+				// Value-based
+				if (prev.expValue != null && s.expValue != null && prev.level != null && s.level != null) {
+					const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, s.level, s.expValue);
+					if (dvFromTable != null) {
+						setCumExpValue(v => v + dvFromTable); // signed across levels
+					}
 				}
 			}
 			// update last valid pointer only when the current sample is valid
@@ -364,20 +374,16 @@ export default function ExpTracker() {
 				let d = 0;
 				if (cur.level != null && prev.level != null && cur.level > prev.level) {
 					d = (100 - prev.expPercent) + cur.expPercent;
+				} else if (cur.level != null && prev.level != null && cur.level < prev.level) {
+					d = -((100 - cur.expPercent) + prev.expPercent);
 				} else {
-					d = cur.expPercent - prev.expPercent;
-					if (d < 0) d = 0;
+					d = cur.expPercent - prev.expPercent; // allow signed
 				}
 				sumPct += d;
 			}
 			if (prev.isValid && cur.isValid && prev.expValue != null && cur.expValue != null && prev.level != null && cur.level != null) {
 				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, cur.level, cur.expValue);
-				if (dvFromTable != null) {
-					if (dvFromTable > 0) sumVal += dvFromTable;
-				} else if (prev.level === cur.level) {
-					const dv = cur.expValue - prev.expValue;
-					if (dv > 0) sumVal += dv;
-				}
+				if (dvFromTable != null) sumVal += dvFromTable; // signed across levels
 			}
 		}
 		// expected over window == sum over window; kept for clarity
