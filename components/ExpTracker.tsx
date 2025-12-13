@@ -292,7 +292,7 @@ export default function ExpTracker() {
 		setCurrentExp(null);
 		setCurrentExpValue(null);
 		setSamples([]);
-		lastSampleRef.current = null;
+		lastValidSampleRef.current = null;
 		setCumExpPct(0);
 		setCumExpValue(0);
 	}, []);

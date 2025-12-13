@@ -152,10 +152,9 @@ async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTM
 	let w: number, h: number;
 	if ("width" in src && "height" in src) {
 		// ImageBitmap or HTMLImageElement
-		// @ts-expect-error width available
-		w = src.width; // eslint-disable-line @typescript-eslint/no-explicit-any
-		// @ts-expect-error height available
-		h = src.height; // eslint-disable-line @typescript-eslint/no-explicit-any
+		const sized = src as unknown as { width: number; height: number };
+		w = sized.width;
+		h = sized.height;
 	} else {
 		w = 1; h = 1;
 	}
