@@ -166,7 +166,20 @@ export default function ExpTracker() {
 			}
 		}
 
-		return { ts: Date.now(), level: levelRes.value, expPercent: expRes.percent ?? null, expValue: expRes.value ?? null };
+		// If EXP is recognized but level is not, assume level = 1
+		const inferredLevel =
+			levelRes.value != null
+				? levelRes.value
+				: (expRes.percent != null || expRes.value != null)
+					? 1
+					: null;
+
+		return {
+			ts: Date.now(),
+			level: inferredLevel,
+			expPercent: expRes.percent ?? null,
+			expValue: expRes.value ?? null
+		};
 	}, [roiExp, roiLevel, debugEnabled]);
 
 	const startOrResume = useCallback(async () => {
