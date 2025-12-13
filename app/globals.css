@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+	--foreground: 255 255 255;
+	--background: 11 16 32;
+}
+
+html, body, :root {
+	height: 100%;
+}
+
+body {
+	background-color: rgb(var(--background));
+	color: rgb(var(--foreground));
+}
+
+.card {
+	@apply rounded-xl bg-card border border-white/10 shadow-lg;
+}
+
+.btn {
+	@apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-white/10 hover:bg-white/20 transition;
+}
+
+.btn-primary {
+	@apply bg-accent/20 text-teal-200 hover:bg-accent/30;
+}
+
