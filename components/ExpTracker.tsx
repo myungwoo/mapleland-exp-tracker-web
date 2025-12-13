@@ -128,9 +128,9 @@ export default function ExpTracker() {
 
 	const readRoisOnce = useCallback(async (): Promise<Sample> => {
 		const video = captureVideoRef.current;
-		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null };
+		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 		const { videoWidth, videoHeight } = video;
-		if (videoWidth === 0 || videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null };
+		if (videoWidth === 0 || videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 
 		// Convert ROI to video pixel space in case ROI was set using CSS pixels
 		const rectLevel = toVideoSpaceRect(video, roiLevel);
