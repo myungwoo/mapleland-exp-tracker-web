@@ -1,7 +1,8 @@
 import { createWorker } from "tesseract.js";
+import type { Worker as TesseractWorker } from "tesseract.js";
 
-let expWorkerPromise: Promise<import("tesseract.js").Worker> | null = null;
-let digitsWorkerPromise: Promise<import("tesseract.js").Worker> | null = null;
+let expWorkerPromise: Promise<TesseractWorker> | null = null;
+let digitsWorkerPromise: Promise<TesseractWorker> | null = null;
 
 export async function initOcr() {
 	await Promise.all([initOcrExp(), initOcrDigits()]);
@@ -10,9 +11,8 @@ export async function initOcr() {
 async function initOcrExp() {
 	if (!expWorkerPromise) {
 		expWorkerPromise = (async () => {
-			const worker = await createWorker();
-			await worker.loadLanguage("eng");
-			await worker.initialize("eng");
+			// Tesseract v5: language preloaded, no loadLanguage/initialize
+			const worker: TesseractWorker = await createWorker("eng");
 			await worker.setParameters({
 				tessedit_char_whitelist: "0123456789.%[]",
 				preserve_interword_spaces: "1",
@@ -27,9 +27,8 @@ async function initOcrExp() {
 async function initOcrDigits() {
 	if (!digitsWorkerPromise) {
 		digitsWorkerPromise = (async () => {
-			const worker = await createWorker();
-			await worker.loadLanguage("eng");
-			await worker.initialize("eng");
+			// Tesseract v5: language preloaded, no loadLanguage/initialize
+			const worker: TesseractWorker = await createWorker("eng");
 			await worker.setParameters({
 				tessedit_char_whitelist: "0123456789",
 				preserve_interword_spaces: "1",

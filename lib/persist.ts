@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
 
 export function usePersistentState<T>(key: string, initialValue: T) {
-	const [value, setValue] = useState<T>(() => {
-		if (typeof window === "undefined") return initialValue;
+	// Start with the given initialValue for SSR/first client paint,
+	// then hydrate from localStorage in an effect to avoid hydration mismatch.
+	const [value, setValue] = useState<T>(initialValue);
+
+	useEffect(() => {
 		try {
 			const raw = window.localStorage.getItem(key);
-			if (!raw) return initialValue;
-			return JSON.parse(raw) as T;
+			if (raw != null) {
+				setValue(JSON.parse(raw) as T);
+			}
 		} catch {
-			return initialValue;
+			// ignore
 		}
-	});
+		// run only once per key
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [key]);
+
 	useEffect(() => {
 		try {
 			window.localStorage.setItem(key, JSON.stringify(value));
