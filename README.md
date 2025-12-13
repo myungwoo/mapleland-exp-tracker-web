@@ -40,23 +40,6 @@ npm run dev
 
 ---
 
-## 🚀 GitHub Pages 배포(자동)
-이 저장소에는 GitHub Actions 워크플로우가 포함되어 있습니다. `main` 브랜치에 푸시하면 자동으로 정적 빌드가 Pages에 배포됩니다.
-
-1) 저장소 Settings → Pages
-   - Source: GitHub Actions 선택
-2) 브랜치에 푸시
-   - 첫 배포 후 Actions 탭에서 배포 URL 확인
-
-동작 원리:
-- `next.config.js`에서 `output: 'export'`를 사용해 정적 HTML로 내보냅니다.
-- GitHub Actions가 `out/` 디렉토리를 Pages에 업로드합니다.
-- 프로젝트 페이지(`/REPO` 경로)에 맞춰 `basePath/assetPrefix`를 자동으로 설정합니다.
-
-> 팁: 사용자 페이지(`user.github.io`)에 배포한다면 별도 설정 없이 동작합니다. 프로젝트 페이지(`/repo`)는 워크플로우 환경변수로 자동 처리됩니다.
-
----
-
 ## 🖱️ 사용 방법
 1. 우상단 “설정” → “게임 창 선택”으로 캡처 권한 허용
 2. ROI 설정에서 “레벨 ROI 설정”, “경험치 ROI 설정”을 각각 드래그로 지정
@@ -86,5 +69,3 @@ MIT © 2025
 ## 🙏 크레딧
 - OCR: [Tesseract.js](https://github.com/naptha/tesseract.js)
 - 아이디어/요구사항: 레벨/EXP 실시간 측정 및 예측
-
-
