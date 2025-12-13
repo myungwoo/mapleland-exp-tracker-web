@@ -489,7 +489,7 @@ export default function ExpTracker() {
 					</div>
 				</div>
 
-				<div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black/50 mt-3">
+				<div className="relative w-full h-[70vh] overflow-hidden rounded-lg bg-black/50 mt-3">
 					<video ref={previewVideoRef} className="w-full h-full object-contain" muted playsInline />
 					<RoiOverlay
 						videoRef={previewVideoRef}
