@@ -11,6 +11,7 @@ import clsx from "classnames";
 import Modal from "./Modal";
 import { useDocumentPip } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
+import OnboardingOverlay from "@/components/OnboardingOverlay";
 
 type IntervalSec = 1 | 5 | 10;
 
@@ -29,10 +30,10 @@ export default function ExpTracker() {
 	const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 	const [stream, setStream] = useState<MediaStream | null>(null);
 
-	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 5 as IntervalSec);
+	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec);
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
-	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 10);
+	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 60);
 	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // running
@@ -58,6 +59,16 @@ export default function ExpTracker() {
 	const [expOcrText, setExpOcrText] = useState<string>("");
 	const startAtRef = useRef<number | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
+	// Onboarding
+	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false);
+	const [onboardingOpen, setOnboardingOpen] = useState(false);
+	const [onboardingStep, setOnboardingStep] = useState<number>(0);
+	const [levelRoiShot, setLevelRoiShot] = useState<string | null>(null);
+	const [expRoiShot, setExpRoiShot] = useState<string | null>(null);
+	const [onboardingLevelText, setOnboardingLevelText] = useState<string | null>(null);
+	const [onboardingExpText, setOnboardingExpText] = useState<string | null>(null);
+	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
+	const [roiSelectionMode, setRoiSelectionMode] = useState<null | "level" | "exp">(null);
 	// Document Picture-in-Picture via service + hook
 	const { open: pipOpen, update: pipUpdate, close: pipClose } = useDocumentPip({
 		onToggle: () => {
@@ -79,22 +90,27 @@ export default function ExpTracker() {
 		initOcr(); // warm up worker lazily
 	}, []);
 
-	// On first load, automatically open settings and prompt for window selection
+	// On first load, automatically open settings and prompt for window selection or onboarding
 	useEffect(() => {
 		if (autoInitDoneRef.current) return;
 		autoInitDoneRef.current = true;
 		setSettingsOpen(true);
-		// Try to immediately start capture so the "게임 창 선택" prompt opens
-		// Some browsers might require a user gesture; if so, the user can click the button.
-		void (async () => {
-			try {
-				if (!stream) {
-					await startCapture();
+		if (!onboardingDone) {
+			setOnboardingOpen(true);
+			setOnboardingStep(0);
+		} else {
+			// Try to immediately start capture so the "게임 창 선택" prompt opens
+			// Some browsers might require a user gesture; if so, the user can click the button.
+			void (async () => {
+				try {
+					if (!stream) {
+						await startCapture();
+					}
+				} catch {
+					// Permission or gesture required; leave modal open.
 				}
-			} catch {
-				// Permission or gesture required; leave modal open.
-			}
-		})();
+			})();
+		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -163,6 +179,93 @@ export default function ExpTracker() {
 
 	const tickRef = useRef<number | null>(null);
 	const clockRef = useRef<number | null>(null);
+
+	// Capture lightweight thumbnails for onboarding ROI confirmation
+	useEffect(() => {
+		if (!onboardingOpen) return;
+		const video = captureVideoRef.current;
+		if (!video) return;
+		if (video.videoWidth === 0 || video.videoHeight === 0) return;
+		try {
+			if (roiLevel) {
+				const r = toVideoSpaceRect(video, roiLevel);
+				const c = drawRoiCanvas(video, r, { scale: 2 });
+				setLevelRoiShot(c.toDataURL("image/png"));
+			}
+			if (roiExp) {
+				const r = toVideoSpaceRect(video, roiExp);
+				const c = drawRoiCanvas(video, r, { scale: 2 });
+				setExpRoiShot(c.toDataURL("image/png"));
+			}
+		} catch {
+			// ignore thumbnail failures
+		}
+		// Update when step changes or inputs change
+	}, [onboardingOpen, onboardingStep, roiLevel, roiExp, stream]);
+
+	// Periodically refresh OCR texts at 1s while onboarding is open
+	useEffect(() => {
+		if (!onboardingOpen) return;
+		let timer: number | null = null;
+		const tick = async () => {
+			const video = captureVideoRef.current;
+			if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
+			try {
+				if (roiLevel) {
+					const rect = toVideoSpaceRect(video, roiLevel);
+					const canvasLevelProc = preprocessLevelCanvas(video, rect, { scale: 4, pad: 0 });
+					const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
+					const res = await recognizeLevelDigitsWithText(canvasLevelCrop);
+					setOnboardingLevelText(res.text || "");
+					// also keep preview relatively fresh
+					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
+					setLevelRoiShot(cRaw.toDataURL("image/png"));
+				}
+				if (roiExp) {
+					const rect = toVideoSpaceRect(video, roiExp);
+					const canvasExpProc = drawRoiCanvas(video, rect, { binarize: true, scale: 2 });
+					const res = await recognizeExpBracketedWithText(canvasExpProc);
+					setOnboardingExpText(res.text || "");
+					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
+					setExpRoiShot(cRaw.toDataURL("image/png"));
+				}
+			} catch {
+				// ignore OCR failures
+			}
+		};
+		// initial
+		void tick();
+		timer = window.setInterval(() => { void tick(); }, 1000) as unknown as number;
+		return () => {
+			if (timer) {
+				clearInterval(timer);
+			}
+		};
+	}, [onboardingOpen, roiLevel, roiExp]);
+
+	// Finalize selection when a new ROI is set
+	const handleChangeLevel = useCallback((r: RoiRect | null) => {
+		setRoiLevel(r);
+		if (r && roiSelectionMode === "level") {
+			setActiveRoi(null);
+			setRoiSelectionMode(null);
+			if (onboardingPausedForRoi === "level") {
+				setOnboardingPausedForRoi(null);
+				setOnboardingOpen(true);
+			}
+		}
+	}, [setRoiLevel, roiSelectionMode, onboardingPausedForRoi]);
+	const handleChangeExp = useCallback((r: RoiRect | null) => {
+		setRoiExp(r);
+		if (r && roiSelectionMode === "exp") {
+			setActiveRoi(null);
+			setRoiSelectionMode(null);
+			if (onboardingPausedForRoi === "exp") {
+				setOnboardingPausedForRoi(null);
+				setOnboardingOpen(true);
+			}
+		}
+	}, [setRoiExp, roiSelectionMode, onboardingPausedForRoi]);
 
 	const readRoisOnce = useCallback(async (): Promise<Sample> => {
 		const video = captureVideoRef.current;
@@ -462,7 +565,7 @@ export default function ExpTracker() {
 						</button>
 					)}
 					<button className="btn" onClick={resetSampling} disabled={!hasStarted}>초기화</button>
-					<button className="btn" onClick={openPip}>PIP</button>
+					<button className="btn" onClick={openPip}>PIP 열기</button>
 				</div>
 			</div>
 
@@ -570,8 +673,8 @@ export default function ExpTracker() {
 						videoRef={previewVideoRef}
 						levelRect={roiLevel}
 						expRect={roiExp}
-						onChangeLevel={setRoiLevel}
-						onChangeExp={setRoiExp}
+						onChangeLevel={handleChangeLevel}
+						onChangeExp={handleChangeExp}
 						active={activeRoi}
 						onActiveChange={setActiveRoi}
 					/>
@@ -580,13 +683,29 @@ export default function ExpTracker() {
 				<div className="flex items-center gap-2">
 					<button
 						className={clsx("btn", activeRoi === "level" && "btn-primary")}
-						onClick={() => setActiveRoi(prev => prev === "level" ? null : "level")}
+						onClick={() => {
+							if (activeRoi === "level") {
+								setActiveRoi(null);
+								setRoiSelectionMode(null);
+							} else {
+								setActiveRoi("level");
+								setRoiSelectionMode("level");
+							}
+						}}
 					>
 						레벨 ROI 설정
 					</button>
 					<button
 						className={clsx("btn", activeRoi === "exp" && "btn-primary")}
-						onClick={() => setActiveRoi(prev => prev === "exp" ? null : "exp")}
+						onClick={() => {
+							if (activeRoi === "exp") {
+								setActiveRoi(null);
+								setRoiSelectionMode(null);
+							} else {
+								setActiveRoi("exp");
+								setRoiSelectionMode("exp");
+							}
+						}}
 					>
 						경험치 ROI 설정
 					</button>
@@ -598,6 +717,62 @@ export default function ExpTracker() {
 			</Modal>
 			{/* Hidden always-on video for OCR sampling */}
 			<video ref={captureVideoRef} className="hidden" muted playsInline />
+			<OnboardingOverlay
+				open={onboardingOpen}
+				step={onboardingStep}
+				hasStream={!!stream}
+				onSelectWindow={async () => {
+					setSettingsOpen(true);
+					await startCapture();
+				}}
+				onActivateLevel={() => {
+					setSettingsOpen(true);
+					setOnboardingOpen(false);
+					setOnboardingPausedForRoi("level");
+					setRoiSelectionMode("level");
+					setActiveRoi("level");
+				}}
+				onActivateExp={() => {
+					setSettingsOpen(true);
+					setOnboardingOpen(false);
+					setOnboardingPausedForRoi("exp");
+					setRoiSelectionMode("exp");
+					setActiveRoi("exp");
+				}}
+				onSetIntervalSec={(sec: number) => setIntervalSec(sec as IntervalSec)}
+				currentIntervalSec={intervalSec}
+				hasLevelRoi={!!roiLevel}
+				levelRoiPreview={levelRoiShot}
+				hasExpRoi={!!roiExp}
+				expRoiPreview={expRoiShot}
+				ocrLevelText={onboardingLevelText}
+				ocrExpText={onboardingExpText}
+				onOpenPip={() => {
+					void openPip();
+				}}
+				onNext={() => {
+					setOnboardingStep((s) => Math.min(s + 1, 4));
+					// Auto-toggle helpful modes per step
+					setSettingsOpen(true);
+					if (onboardingStep === 1) setActiveRoi("level");
+					if (onboardingStep === 2) setActiveRoi("exp");
+					if (onboardingStep >= 4) {
+						setOnboardingDone(true);
+						setOnboardingOpen(false);
+						setActiveRoi(null);
+						setSettingsOpen(false);
+					}
+				}}
+				onSkip={() => {
+					setOnboardingDone(true);
+					setOnboardingOpen(false);
+					setActiveRoi(null);
+					setSettingsOpen(false);
+				}}
+				onClose={() => {
+					setOnboardingOpen(false);
+				}}
+			/>
 		</div>
 	);
 }
