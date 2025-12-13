@@ -109,17 +109,23 @@ function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
 export function preprocessLevelCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { scale?: number } = {}
+	options: { scale?: number; pad?: number } = {}
 ): HTMLCanvasElement {
-	const scale = options.scale && options.scale > 0 ? options.scale : 3;
+	const scale = options.scale && options.scale > 0 ? options.scale : 4;
+	const pad = Math.max(0, Math.round((options.pad ?? 2) * scale));
+	const srcW = Math.max(1, Math.round(roi.w * scale));
+	const srcH = Math.max(1, Math.round(roi.h * scale));
+	const outW = srcW + pad * 2;
+	const outH = srcH + pad * 2;
 	const canvas = document.createElement("canvas");
-	const outW = Math.max(1, Math.round(roi.w * scale));
-	const outH = Math.max(1, Math.round(roi.h * scale));
 	canvas.width = outW;
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;
 	ctx.imageSmoothingEnabled = false;
-	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
+	// fill white background to avoid edge artifacts
+	ctx.fillStyle = "#ffffff";
+	ctx.fillRect(0, 0, outW, outH);
+	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, pad, pad, srcW, srcH);
 
 	const img = ctx.getImageData(0, 0, outW, outH);
 	const data = img.data;
@@ -133,13 +139,13 @@ export function preprocessLevelCanvas(
 		const minc = Math.min(r, g, b);
 		const mean = (r + g + b) / 3;
 		const chroma = maxc - minc;
-		// Thresholds tuned for white digits with slight antialiasing
-		if (chroma <= 40 && mean >= 165) {
+		// Thresholds tuned for white digits with slight antialiasing (relaxed)
+		if (chroma <= 60 && mean >= 150) {
 			mask[p] = 1;
 		}
 	}
 
-	// 2) Morphological closing (dilate then erode) to fill gaps
+	// 2) Simple dilation to thicken slender strokes (single pass 3x3)
 	const dil = new Uint8Array(w * h);
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
@@ -155,21 +161,7 @@ export function preprocessLevelCanvas(
 			dil[y * w + x] = on;
 		}
 	}
-	const clo = new Uint8Array(w * h);
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			let all = 1;
-			for (let dy = -1; dy <= 1; dy++) {
-				for (let dx = -1; dx <= 1; dx++) {
-					const nx = x + dx, ny = y + dy;
-					if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-					if (!dil[ny * w + nx]) { all = 0; break; }
-				}
-				if (!all) break;
-			}
-			clo[y * w + x] = all ? 1 : 0;
-		}
-	}
+	const clo = dil; // use dilated mask directly
 
 	// 3) Render black digits on white background
 	for (let y = 0, p = 0, i = 0; y < h; y++) {
@@ -182,6 +174,58 @@ export function preprocessLevelCanvas(
 	}
 	ctx.putImageData(img, 0, 0);
 	return canvas;
+}
+
+export function cropDigitBoundingBox(
+	source: HTMLCanvasElement,
+	options: { margin?: number; targetHeight?: number; outPad?: number } = {}
+): HTMLCanvasElement {
+	const margin = options.margin ?? 1;
+	const targetH = options.targetHeight ?? 64;
+	const outPad = options.outPad ?? 4; // add white border around cropped digit
+	const w = source.width;
+	const h = source.height;
+	const ctx = source.getContext("2d")!;
+	const img = ctx.getImageData(0, 0, w, h);
+	const data = img.data;
+	let minX = w, minY = h, maxX = -1, maxY = -1;
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			// black digits on white bg
+			const v = data[i];
+			// treat near-white as background, anything darker as digit
+			if (v < 200) {
+				if (x < minX) minX = x;
+				if (x > maxX) maxX = x;
+				if (y < minY) minY = y;
+				if (y > maxY) maxY = y;
+			}
+		}
+	}
+	if (maxX < minX || maxY < minY) {
+		// nothing found, return original
+		return source;
+	}
+	minX = Math.max(0, minX - margin);
+	minY = Math.max(0, minY - margin);
+	maxX = Math.min(w - 1, maxX + margin);
+	maxY = Math.min(h - 1, maxY + margin);
+	const bw = maxX - minX + 1;
+	const bh = maxY - minY + 1;
+	const scale = targetH / bh;
+	const outW = Math.max(1, Math.round(bw * scale));
+	const outH = Math.max(1, Math.round(bh * scale));
+	const out = document.createElement("canvas");
+	out.width = outW + outPad * 2;
+	out.height = outH + outPad * 2;
+	const octx = out.getContext("2d")!;
+	octx.imageSmoothingEnabled = false;
+	// white padding
+	octx.fillStyle = "#ffffff";
+	octx.fillRect(0, 0, out.width, out.height);
+	octx.drawImage(source, minX, minY, bw, bh, outPad, outPad, outW, outH);
+	return out;
 }
 
 

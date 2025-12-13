@@ -1,5 +1,6 @@
 import { createWorker, PSM } from "tesseract.js";
 import type { Worker as TesseractWorker } from "tesseract.js";
+import { cropDigitBoundingBox } from "./canvas";
 
 let expWorkerPromise: Promise<TesseractWorker> | null = null;
 let digitsWorkerPromise: Promise<TesseractWorker> | null = null;
@@ -84,6 +85,120 @@ export async function recognizeLevelDigits(
 	if (!m) return null;
 	const n = parseInt(m[1], 10);
 	return Number.isNaN(n) ? null : n;
+}
+
+export async function recognizeExpBracketedWithText(
+	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+): Promise<{ text: string; value: number | null; percent: number | null }> {
+	const worker = await initOcrExp();
+	const result = await worker.recognize(source as any);
+	const text = normalizeOcrText(result.data.text);
+	let percent: number | null = null;
+	const bracketPercent = text.match(/\[([0-9]{1,3}(?:\.[0-9]{1,2})?)%]/);
+	if (bracketPercent) {
+		percent = parseFloat(bracketPercent[1]);
+	} else {
+		const anyPercent = text.match(/([0-9]{1,3}(?:\.[0-9]{1,2})?)%/);
+		if (anyPercent) percent = parseFloat(anyPercent[1]);
+	}
+	let value: number | null = null;
+	const valueMatch = text.match(/(\d{2,})\s*\[/);
+	if (valueMatch) {
+		const n = parseInt(valueMatch[1], 10);
+		if (!Number.isNaN(n)) value = n;
+	}
+	return { text, value, percent };
+}
+
+export async function recognizeLevelDigitsWithText(
+	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+): Promise<{ text: string; value: number | null }> {
+	const worker = await initOcrDigits();
+	// Ensure we operate on a tightly-cropped digit to maximize signal
+	const canvas = source instanceof HTMLCanvasElement ? source : await createCanvasFromSource(source);
+	const cropped = cropDigitBoundingBox(canvas, { margin: 2, targetHeight: 72 });
+	// Pass 1: SINGLE_WORD with high DPI
+	await worker.setParameters({
+		tessedit_pageseg_mode: PSM.SINGLE_WORD,
+		user_defined_dpi: "500"
+	});
+	let result = await worker.recognize(cropped as any);
+	let raw = result.data.text;
+	let text = normalizeOcrText(raw);
+	let m = text.match(/^(\d{1,4})$/) || text.match(/(\d{1,4})/);
+	let value = m ? (Number.isNaN(parseInt(m[1], 10)) ? null : parseInt(m[1], 10)) : null;
+	if (value != null) return { text, value };
+	// Pass 2: SINGLE_CHAR fallback (higher DPI)
+	await worker.setParameters({
+		tessedit_pageseg_mode: PSM.SINGLE_CHAR,
+		user_defined_dpi: "700"
+	});
+	result = await worker.recognize(cropped as any);
+	raw = result.data.text;
+	text = normalizeOcrText(raw);
+	m = text.match(/^(\d)$/);
+	value = m ? (Number.isNaN(parseInt(m[1], 10)) ? null : parseInt(m[1], 10)) : null;
+	if (value == null) {
+		// Heuristic fallback for '1' using connected-component-like bounding box
+		const guess = guessDigitOneFromBinaryCanvas(cropped as HTMLCanvasElement);
+		if (guess) value = 1;
+	}
+	return { text, value };
+}
+
+async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTMLImageElement): Promise<HTMLCanvasElement> {
+	if (src instanceof HTMLCanvasElement) return src;
+	const canvas = document.createElement("canvas");
+	let w: number, h: number;
+	if ("width" in src && "height" in src) {
+		// ImageBitmap or HTMLImageElement
+		// @ts-expect-error width available
+		w = src.width; // eslint-disable-line @typescript-eslint/no-explicit-any
+		// @ts-expect-error height available
+		h = src.height; // eslint-disable-line @typescript-eslint/no-explicit-any
+	} else {
+		w = 1; h = 1;
+	}
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext("2d")!;
+	ctx.drawImage(src as any, 0, 0);
+	return canvas;
+}
+
+function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
+	try {
+		const ctx = source.getContext("2d");
+		if (!ctx) return false;
+		const { width: w, height: h } = source;
+		const img = ctx.getImageData(0, 0, w, h);
+		const data = img.data;
+		let minX = w, minY = h, maxX = -1, maxY = -1, count = 0;
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const i = (y * w + x) * 4;
+				// Our preprocess renders black digits on white background
+				const v = data[i]; // red channel
+				if (v < 128) {
+					count++;
+					if (x < minX) minX = x;
+					if (x > maxX) maxX = x;
+					if (y < minY) minY = y;
+					if (y > maxY) maxY = y;
+				}
+			}
+		}
+		if (count === 0 || maxX < minX || maxY < minY) return false;
+		const bw = maxX - minX + 1;
+		const bh = maxY - minY + 1;
+		const ar = bh / Math.max(1, bw);
+		const areaFrac = count / (w * h);
+		// Tall, slim, reasonable area coverage (loosened thresholds and slimness)
+		const slim = (bw / Math.max(1, bh)) <= 0.28;
+		return ar >= 3 && slim && areaFrac >= 0.003 && areaFrac <= 0.6;
+	} catch {
+		return false;
+	}
 }
 
 function normalizeOcrText(input: string): string {

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoiOverlay, { RoiRect } from "./RoiOverlay";
-import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas } from "@/lib/canvas";
-import { initOcr, recognizeExpBracketed, recognizeLevelDigits } from "@/lib/ocr";
+import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox } from "@/lib/canvas";
+import { initOcr, recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import { formatElapsed, predictGains, oneHourAt, formatNumber } from "@/lib/format";
+import { EXP_TABLE, computeExpDeltaFromTable } from "@/lib/expTable";
 import { usePersistentState } from "@/lib/persist";
 import clsx from "classnames";
 import Modal from "./Modal";
@@ -30,6 +31,7 @@ export default function ExpTracker() {
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
 	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 10);
+	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // running
 	const [hasStarted, setHasStarted] = useState(false);
@@ -55,6 +57,8 @@ export default function ExpTracker() {
 	const [expPreviewRaw, setExpPreviewRaw] = useState<string | null>(null);
 	const [expPreviewProc, setExpPreviewProc] = useState<string | null>(null);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [levelOcrText, setLevelOcrText] = useState<string>("");
+	const [expOcrText, setExpOcrText] = useState<string>("");
 	const startAtRef = useRef<number | null>(null);
 
 	useEffect(() => {
@@ -137,29 +141,32 @@ export default function ExpTracker() {
 		const rectLevel = toVideoSpaceRect(video, roiLevel);
 		const rectExp = toVideoSpaceRect(video, roiExp);
 
-		// For level digits: color-based extraction for white-on-orange sprites
-		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, { scale: 3 });
-		const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 3 });
+		// For level digits: color-based extraction, then tight crop to remove whitespace
+		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, { scale: 4, pad: 0 });
+		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
+		const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4 });
 		const canvasExpProc = drawRoiCanvas(video, rectExp, { binarize: true, scale: 2 });
 		const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2 });
 
-		const [levelVal, expPair] = await Promise.all([
-			recognizeLevelDigits(canvasLevelProc),
-			recognizeExpBracketed(canvasExpProc)
+		const [levelRes, expRes] = await Promise.all([
+			recognizeLevelDigitsWithText(canvasLevelCrop),
+			recognizeExpBracketedWithText(canvasExpProc)
 		]);
 
 		if (debugEnabled) {
 			try {
 				setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
-				setLevelPreviewProc(canvasLevelProc.toDataURL("image/png"));
+				setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 				setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
 				setExpPreviewProc(canvasExpProc.toDataURL("image/png"));
+				setLevelOcrText(levelRes.text || "");
+				setExpOcrText(expRes.text || "");
 			} catch {
 				// ignore preview failures
 			}
 		}
 
-		return { ts: Date.now(), level: levelVal, expPercent: expPair.percent ?? null, expValue: expPair.value ?? null };
+		return { ts: Date.now(), level: levelRes.value, expPercent: expRes.percent ?? null, expValue: expRes.value ?? null };
 	}, [roiExp, roiLevel, debugEnabled]);
 
 	const startOrResume = useCallback(async () => {
@@ -222,9 +229,15 @@ export default function ExpTracker() {
 				}
 				setCumExpPct(v => v + deltaPct);
 			}
-			if (prev && isValid && s.expValue != null && prev.expValue != null) {
-				const dv = s.expValue - prev.expValue;
-				if (dv > 0) setCumExpValue(v => v + dv);
+			if (prev && isValid && s.expValue != null && prev.expValue != null && prev.level != null && s.level != null) {
+				// Prefer table-based exact delta; fallback to same-level positive diff
+				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, s.level, s.expValue);
+				if (dvFromTable != null) {
+					if (dvFromTable > 0) setCumExpValue(v => v + dvFromTable);
+				} else if (s.level === prev.level) {
+					const dv = s.expValue - prev.expValue;
+					if (dv > 0) setCumExpValue(v => v + dv);
+				}
 			}
 			// update last valid pointer only when the current sample is valid
 			if (isValid) {
@@ -344,9 +357,14 @@ export default function ExpTracker() {
 				}
 				sumPct += d;
 			}
-			if (prev.isValid && cur.isValid && prev.expValue != null && cur.expValue != null) {
-				const dv = cur.expValue - prev.expValue;
-				if (dv > 0) sumVal += dv;
+			if (prev.isValid && cur.isValid && prev.expValue != null && cur.expValue != null && prev.level != null && cur.level != null) {
+				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, cur.level, cur.expValue);
+				if (dvFromTable != null) {
+					if (dvFromTable > 0) sumVal += dvFromTable;
+				} else if (prev.level === cur.level) {
+					const dv = cur.expValue - prev.expValue;
+					if (dv > 0) sumVal += dv;
+				}
 			}
 		}
 		// expected over window == sum over window; kept for clarity
@@ -461,6 +479,16 @@ export default function ExpTracker() {
 							{expPreviewProc ? (
 								<img src={expPreviewProc} alt="exp-proc" className="w-full h-auto rounded border border-white/10" />
 							) : <div className="text-xs opacity-60">-</div>}
+						</div>
+					</div>
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div className="text-xs">
+							<div className="opacity-70 mb-1">Level OCR</div>
+							<pre className="whitespace-pre-wrap break-all bg-black/30 rounded p-2 border border-white/10 min-h-[2.5rem]">{levelOcrText || "-"}</pre>
+						</div>
+						<div className="text-xs">
+							<div className="opacity-70 mb-1">EXP OCR</div>
+							<pre className="whitespace-pre-wrap break-all bg-black/30 rounded p-2 border border-white/10 min-h-[2.5rem]">{expOcrText || "-"}</pre>
 						</div>
 					</div>
 					<p className="text-xs opacity-60">미리보기는 디버그가 켜진 동안에만 매 tick 갱신됩니다.</p>
