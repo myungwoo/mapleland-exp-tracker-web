@@ -24,7 +24,9 @@ export default function RoiOverlay(props: Props) {
 		const video = props.videoRef.current;
 		const overlay = overlayRef.current;
 		if (!video || !overlay) return null;
+		if (video.videoWidth === 0 || video.videoHeight === 0) return null;
 		const container = overlay.getBoundingClientRect();
+		if (container.width <= 0 || container.height <= 0) return null;
 		const videoAR = video.videoWidth / video.videoHeight;
 		const containerAR = container.width / container.height;
 		let displayW: number, displayH: number, offX = 0, offY = 0;
@@ -101,7 +103,9 @@ export default function RoiOverlay(props: Props) {
 		const video = props.videoRef.current;
 		const overlay = overlayRef.current;
 		if (!video || !overlay) return { left: 0, top: 0, width: 0, height: 0 };
+		if (video.videoWidth === 0 || video.videoHeight === 0) return { left: 0, top: 0, width: 0, height: 0 };
 		const container = overlay.getBoundingClientRect();
+		if (container.width <= 0 || container.height <= 0) return { left: 0, top: 0, width: 0, height: 0 };
 		const videoAR = video.videoWidth / video.videoHeight;
 		const containerAR = container.width / container.height;
 		let displayW: number, displayH: number, offX = 0, offY = 0;
@@ -116,6 +120,10 @@ export default function RoiOverlay(props: Props) {
 		}
 		const scaleX = displayW / video.videoWidth;
 		const scaleY = displayH / video.videoHeight;
+		// Guard against NaN/Infinity
+		if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) {
+			return { left: 0, top: 0, width: 0, height: 0 };
+		}
 		return {
 			left: offX + r.x * scaleX,
 			top: offY + r.y * scaleY,
