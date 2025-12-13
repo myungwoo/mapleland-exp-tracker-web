@@ -6,14 +6,6 @@ export function formatElapsed(ms: number): string {
 	return [h, m, s].map(v => String(v).padStart(2, "0")).join(":");
 }
 
-export function predictGains(ratePerSec: number, minutes: number): number {
-	return ratePerSec * minutes * 60;
-}
-
-export function oneHourAt(startAt: number): Date {
-	return new Date(startAt + 3600_000);
-}
-
 export function formatNumber(n: number): string {
 	// Format with thousands separators; clamp tiny negatives to 0
 	const v = Number.isFinite(n) ? n : 0;

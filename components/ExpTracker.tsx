@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoiOverlay, { RoiRect } from "./RoiOverlay";
 import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox } from "@/lib/canvas";
 import { initOcr, recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
-import { formatElapsed, predictGains, oneHourAt, formatNumber } from "@/lib/format";
+import { formatElapsed, formatNumber } from "@/lib/format";
 import { EXP_TABLE, computeExpDeltaFromTable } from "@/lib/expTable";
 import { usePersistentState } from "@/lib/persist";
 import clsx from "classnames";
@@ -16,7 +16,7 @@ type Sample = {
 	ts: number;
 	level: number | null;
 	expPercent: number | null;
-	expValue?: number | null;
+	expValue: number | null;
 	isValid?: boolean;
 };
 
@@ -35,17 +35,12 @@ export default function ExpTracker() {
 
 	const [isSampling, setIsSampling] = useState(false); // running
 	const [hasStarted, setHasStarted] = useState(false);
-	const [startAt, setStartAt] = useState<number | null>(null); // kept for backward compatibility, not used for ETA
 	const [elapsedMs, setElapsedMs] = useState(0);
 	const [baseElapsedMs, setBaseElapsedMs] = useState(0); // accumulated elapsed across pauses
 
-	const [startLevel, setStartLevel] = useState<number | null>(null);
-	const [startExp, setStartExp] = useState<number | null>(null);
-	const [startExpValue, setStartExpValue] = useState<number | null>(null);
 	const [currentLevel, setCurrentLevel] = useState<number | null>(null);
 	const [currentExp, setCurrentExp] = useState<number | null>(null);
 	const [currentExpValue, setCurrentExpValue] = useState<number | null>(null);
-	const [samples, setSamples] = useState<Sample[]>([]);
 	const lastValidSampleRef = useRef<Sample | null>(null);
 	const [cumExpPct, setCumExpPct] = useState(0);
 	const [cumExpValue, setCumExpValue] = useState(0);
@@ -191,19 +186,14 @@ export default function ExpTracker() {
 		// First start: set baselines
 		if (!hasStarted) {
 			const first = await readRoisOnce();
-			setStartLevel(first.level);
-			setStartExp(first.expPercent);
-			setStartExpValue(first.expValue ?? null);
 			setCurrentLevel(first.level);
 			setCurrentExp(first.expPercent);
-			setCurrentExpValue(first.expValue ?? null);
-			const firstValid = first.level != null && first.expPercent != null;
-			const firstSample: Sample = { ts: first.ts, level: first.level, expPercent: first.expPercent, expValue: first.expValue ?? null, isValid: firstValid };
-			setSamples([firstSample]);
+			setCurrentExpValue(first.expValue);
+			const firstValid = first.level != null && first.expValue != null && first.expPercent != null;
+			const firstSample: Sample = { ts: first.ts, level: first.level, expPercent: first.expPercent, expValue: first.expValue, isValid: firstValid };
 			lastValidSampleRef.current = firstValid ? firstSample : null;
 			setCumExpPct(0);
 			setCumExpValue(0);
-			setStartAt(Date.now());
 			setHasStarted(true);
 			setBaseElapsedMs(0);
 			setElapsedMs(0);
@@ -224,9 +214,8 @@ export default function ExpTracker() {
 
 		const runner = async () => {
 			const s = await readRoisOnce();
-			const isValid = s.level != null && s.expPercent != null;
+			const isValid = s.level != null && s.expValue != null && s.expPercent != null;
 			const sample: Sample = { ...s, isValid };
-			setSamples(prev => [...prev.slice(-600), sample]); // keep more samples for window averages
 			setCurrentLevel(s.level);
 			setCurrentExp(s.expPercent);
 			setCurrentExpValue(s.expValue ?? null);
@@ -307,14 +296,9 @@ export default function ExpTracker() {
 		setBaseElapsedMs(0);
 		setElapsedMs(0);
 		startAtRef.current = null;
-		setStartAt(null);
-		setStartLevel(null);
-		setStartExp(null);
-		setStartExpValue(null);
 		setCurrentLevel(null);
 		setCurrentExp(null);
 		setCurrentExpValue(null);
-		setSamples([]);
 		lastValidSampleRef.current = null;
 		setCumExpPct(0);
 		setCumExpValue(0);
@@ -330,15 +314,7 @@ export default function ExpTracker() {
 	}, []);
 
 	const stats = useMemo(() => {
-		if (
-			startLevel == null ||
-			startExp == null ||
-			currentLevel == null ||
-			currentExp == null ||
-			!hasStarted
-		) {
-			return null;
-		}
+		if (!hasStarted) return null;
 		const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
 		const gainedPctPoints = cumExpPct; // accumulated per-sample
 		const ratePerSec = elapsedSec > 0 ? gainedPctPoints / elapsedSec : 0;
@@ -350,45 +326,12 @@ export default function ExpTracker() {
 			elapsedSec,
 			gainedPctPoints,
 			ratePerSec,
-			predict5: predictGains(ratePerSec, 5),
-			predict10: predictGains(ratePerSec, 10),
-			predict30: predictGains(ratePerSec, 30),
-			predict60: predictGains(ratePerSec, 60),
 			nextHours,
 			nextAt
 		};
-	}, [startLevel, startExp, currentLevel, currentExp, elapsedMs, hasStarted, cumExpPct]);
+	}, [elapsedMs, hasStarted, cumExpPct]);
 
-	const windowAvg = useMemo(() => {
-		if (samples.length < 2) return { sumPct: 0, sumVal: 0, expectedPct: 0, expectedVal: 0 };
-		const now = Date.now();
-		const windowMs = avgWindowMin * 60 * 1000;
-		const filtered = samples.filter(s => now - s.ts <= windowMs);
-		if (filtered.length < 2) return { sumPct: 0, sumVal: 0, expectedPct: 0, expectedVal: 0 };
-		let sumPct = 0;
-		let sumVal = 0;
-		for (let i = 1; i < filtered.length; i++) {
-			const prev = filtered[i - 1];
-			const cur = filtered[i];
-			if (prev.isValid && cur.isValid && prev.expPercent != null && cur.expPercent != null) {
-				let d = 0;
-				if (cur.level != null && prev.level != null && cur.level > prev.level) {
-					d = (100 - prev.expPercent) + cur.expPercent;
-				} else if (cur.level != null && prev.level != null && cur.level < prev.level) {
-					d = -((100 - cur.expPercent) + prev.expPercent);
-				} else {
-					d = cur.expPercent - prev.expPercent; // allow signed
-				}
-				sumPct += d;
-			}
-			if (prev.isValid && cur.isValid && prev.expValue != null && cur.expValue != null && prev.level != null && cur.level != null) {
-				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, cur.level, cur.expValue);
-				if (dvFromTable != null) sumVal += dvFromTable; // signed across levels
-			}
-		}
-		// expected over window == sum over window; kept for clarity
-		return { sumPct, sumVal, expectedPct: sumPct, expectedVal: sumVal };
-	}, [samples, avgWindowMin]);
+	// Removed window-based averaging. We project to a chosen minutes window based on elapsed time and cumulative gains.
 
 	// Extrapolate from cumulative totals using elapsed time:
 	// estimate(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
@@ -463,7 +406,7 @@ export default function ExpTracker() {
 						</div>
 					</div>
 					<div>
-						<div className="opacity-70 text-sm">평균 경험치 ({avgWindowMin}분)</div>
+						<div className="opacity-70 text-sm">예상 경험치 ({avgWindowMin}분)</div>
 						<div className="font-mono text-xl">
 							{formatNumber(avgEstimate.val)} [{avgEstimate.pct.toFixed(2)}%]
 						</div>
