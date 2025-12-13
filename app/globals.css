@@ -5,6 +5,7 @@
 :root {
 	--foreground: 255 255 255;
 	--background: 11 16 32;
+	color-scheme: dark;
 }
 
 html, body, :root {
@@ -26,5 +27,16 @@ body {
 
 .btn-primary {
 	@apply bg-accent/20 text-teal-200 hover:bg-accent/30;
+}
+
+/* Form controls - ensure dark dropdown readability */
+select {
+	background-color: rgb(var(--background));
+	color: rgb(var(--foreground));
+	border-radius: 0.375rem; /* match rounded-md */
+}
+option {
+	color: rgb(var(--foreground));
+	background-color: rgb(var(--background));
 }
 

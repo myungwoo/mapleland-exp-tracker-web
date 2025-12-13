@@ -464,7 +464,7 @@ export default function ExpTracker() {
 					<div className="ml-auto flex items-center gap-2">
 						<label className="text-sm text-white/70">샘플링 간격</label>
 						<select
-							className="bg-white/10 rounded px-2 py-1 text-sm"
+							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
 							value={intervalSec}
 							onChange={e => setIntervalSec(parseInt(e.target.value, 10) as IntervalSec)}
 						>
@@ -474,7 +474,7 @@ export default function ExpTracker() {
 						</select>
 						<label className="text-sm text-white/70 ml-4">평균 표시 시간</label>
 						<select
-							className="bg-white/10 rounded px-2 py-1 text-sm"
+							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
 							value={avgWindowMin}
 							onChange={e => setAvgWindowMin(parseInt(e.target.value, 10))}
 						>
