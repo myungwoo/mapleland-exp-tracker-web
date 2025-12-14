@@ -60,7 +60,7 @@ export class PipController {
         setTimeout(() => this.lastState && this.update(this.lastState), 0);
       });
     }
-    // Keyboard: Space to toggle timer (avoid inputs; avoid double-trigger when focused on a button)
+    // Keyboard: Space to toggle timer, R to reset (avoid inputs; avoid double-trigger when focused on a button)
     const onKeyDown = (e: KeyboardEvent) => {
       const code = (e as any).code || (e as any).key;
       if (code === "Space" || (e as any).key === " ") {
@@ -71,6 +71,14 @@ export class PipController {
         if (isForm || tag === "button") return;
         e.preventDefault();
         try { this.callbacks.onToggle(); } catch {}
+      } else if (code === "KeyR" || (e as any).key === "r" || (e as any).key === "R") {
+        const el = e.target as HTMLElement | null;
+        const tag = el?.tagName?.toLowerCase();
+        const isForm = !!el && (el.isContentEditable || tag === "input" || tag === "textarea" || tag === "select");
+        // If focus is on a button, avoid interfering with button behaviors
+        if (isForm || tag === "button") return;
+        e.preventDefault();
+        try { this.callbacks.onReset(); } catch {}
       }
     };
     win.addEventListener("keydown", onKeyDown);

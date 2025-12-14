@@ -523,6 +523,30 @@ export default function ExpTracker() {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [isSampling, pauseSampling, startOrResume]);
 
+	// 'R' shortcut: reset timer unless focused on form fields
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const code = (e as any).code || (e as any).key;
+			if (code === "KeyR" || e.key === "r" || e.key === "R") {
+				const el = e.target as HTMLElement | null;
+				const tag = el?.tagName?.toLowerCase();
+				const isForm =
+					!!el &&
+					(el.isContentEditable ||
+						tag === "input" ||
+						tag === "textarea" ||
+						tag === "select");
+				if (isForm) return;
+				e.preventDefault();
+				if (hasStarted) {
+					resetSampling();
+				}
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [hasStarted, resetSampling]);
+
 	// --- Document Picture-in-Picture helpers ---
 	const closePip = useCallback(() => {
 		pipClose();
