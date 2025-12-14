@@ -60,16 +60,32 @@ export class PipController {
         setTimeout(() => this.lastState && this.update(this.lastState), 0);
       });
     }
-    // Keyboard: Space to toggle timer, R to reset (avoid inputs; avoid double-trigger when focused on a button)
+    // Keyboard: Space to toggle timer, R to reset (avoid inputs; ensure Space never triggers focused reset button)
     const onKeyDown = (e: KeyboardEvent) => {
       const code = (e as any).code || (e as any).key;
       if (code === "Space" || (e as any).key === " ") {
         const el = e.target as HTMLElement | null;
         const tag = el?.tagName?.toLowerCase();
         const isForm = !!el && (el.isContentEditable || tag === "input" || tag === "textarea" || tag === "select");
-        // If focus is on a button, let default behavior trigger its click (toggle/reset)
-        if (isForm || tag === "button") return;
+        // Allow typing in form controls; otherwise, Space should always toggle timer
+        if (isForm) return;
+        // Prevent default so Space doesn't activate a focused button (e.g., reset)
         e.preventDefault();
+        e.stopPropagation();
+        // Also suppress the corresponding keyup default click once
+        const suppressSpaceUp = (ev: KeyboardEvent) => {
+          const upCode = (ev as any).code || (ev as any).key;
+          if (upCode === "Space" || (ev as any).key === " ") {
+            ev.preventDefault();
+            ev.stopPropagation();
+          }
+        };
+        try {
+          // capture + once to ensure button click isn't fired on keyup
+          win.addEventListener("keyup", suppressSpaceUp, { capture: true, once: true } as any);
+        } catch {
+          // no-op
+        }
         try { this.callbacks.onToggle(); } catch {}
       } else if (code === "KeyR" || (e as any).key === "r" || (e as any).key === "R") {
         const el = e.target as HTMLElement | null;
@@ -81,7 +97,12 @@ export class PipController {
         try { this.callbacks.onReset(); } catch {}
       }
     };
-    win.addEventListener("keydown", onKeyDown);
+    // Use capture to reliably preempt default button activation by Space
+    try {
+      win.addEventListener("keydown", onKeyDown, true);
+    } catch {
+      win.addEventListener("keydown", onKeyDown);
+    }
     try { win.focus?.(); } catch {}
     const cleanup = () => { this.pipWindow = null; };
     win.addEventListener("pagehide", cleanup);
