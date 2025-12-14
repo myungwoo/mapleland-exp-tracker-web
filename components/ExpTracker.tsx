@@ -318,6 +318,52 @@ export default function ExpTracker() {
 		};
 	}, [roiExp, roiLevel, debugEnabled]);
 
+	// Unified sampler: take one OCR sample, update UI fields, and accumulate deltas
+	const sampleOnceAndAccumulate = useCallback(async () => {
+		const s = await readRoisOnce();
+		const isValid = s.level != null && s.expValue != null && s.expPercent != null;
+		const sample: Sample = { ...s, isValid };
+		setCurrentLevel(s.level);
+		setCurrentExp(s.expPercent);
+		setCurrentExpValue(s.expValue ?? null);
+		// accumulate deltas based on last valid sample
+		const prev = lastValidSampleRef.current;
+		if (prev && isValid) {
+			// Percent-based accumulation
+			if (prev.expPercent != null && s.expPercent != null) {
+				let deltaPct = 0;
+				if (
+					prev.level != null &&
+					s.level != null &&
+					s.level > prev.level
+				) {
+					deltaPct = (100 - prev.expPercent) + s.expPercent;
+				} else if (
+					prev.level != null &&
+					s.level != null &&
+					s.level < prev.level
+				) {
+					// symmetric negative across-level when level appears to drop
+					deltaPct = -((100 - s.expPercent) + prev.expPercent);
+				} else {
+					deltaPct = s.expPercent - prev.expPercent;
+				}
+				setCumExpPct(v => v + deltaPct);
+			}
+			// Value-based accumulation
+			if (prev.expValue != null && s.expValue != null && prev.level != null && s.level != null) {
+				const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, s.level, s.expValue);
+				if (dvFromTable != null) {
+					setCumExpValue(v => v + dvFromTable);
+				}
+			}
+		}
+		// update last valid pointer only when the current sample is valid
+		if (isValid) {
+			lastValidSampleRef.current = sample;
+		}
+	}, [readRoisOnce, expTable]);
+
 	const startOrResume = useCallback(async () => {
 		if (!captureVideoRef.current) return;
 		if (!roiLevel || !roiExp) {
@@ -358,48 +404,7 @@ export default function ExpTracker() {
 		}, 1000) as unknown as number;
 
 		const runner = async () => {
-			const s = await readRoisOnce();
-			const isValid = s.level != null && s.expValue != null && s.expPercent != null;
-			const sample: Sample = { ...s, isValid };
-			setCurrentLevel(s.level);
-			setCurrentExp(s.expPercent);
-			setCurrentExpValue(s.expValue ?? null);
-			// accumulate deltas (signed for same-level to cancel spikes)
-			const prev = lastValidSampleRef.current;
-			if (prev && isValid) {
-				// Percent-based
-				if (prev.expPercent != null && s.expPercent != null) {
-					let deltaPct = 0;
-					if (
-						prev.level != null &&
-						s.level != null &&
-						s.level > prev.level
-					) {
-						deltaPct = (100 - prev.expPercent) + s.expPercent;
-					} else if (
-						prev.level != null &&
-						s.level != null &&
-						s.level < prev.level
-					) {
-						// symmetric negative across-level when level appears to drop
-						deltaPct = -((100 - s.expPercent) + prev.expPercent);
-					} else {
-						deltaPct = s.expPercent - prev.expPercent; // allow negative generally
-					}
-					setCumExpPct(v => v + deltaPct);
-				}
-				// Value-based
-				if (prev.expValue != null && s.expValue != null && prev.level != null && s.level != null) {
-					const dvFromTable = computeExpDeltaFromTable(expTable, prev.level, prev.expValue, s.level, s.expValue);
-					if (dvFromTable != null) {
-						setCumExpValue(v => v + dvFromTable); // signed across levels
-					}
-				}
-			}
-			// update last valid pointer only when the current sample is valid
-			if (isValid) {
-				lastValidSampleRef.current = sample;
-			}
+			await sampleOnceAndAccumulate();
 		};
 
 		// Start sampling interval
@@ -414,7 +419,8 @@ export default function ExpTracker() {
 		setIsSampling(true);
 	}, [readRoisOnce, intervalSec, roiLevel, roiExp, hasStarted, baseElapsedMs]);
 
-	const pauseSampling = useCallback(() => {
+	const pauseSampling = useCallback(async () => {
+		// Stop timers first to freeze state
 		if (tickRef.current) {
 			clearInterval(tickRef.current);
 			tickRef.current = null;
@@ -423,9 +429,16 @@ export default function ExpTracker() {
 			clearInterval(clockRef.current);
 			clockRef.current = null;
 		}
+		// Take an immediate sample at pause time (independent of intervalSec)
+		try {
+			await sampleOnceAndAccumulate();
+		} catch {
+			// ignore OCR failures on pause
+		}
+		// Freeze elapsed at pause moment
 		setBaseElapsedMs(elapsedMs);
 		setIsSampling(false);
-	}, [elapsedMs]);
+	}, [elapsedMs, sampleOnceAndAccumulate]);
 
 	const resetSampling = useCallback(() => {
 		if (tickRef.current) {
