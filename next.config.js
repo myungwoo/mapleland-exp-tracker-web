@@ -6,6 +6,10 @@ const basePath = isGhPages && repo ? `/${repo}` : "";
 const nextConfig = {
 	output: "export",
 	...(basePath ? { basePath, assetPrefix: basePath } : {}),
+	// Expose basePath to the client for building asset URLs in plain <img> tags
+	env: {
+		NEXT_PUBLIC_BASE_PATH: basePath
+	},
 	experimental: {
 		esmExternals: true
 	}

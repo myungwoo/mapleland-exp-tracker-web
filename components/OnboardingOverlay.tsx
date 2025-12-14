@@ -1,4 +1,5 @@
 import React from "react";
+import { assetPath } from "@/lib/assetPath";
 
 type Props = {
   open: boolean;
@@ -63,7 +64,7 @@ export default function OnboardingOverlay(props: Props) {
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
               <div className="text-sm text-white/80 mb-2">올바른 선택 예시</div>
               <img
-                src="/examples/level-roi.png"
+                src={assetPath("/examples/level-roi.png")}
                 alt="레벨 ROI 올바른 선택 예시"
                 className="max-h-36 rounded border border-white/10 bg-black/40"
               />
@@ -103,7 +104,7 @@ export default function OnboardingOverlay(props: Props) {
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
               <div className="text-sm text-white/80 mb-2">올바른 선택 예시</div>
               <img
-                src="/examples/exp-roi.png"
+                src={assetPath("/examples/exp-roi.png")}
                 alt="경험치 ROI 올바른 선택 예시"
                 className="max-h-36 rounded border border-white/10 bg-black/40"
               />
