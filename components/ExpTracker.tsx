@@ -12,6 +12,7 @@ import Modal from "./Modal";
 import { useDocumentPip } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
+import PaceChart from "@/components/PaceChart";
 
 type IntervalSec = 1 | 5 | 10;
 
@@ -587,6 +588,68 @@ export default function ExpTracker() {
 		updatePipContents(); // initial paint
 	}, [pipOpen, updatePipContents]);
 
+	// ----- Pace history and series (time-normalized) -----
+	type HistoryPoint = { ts: number; cumExp: number; cumPct: number; elapsedAtMs: number };
+	const [history, setHistory] = useState<HistoryPoint[]>([]);
+
+	// Append to history whenever cumulative values change while a session exists
+	useEffect(() => {
+		if (!hasStarted) return;
+		const now = Date.now();
+		setHistory(prev => {
+			const next = prev.concat({ ts: now, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs });
+			// keep last 24h to avoid unbounded growth
+			const cutoff = now - 24 * 3600 * 1000;
+			const pruned = next.filter(p => p.ts >= cutoff);
+			return pruned;
+		});
+	}, [cumExpValue, cumExpPct, hasStarted, elapsedMs]);
+
+	// Reset history on full reset
+	useEffect(() => {
+		if (!hasStarted) {
+			setHistory([]);
+		}
+	}, [hasStarted]);
+
+	// Compute pace series normalized to avgWindowMin:
+	// paceAt(t_i) = (deltaExp / deltaMs) * windowMs
+	// Uses variable sampling timestamps; if not enough history, uses the earliest available
+	const paceSeries = useMemo(() => {
+		if (history.length < 2) return [];
+		const windowMs = avgWindowMin * 60 * 1000;
+		const points: Array<{ ts: number; paceVal: number; pacePct: number }> = [];
+		let j = 0;
+		for (let i = 1; i < history.length; i++) {
+			const cur = history[i];
+			const t0 = cur.ts - windowMs;
+			// advance j to the first index where ts >= t0, but keep j < i
+			while (j < i && history[j].ts < t0) j++;
+			let k = j;
+			if (k >= i) k = i - 1; // fallback to immediate previous if window has no earlier point
+			const prev = history[k];
+			const deltaExp = cur.cumExp - prev.cumExp;
+			const deltaPct = cur.cumPct - prev.cumPct;
+			const deltaMs = Math.max(1, cur.ts - prev.ts);
+			const scale = windowMs / deltaMs;
+			points.push({
+				ts: cur.ts,
+				paceVal: deltaExp * scale,
+				pacePct: deltaPct * scale
+			});
+		}
+		return points;
+	}, [history, avgWindowMin]);
+
+	// Map from history ts -> elapsedAtMs for tooltip labeling in timer-relative seconds
+	const elapsedByTs = useMemo(() => {
+		const m = new Map<number, number>();
+		for (let i = 0; i < history.length; i++) {
+			m.set(history[i].ts, history[i].elapsedAtMs);
+		}
+		return m;
+	}, [history]);
+
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center gap-2">
@@ -628,6 +691,25 @@ export default function ExpTracker() {
 						<div className="font-mono text-xl">
 							{formatNumber(avgEstimate.val)} [{avgEstimate.pct.toFixed(2)}%]
 						</div>
+					</div>
+				</div>
+				<div className="mt-2">
+					<div className="flex items-baseline justify-between">
+						<h3 className="font-semibold">페이스 (기준 {avgWindowMin}분)</h3>
+						<div className="text-xs text-white/60">샘플링 {intervalSec}초 · 가변 간격 대응</div>
+					</div>
+					<div className="mt-2 h-40">
+						<PaceChart
+							data={paceSeries.map(p => ({ ts: p.ts, value: p.paceVal }))}
+							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
+							xLabelFormatter={(ts: number) => {
+								const v = elapsedByTs.get(ts);
+								if (typeof v === "number") return formatElapsed(v);
+								// Fallback: compute from current baseline to avoid empty label
+								const base = startAtRef.current ?? ts;
+								return formatElapsed(ts - base);
+							}}
+						/>
 					</div>
 				</div>
 			</div>
