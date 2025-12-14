@@ -7,10 +7,19 @@ type Props = {
   tooltipFormatter?: (value: number) => string;
   smoothingWindowSec?: number; // defaults to 30s
   xLabelFormatter?: (ts: number) => string; // optional label for x (ts in same units as data.ts)
+  domainWarmupSec?: number; // ignore first warmup seconds for y-domain (default = smoothingWindowSec)
+  clampQuantiles?: [number, number]; // e.g., [0.05, 0.95] to reduce outliers; default applied
 };
 
 export default function PaceChart(props: Props) {
-  const { data, tooltipFormatter, smoothingWindowSec = 30, xLabelFormatter } = props;
+  const {
+    data,
+    tooltipFormatter,
+    smoothingWindowSec = 30,
+    xLabelFormatter,
+    domainWarmupSec,
+    clampQuantiles = [0.05, 0.95]
+  } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [hover, setHover] = useState<{ x: number; y: number; idx: number } | null>(null);
@@ -82,14 +91,26 @@ export default function PaceChart(props: Props) {
     let minTs = smooth[0].ts;
     let maxTs = smooth[smooth.length - 1].ts;
     if (maxTs === minTs) maxTs = minTs + 1;
-    let minVal = Infinity;
-    let maxVal = -Infinity;
-    for (const pnt of smooth) {
-      const val = pnt.value;
-      if (Number.isFinite(val)) {
-        if (val < minVal) minVal = val;
-        if (val > maxVal) maxVal = val;
-      }
+    // Determine y-domain values with warmup and quantile trimming to avoid early low ramp dominating scale
+    const warmupMs = (typeof domainWarmupSec === "number" ? domainWarmupSec : smoothingWindowSec) * 1000;
+    const domainStart = smooth[0].ts + Math.max(0, warmupMs);
+    let domainVals = smooth.filter(p => p.ts >= domainStart).map(p => p.value);
+    if (domainVals.length < 3) {
+      // fallback to all if too few
+      domainVals = smooth.map(p => p.value);
+    }
+    // quantile clamp
+    const sorted = domainVals.filter(Number.isFinite).slice().sort((a, b) => a - b);
+    const q = (arr: number[], frac: number) => {
+      if (arr.length === 0) return NaN;
+      const idx = Math.min(arr.length - 1, Math.max(0, Math.floor(frac * (arr.length - 1))));
+      return arr[idx];
+    };
+    let minVal = sorted.length ? q(sorted, clampQuantiles[0]) : 0;
+    let maxVal = sorted.length ? q(sorted, clampQuantiles[1]) : 1;
+    if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
+      minVal = 0;
+      maxVal = 1;
     }
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
       minVal = 0;

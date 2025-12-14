@@ -709,6 +709,8 @@ export default function ExpTracker() {
 								const base = startAtRef.current ?? ts;
 								return formatElapsed(ts - base);
 							}}
+							smoothingWindowSec={15}
+							domainWarmupSec={30}
 						/>
 					</div>
 				</div>
