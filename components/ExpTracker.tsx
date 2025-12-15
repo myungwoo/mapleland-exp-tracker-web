@@ -722,7 +722,7 @@ export default function ExpTracker() {
 									const base = startAtRef.current ?? ts;
 									return formatElapsed(ts - base);
 								}}
-								domainWarmupSec={1}
+								domainWarmupSec={60}
 							/>
 						) : (
 							<PaceChart
