@@ -7,8 +7,7 @@ type Props = {
   tooltipFormatter?: (value: number) => string;
   smoothingWindowSec?: number; // defaults to 30s
   xLabelFormatter?: (ts: number) => string; // optional label for x (ts in same units as data.ts)
-  domainWarmupSec?: number; // ignore first warmup seconds for y-domain (default = smoothingWindowSec)
-  clampQuantiles?: [number, number]; // e.g., [0.05, 0.95] to reduce outliers; default applied
+  domainWarmupSec?: number; // ignore first warmup seconds for y-domain AND rendering (default = smoothingWindowSec)
 };
 
 export default function PaceChart(props: Props) {
@@ -18,7 +17,6 @@ export default function PaceChart(props: Props) {
     smoothingWindowSec = 30,
     xLabelFormatter,
     domainWarmupSec,
-    clampQuantiles = [0.05, 0.95]
   } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -88,29 +86,22 @@ export default function PaceChart(props: Props) {
     const margin = { left: 8, right: 8, top: 8, bottom: 4 };
     const w = Math.max(0, size.width - margin.left - margin.right);
     const h = Math.max(0, size.height - margin.top - margin.bottom);
-    let minTs = smooth[0].ts;
-    let maxTs = smooth[smooth.length - 1].ts;
-    if (maxTs === minTs) maxTs = minTs + 1;
-    // Determine y-domain values with warmup and quantile trimming to avoid early low ramp dominating scale
+    // Warmup: hide the first domainWarmupSec from rendering and domain
     const warmupMs = (typeof domainWarmupSec === "number" ? domainWarmupSec : smoothingWindowSec) * 1000;
     const domainStart = smooth[0].ts + Math.max(0, warmupMs);
-    let domainVals = smooth.filter(p => p.ts >= domainStart).map(p => p.value);
-    if (domainVals.length < 3) {
-      // fallback to all if too few
-      domainVals = smooth.map(p => p.value);
-    }
-    // quantile clamp
-    const sorted = domainVals.filter(Number.isFinite).slice().sort((a, b) => a - b);
-    const q = (arr: number[], frac: number) => {
-      if (arr.length === 0) return NaN;
-      const idx = Math.min(arr.length - 1, Math.max(0, Math.floor(frac * (arr.length - 1))));
-      return arr[idx];
-    };
-    let minVal = sorted.length ? q(sorted, clampQuantiles[0]) : 0;
-    let maxVal = sorted.length ? q(sorted, clampQuantiles[1]) : 1;
-    if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
-      minVal = 0;
-      maxVal = 1;
+    const visible = smooth.filter(p => p.ts >= domainStart);
+    // x domain
+    let minTs = visible.length ? visible[0].ts : domainStart;
+    let maxTs = visible.length ? visible[visible.length - 1].ts : (domainStart + 1);
+    // y domain based on visible
+    let minVal = Infinity;
+    let maxVal = -Infinity;
+    for (const pnt of visible) {
+      const val = pnt.value;
+      if (Number.isFinite(val)) {
+        if (val < minVal) minVal = val;
+        if (val > maxVal) maxVal = val;
+      }
     }
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
       minVal = 0;
@@ -121,7 +112,7 @@ export default function PaceChart(props: Props) {
       maxVal = minVal + 1;
     }
     const xScale = (ts: number) => {
-      const t = (ts - minTs) / (maxTs - minTs);
+      const t = (ts - minTs) / Math.max(1, (maxTs - minTs));
       return margin.left + t * w;
     };
     const yScale = (v: number) => {
@@ -129,13 +120,13 @@ export default function PaceChart(props: Props) {
       return margin.top + (1 - t) * h;
     };
     let d = "";
-    for (let i = 0; i < smooth.length; i++) {
-      const pnt = smooth[i];
+    for (let i = 0; i < visible.length; i++) {
+      const pnt = visible[i];
       const x = xScale(pnt.ts);
       const y = yScale(pnt.value);
       d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
     }
-    return { series: smooth, path: d, xScale, yScale, minTs, maxTs, minVal, maxVal };
+    return { series: visible, path: d, xScale, yScale, minTs, maxTs, minVal, maxVal };
   }, [data, size.width, size.height, smoothingWindowSec]);
 
   const handleMouseMove = (e: React.MouseEvent) => {

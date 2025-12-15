@@ -15,3 +15,4 @@ export function assetPath(inputPath: string): string {
   return `${base}/${inputPath}`.replace(/\/{2,}/g, "/");
 }
 
+
