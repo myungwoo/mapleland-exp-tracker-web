@@ -5,7 +5,6 @@ type Point = { ts: number; value: number };
 type Props = {
   data: Point[];
   tooltipFormatter?: (value: number) => string;
-  smoothingWindowSec?: number; // defaults to 30s
   xLabelFormatter?: (ts: number) => string; // optional label for x (ts in same units as data.ts)
   domainWarmupSec?: number; // ignore first warmup seconds for y-domain AND rendering (default = smoothingWindowSec)
 };
@@ -14,7 +13,6 @@ export default function PaceChart(props: Props) {
   const {
     data,
     tooltipFormatter,
-    smoothingWindowSec = 30,
     xLabelFormatter,
     domainWarmupSec,
   } = props;
@@ -48,48 +46,13 @@ export default function PaceChart(props: Props) {
         maxVal: 1
       };
     }
-    // Build smoothed series using time-weighted moving average over smoothingWindowSec
-    const W = Math.max(1, Math.floor(smoothingWindowSec * 1000));
-    const n = data.length;
-    const t = data.map(p => p.ts);
-    const v = data.map(p => p.value);
-    // cumulative trapezoidal integral: I[k] = integral from t0..t[k] of v dt (linear between samples)
-    const I = new Array<number>(n).fill(0);
-    for (let k = 1; k < n; k++) {
-      const dt = t[k] - t[k - 1];
-      I[k] = I[k - 1] + ((v[k - 1] + v[k]) / 2) * Math.max(0, dt);
-    }
-    // helper to compute integral at arbitrary time s within [t[p], t[p+1]]
-    let p = 0;
-    const integralAt = (s: number): number => {
-      if (s <= t[0]) return 0;
-      if (s >= t[n - 1]) return I[n - 1];
-      while (p + 1 < n && t[p + 1] <= s) p++;
-      // now s in (t[p], t[p+1]]
-      const dt = t[p + 1] - t[p];
-      const r = dt > 0 ? (s - t[p]) / dt : 0;
-      const vs = v[p] + (v[p + 1] - v[p]) * r; // linear interpolation
-      const seg = ((v[p] + vs) / 2) * (s - t[p]);
-      return I[p] + seg;
-    };
-    const smooth: Point[] = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const end = t[i];
-      const start = end - W;
-      const startClamped = Math.max(start, t[0]);
-      const dur = Math.max(1, end - startClamped);
-      const area = I[i] - integralAt(start);
-      const mv = area / dur;
-      smooth[i] = { ts: t[i], value: mv };
-    }
-
     const margin = { left: 8, right: 8, top: 8, bottom: 4 };
     const w = Math.max(0, size.width - margin.left - margin.right);
     const h = Math.max(0, size.height - margin.top - margin.bottom);
     // Warmup: hide the first domainWarmupSec from rendering and domain
-    const warmupMs = (typeof domainWarmupSec === "number" ? domainWarmupSec : smoothingWindowSec) * 1000;
-    const domainStart = smooth[0].ts + Math.max(0, warmupMs);
-    const visible = smooth.filter(p => p.ts >= domainStart);
+    const warmupMs = Math.max(0, (typeof domainWarmupSec === "number" ? domainWarmupSec : 0) * 1000);
+    const domainStart = data[0].ts + warmupMs;
+    const visible = data.filter(p => p.ts >= domainStart);
     // x domain
     let minTs = visible.length ? visible[0].ts : domainStart;
     let maxTs = visible.length ? visible[visible.length - 1].ts : (domainStart + 1);
@@ -127,7 +90,7 @@ export default function PaceChart(props: Props) {
       d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
     }
     return { series: visible, path: d, xScale, yScale, minTs, maxTs, minVal, maxVal };
-  }, [data, size.width, size.height, smoothingWindowSec]);
+  }, [data, size.width, size.height, domainWarmupSec]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current || !series || series.length === 0) return;

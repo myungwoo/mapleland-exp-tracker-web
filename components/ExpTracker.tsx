@@ -603,7 +603,8 @@ export default function ExpTracker() {
 			const pruned = next.filter(p => p.ts >= cutoff);
 			return pruned;
 		});
-	}, [cumExpValue, cumExpPct, hasStarted, elapsedMs]);
+		// Note: deliberately NOT depending on elapsedMs to avoid per-second points with no new sample
+	}, [cumExpValue, cumExpPct, hasStarted]);
 
 	// Reset history on full reset
 	useEffect(() => {
@@ -613,33 +614,27 @@ export default function ExpTracker() {
 	}, [hasStarted]);
 
 	// Compute pace series normalized to avgWindowMin:
-	// paceAt(t_i) = (deltaExp / deltaMs) * windowMs
-	// Uses variable sampling timestamps; if not enough history, uses the earliest available
-	const paceSeries = useMemo(() => {
-		if (history.length < 2) return [];
-		const windowMs = avgWindowMin * 60 * 1000;
-		const points: Array<{ ts: number; paceVal: number; pacePct: number }> = [];
-		let j = 0;
-		for (let i = 1; i < history.length; i++) {
-			const cur = history[i];
-			const t0 = cur.ts - windowMs;
-			// advance j to the first index where ts >= t0, but keep j < i
-			while (j < i && history[j].ts < t0) j++;
-			let k = j;
-			if (k >= i) k = i - 1; // fallback to immediate previous if window has no earlier point
-			const prev = history[k];
-			const deltaExp = cur.cumExp - prev.cumExp;
-			const deltaPct = cur.cumPct - prev.cumPct;
-			const deltaMs = Math.max(1, cur.ts - prev.ts);
-			const scale = windowMs / deltaMs;
-			points.push({
-				ts: cur.ts,
-				paceVal: deltaExp * scale,
-				pacePct: deltaPct * scale
-			});
+	// Overall average pace up to each point: (cumExp / elapsedSec) * (avgWindowMin * 60)
+	const paceOverallSeries = useMemo(() => {
+		if (history.length < 1) return [];
+		const scaleSec = avgWindowMin * 60;
+		const points: Array<{ ts: number; value: number }> = [];
+		for (let i = 0; i < history.length; i++) {
+			const h = history[i];
+			const elapsedSec = Math.max(1, Math.floor(h.elapsedAtMs / 1000));
+			const ratePerSec = h.cumExp / elapsedSec;
+			points.push({ ts: h.ts, value: ratePerSec * scaleSec });
 		}
 		return points;
 	}, [history, avgWindowMin]);
+
+	// Cumulative EXP series over time
+	const cumulativeSeries = useMemo(() => {
+		return history.map(h => ({ ts: h.ts, value: h.cumExp }));
+	}, [history]);
+
+	// Chart mode toggle
+	const [chartMode, setChartMode] = useState<"pace" | "cumulative">("pace");
 
 	// Map from history ts -> elapsedAtMs for tooltip labeling in timer-relative seconds
 	const elapsedByTs = useMemo(() => {
@@ -695,23 +690,53 @@ export default function ExpTracker() {
 				</div>
 				<div className="mt-2">
 					<div className="flex items-baseline justify-between">
-						<h3 className="font-semibold">페이스 (기준 {avgWindowMin}분)</h3>
-						<div className="text-xs text-white/60">샘플링 {intervalSec}초 · 가변 간격 대응</div>
+						<h3 className="font-semibold">
+							{chartMode === "pace" ? `페이스 (전체 평균 · 기준 ${avgWindowMin}분)` : "누적 경험치"}
+						</h3>
+						<div className="flex items-center gap-2">
+							<div className="text-xs text-white/60 hidden md:block">샘플링 {intervalSec}초 · 가변 간격 대응</div>
+							<div className="inline-flex rounded overflow-hidden border border-white/10">
+								<button
+									className={clsx("px-2 py-1 text-xs", chartMode === "pace" ? "bg-white/15" : "bg-white/5")}
+									onClick={() => setChartMode("pace")}
+								>
+									페이스
+								</button>
+								<button
+									className={clsx("px-2 py-1 text-xs", chartMode === "cumulative" ? "bg-white/15" : "bg-white/5")}
+									onClick={() => setChartMode("cumulative")}
+								>
+									누적
+								</button>
+							</div>
+						</div>
 					</div>
 					<div className="mt-2 h-40">
-						<PaceChart
-							data={paceSeries.map(p => ({ ts: p.ts, value: p.paceVal }))}
-							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
-							xLabelFormatter={(ts: number) => {
-								const v = elapsedByTs.get(ts);
-								if (typeof v === "number") return formatElapsed(v);
-								// Fallback: compute from current baseline to avoid empty label
-								const base = startAtRef.current ?? ts;
-								return formatElapsed(ts - base);
-							}}
-							smoothingWindowSec={15}
-							domainWarmupSec={60}
-						/>
+						{chartMode === "pace" ? (
+							<PaceChart
+								data={paceOverallSeries}
+								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
+								xLabelFormatter={(ts: number) => {
+									const v = elapsedByTs.get(ts);
+									if (typeof v === "number") return formatElapsed(v);
+									const base = startAtRef.current ?? ts;
+									return formatElapsed(ts - base);
+								}}
+								domainWarmupSec={1}
+							/>
+						) : (
+							<PaceChart
+								data={cumulativeSeries}
+								tooltipFormatter={(v: number) => `${formatNumber(v)} 누적`}
+								xLabelFormatter={(ts: number) => {
+									const v = elapsedByTs.get(ts);
+									if (typeof v === "number") return formatElapsed(v);
+									const base = startAtRef.current ?? ts;
+									return formatElapsed(ts - base);
+								}}
+								domainWarmupSec={0}
+							/>
+						)}
 					</div>
 				</div>
 			</div>
