@@ -710,7 +710,7 @@ export default function ExpTracker() {
 								return formatElapsed(ts - base);
 							}}
 							smoothingWindowSec={15}
-							domainWarmupSec={30}
+							domainWarmupSec={60}
 						/>
 					</div>
 				</div>
