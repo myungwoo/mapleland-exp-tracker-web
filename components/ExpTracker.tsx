@@ -632,27 +632,21 @@ export default function ExpTracker() {
 			const h = history[i];
 			const elapsedSec = Math.max(1, Math.floor(h.elapsedAtMs / 1000));
 			const ratePerSec = h.cumExp / elapsedSec;
-			points.push({ ts: h.ts, value: ratePerSec * scaleSec });
+			// Use elapsed time (ms) as x so pauses do not stretch the domain
+			points.push({ ts: h.elapsedAtMs, value: ratePerSec * scaleSec });
 		}
 		return points;
 	}, [history, avgWindowMin]);
 
 	// Cumulative EXP series over time
 	const cumulativeSeries = useMemo(() => {
-		return history.map(h => ({ ts: h.ts, value: h.cumExp }));
+		return history.map(h => ({ ts: h.elapsedAtMs, value: h.cumExp }));
 	}, [history]);
 
 	// Chart mode toggle
 	const [chartMode, setChartMode] = useState<"pace" | "cumulative">("pace");
 
-	// Map from history ts -> elapsedAtMs for tooltip labeling in timer-relative seconds
-	const elapsedByTs = useMemo(() => {
-		const m = new Map<number, number>();
-		for (let i = 0; i < history.length; i++) {
-			m.set(history[i].ts, history[i].elapsedAtMs);
-		}
-		return m;
-	}, [history]);
+	// x축 레이블은 경과 시간(ms)을 바로 사용
 
 	return (
 		<div className="space-y-4">
@@ -725,24 +719,14 @@ export default function ExpTracker() {
 							<PaceChart
 								data={paceOverallSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
-								xLabelFormatter={(ts: number) => {
-									const v = elapsedByTs.get(ts);
-									if (typeof v === "number") return formatElapsed(v);
-									const base = startAtRef.current ?? ts;
-									return formatElapsed(ts - base);
-								}}
+								xLabelFormatter={(ts: number) => formatElapsed(ts)}
 								domainWarmupSec={60}
 							/>
 						) : (
 							<PaceChart
 								data={cumulativeSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} 누적`}
-								xLabelFormatter={(ts: number) => {
-									const v = elapsedByTs.get(ts);
-									if (typeof v === "number") return formatElapsed(v);
-									const base = startAtRef.current ?? ts;
-									return formatElapsed(ts - base);
-								}}
+								xLabelFormatter={(ts: number) => formatElapsed(ts)}
 								domainWarmupSec={0}
 							/>
 						)}
