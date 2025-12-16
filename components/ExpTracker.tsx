@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoiOverlay, { RoiRect } from "./RoiOverlay";
-import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox } from "@/lib/canvas";
+import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox, preprocessExpCanvas } from "@/lib/canvas";
 import { initOcr, recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import { formatElapsed, formatNumber } from "@/lib/format";
 import { EXP_TABLE, computeExpDeltaFromTable } from "@/lib/expTable";
@@ -224,7 +224,7 @@ export default function ExpTracker() {
 				}
 				if (roiExp) {
 					const rect = toVideoSpaceRect(video, roiExp);
-					const canvasExpProc = drawRoiCanvas(video, rect, { binarize: true, scale: 2 });
+					const canvasExpProc = preprocessExpCanvas(video, rect, { minHeight: 64 });
 					const res = await recognizeExpBracketedWithText(canvasExpProc);
 					setOnboardingExpText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
@@ -282,7 +282,7 @@ export default function ExpTracker() {
 		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, { scale: 4, pad: 0 });
 		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
 		const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4 });
-		const canvasExpProc = drawRoiCanvas(video, rectExp, { binarize: true, scale: 2 });
+		const canvasExpProc = preprocessExpCanvas(video, rectExp, { minHeight: 64 });
 		const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2 });
 
 		const [levelRes, expRes] = await Promise.all([

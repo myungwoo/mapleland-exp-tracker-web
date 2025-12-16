@@ -228,4 +228,69 @@ export function cropDigitBoundingBox(
 	return out;
 }
 
+/**
+ * Preprocessor for EXP text like: "451519697 [42.59%]"
+ * - Scales up to a minimum height for better OCR at low resolutions
+ * - Binarizes using Otsu
+ * - Optionally blacks out uniform white bands at the top/bottom that are not characters
+ *   (keeps white glyphs on black background for preview parity)
+ */
+export function preprocessExpCanvas(
+	video: HTMLVideoElement,
+	roi: RoiRect,
+	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean } = {}
+): HTMLCanvasElement {
+	const minHeight = Math.max(24, Math.floor(options.minHeight ?? 64));
+	const desiredScale = options.scale && options.scale > 0 ? options.scale : Math.max(2, Math.min(8, Math.ceil(minHeight / Math.max(1, roi.h))));
+	const outW = Math.max(1, Math.round(roi.w * desiredScale));
+	const outH = Math.max(1, Math.round(roi.h * desiredScale));
+	const canvas = document.createElement("canvas");
+	canvas.width = outW;
+	canvas.height = outH;
+	const ctx = canvas.getContext("2d")!;
+	// Preserve original pixel structure when scaling up from low-res
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
+	// Robust binarization; keep foreground (bright glyphs) white on black background
+	const img = ctx.getImageData(0, 0, outW, outH);
+	binarizeOtsuInPlace(img.data, false /* invert */);
+	// Optionally black out uniform white bands at top/bottom (non-text areas)
+	if (options.removeWhiteBands !== false) {
+		const data = img.data;
+		const w = outW, h = outH;
+		const rowIsUniformWhite: boolean[] = new Array(h).fill(false);
+		// A row is considered "uniform white" if >= 99% pixels are white (255)
+		const whiteThreshold = Math.floor(w * 0.90);
+		for (let y = 0; y < h; y++) {
+			let whiteCount = 0;
+			for (let x = 0; x < w; x++) {
+				const i = (y * w + x) * 4;
+				if (data[i] === 255) whiteCount++;
+			}
+			rowIsUniformWhite[y] = whiteCount >= whiteThreshold;
+		}
+		// From top
+		let top = 0;
+		while (top < h && rowIsUniformWhite[top]) top++;
+		// From bottom
+		let bottom = h - 1;
+		while (bottom >= 0 && rowIsUniformWhite[bottom]) bottom--;
+		// Paint the bands black
+		for (let y = 0; y < top; y++) {
+			for (let x = 0; x < w; x++) {
+				const i = (y * w + x) * 4;
+				data[i] = data[i + 1] = data[i + 2] = 0;
+			}
+		}
+		for (let y = bottom + 1; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const i = (y * w + x) * 4;
+				data[i] = data[i + 1] = data[i + 2] = 0;
+			}
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+	return canvas;
+}
+
 

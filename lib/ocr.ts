@@ -17,7 +17,9 @@ async function initOcrExp() {
 			await worker.setParameters({
 				tessedit_char_whitelist: "0123456789.%[]",
 				preserve_interword_spaces: "1",
-				tessedit_pageseg_mode: PSM.SINGLE_LINE // treat as single line
+				tessedit_pageseg_mode: PSM.SINGLE_LINE, // treat as single line
+				// Higher DPI helps on low-resolution inputs after upscale
+				user_defined_dpi: "500"
 			});
 			return worker;
 		})();
