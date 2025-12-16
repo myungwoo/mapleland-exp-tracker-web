@@ -224,7 +224,7 @@ export default function ExpTracker() {
 				}
 				if (roiExp) {
 					const rect = toVideoSpaceRect(video, roiExp);
-					const canvasExpProc = preprocessExpCanvas(video, rect, { minHeight: 64 });
+					const canvasExpProc = preprocessExpCanvas(video, rect, { minHeight: 120 });
 					const res = await recognizeExpBracketedWithText(canvasExpProc);
 					setOnboardingExpText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
@@ -282,7 +282,7 @@ export default function ExpTracker() {
 		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, { scale: 4, pad: 0 });
 		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
 		const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4 });
-		const canvasExpProc = preprocessExpCanvas(video, rectExp, { minHeight: 64 });
+		const canvasExpProc = preprocessExpCanvas(video, rectExp, { minHeight: 120 });
 		const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2 });
 
 		const [levelRes, expRes] = await Promise.all([
