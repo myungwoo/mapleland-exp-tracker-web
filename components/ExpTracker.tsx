@@ -544,6 +544,8 @@ export default function ExpTracker() {
 		const onKey = (e: KeyboardEvent) => {
 			const code = (e as any).code || (e as any).key;
 			if (code === "KeyR" || e.key === "r" || e.key === "R") {
+				// Allow browser refresh shortcuts (Cmd+R / Ctrl+R)
+				if ((e as any).metaKey || (e as any).ctrlKey) return;
 				const el = e.target as HTMLElement | null;
 				const tag = el?.tagName?.toLowerCase();
 				const isForm =
@@ -662,7 +664,10 @@ export default function ExpTracker() {
 							타이머 시작 <span className="ml-2 text-xs opacity-70">Space</span>
 						</button>
 					)}
-					<button className="btn" onClick={resetSampling} disabled={!hasStarted}>초기화</button>
+					<button className="btn" onClick={resetSampling} disabled={!hasStarted}>
+						초기화
+						<span className="ml-2 text-xs opacity-70">R</span>
+					</button>
 					<button className="btn" onClick={openPip}>PIP 열기</button>
 				</div>
 			</div>

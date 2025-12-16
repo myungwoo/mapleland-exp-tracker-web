@@ -88,6 +88,8 @@ export class PipController {
         }
         try { this.callbacks.onToggle(); } catch {}
       } else if (code === "KeyR" || (e as any).key === "r" || (e as any).key === "R") {
+        // Allow browser refresh shortcuts (Cmd+R / Ctrl+R) to pass through
+        if ((e as any).metaKey || (e as any).ctrlKey) return;
         const el = e.target as HTMLElement | null;
         const tag = el?.tagName?.toLowerCase();
         const isForm = !!el && (el.isContentEditable || tag === "input" || tag === "textarea" || tag === "select");
