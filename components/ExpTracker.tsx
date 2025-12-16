@@ -645,8 +645,30 @@ export default function ExpTracker() {
 		return history.map(h => ({ ts: h.elapsedAtMs, value: h.cumExp }));
 	}, [history]);
 
+	// Recent (windowed) pace series over last 30s, normalized to avgWindowMin
+	const recentPaceSeries = useMemo(() => {
+		if (history.length < 1) return [];
+		const windowMs = 30 * 1000;
+		const scaleSec = avgWindowMin * 60;
+		const points: Array<{ ts: number; value: number }> = [];
+		let j = 0;
+		for (let i = 0; i < history.length; i++) {
+			const cur = history[i];
+			const t0 = Math.max(0, cur.elapsedAtMs - windowMs);
+			while (j < i && history[j].elapsedAtMs < t0) j++;
+			let k = j;
+			if (k >= i) k = Math.max(0, i - 1);
+			const prev = history[k];
+			const deltaExp = cur.cumExp - prev.cumExp;
+			const deltaMs = Math.max(1, cur.elapsedAtMs - prev.elapsedAtMs);
+			const ratePerSec = deltaExp / (deltaMs / 1000);
+			points.push({ ts: cur.elapsedAtMs, value: ratePerSec * scaleSec });
+		}
+		return points;
+	}, [history, avgWindowMin]);
+
 	// Chart mode toggle
-	const [chartMode, setChartMode] = useState<"pace" | "cumulative">("pace");
+	const [chartMode, setChartMode] = useState<"pace" | "paceRecent" | "cumulative">("pace");
 
 	// x축 레이블은 경과 시간(ms)을 바로 사용
 
@@ -699,7 +721,11 @@ export default function ExpTracker() {
 				<div className="mt-2">
 					<div className="flex items-baseline justify-between">
 						<h3 className="font-semibold">
-							{chartMode === "pace" ? `페이스 (전체 평균 · 기준 ${avgWindowMin}분)` : "누적 경험치"}
+							{chartMode === "pace"
+								? `페이스 (전체 평균 · 기준 ${avgWindowMin}분)`
+								: chartMode === "paceRecent"
+								? `최근 30초 페이스 (기준 ${avgWindowMin}분)`
+								: "누적 경험치"}
 						</h3>
 						<div className="flex items-center gap-2">
 							<div className="text-xs text-white/60 hidden md:block">샘플링 {intervalSec}초 · 가변 간격 대응</div>
@@ -711,6 +737,12 @@ export default function ExpTracker() {
 									페이스
 								</button>
 								<button
+									className={clsx("px-2 py-1 text-xs", chartMode === "paceRecent" ? "bg-white/15" : "bg-white/5")}
+									onClick={() => setChartMode("paceRecent")}
+								>
+									최근 30초
+								</button>
+								<button
 									className={clsx("px-2 py-1 text-xs", chartMode === "cumulative" ? "bg-white/15" : "bg-white/5")}
 									onClick={() => setChartMode("cumulative")}
 								>
@@ -719,10 +751,22 @@ export default function ExpTracker() {
 							</div>
 						</div>
 					</div>
+					{chartMode === "pace" ? (
+						<p className="text-xs text-white/60 mt-1">시작부터 현재까지의 평균 페이스입니다.</p>
+					) : chartMode === "paceRecent" ? (
+						<p className="text-xs text-white/60 mt-1">현재 시점 기준 최근 30초의 평균 페이스입니다.</p>
+					) : null}
 					<div className="mt-2 h-40">
 						{chartMode === "pace" ? (
 							<PaceChart
 								data={paceOverallSeries}
+								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
+								xLabelFormatter={(ts: number) => formatElapsed(ts)}
+								domainWarmupSec={60}
+							/>
+						) : chartMode === "paceRecent" ? (
+							<PaceChart
+								data={recentPaceSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
 								xLabelFormatter={(ts: number) => formatElapsed(ts)}
 								domainWarmupSec={60}
