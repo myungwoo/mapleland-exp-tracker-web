@@ -362,6 +362,8 @@ export default function ExpTracker() {
 		// update last valid pointer only when the current sample is valid
 		if (isValid) {
 			lastValidSampleRef.current = sample;
+			lastSampleTsRef.current = sample.ts;
+			setSampleTick(t => t + 1);
 		}
 	}, [readRoisOnce, expTable]);
 
@@ -591,20 +593,27 @@ export default function ExpTracker() {
 	// ----- Pace history and series (time-normalized) -----
 	type HistoryPoint = { ts: number; cumExp: number; cumPct: number; elapsedAtMs: number };
 	const [history, setHistory] = useState<HistoryPoint[]>([]);
+	// Per-sample tick tracking to append history exactly once per valid sample
+	const [sampleTick, setSampleTick] = useState<number>(0);
+	const handledTickRef = useRef<number>(0);
+	const lastSampleTsRef = useRef<number | null>(null);
 
-	// Append to history whenever cumulative values change while a session exists
+	// Append to history once per valid sampling tick (even if increase is zero)
 	useEffect(() => {
 		if (!hasStarted) return;
-		const now = Date.now();
+		if (sampleTick === 0) return;
+		if (handledTickRef.current === sampleTick) return;
+		const ts = lastSampleTsRef.current;
+		if (ts == null) return;
 		setHistory(prev => {
-			const next = prev.concat({ ts: now, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs });
+			const next = prev.concat({ ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs });
 			// keep last 24h to avoid unbounded growth
-			const cutoff = now - 24 * 3600 * 1000;
+			const cutoff = ts - 24 * 3600 * 1000;
 			const pruned = next.filter(p => p.ts >= cutoff);
 			return pruned;
 		});
-		// Note: deliberately NOT depending on elapsedMs to avoid per-second points with no new sample
-	}, [cumExpValue, cumExpPct, hasStarted]);
+		handledTickRef.current = sampleTick;
+	}, [sampleTick, hasStarted, cumExpValue, cumExpPct, elapsedMs]);
 
 	// Reset history on full reset
 	useEffect(() => {
