@@ -35,6 +35,8 @@ export default function ExpTracker() {
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
 	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 60);
+	// Interactive chart x-range (elapsed ms). Null = full range.
+	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
 	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // running
@@ -787,6 +789,14 @@ fill="currentColor" stroke="none">
 									누적
 								</button>
 							</div>
+							{chartRangeMs ? (
+								<button
+									className="ml-2 px-2 py-1 text-xs rounded border border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25"
+									onClick={() => setChartRangeMs(null)}
+								>
+									전체 보기
+								</button>
+							) : null}
 						</div>
 					</div>
 					{chartMode === "pace" ? (
@@ -800,21 +810,27 @@ fill="currentColor" stroke="none">
 								data={paceOverallSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
 								xLabelFormatter={(ts: number) => formatElapsed(ts)}
-								domainWarmupSec={60}
+								xDomain={chartRangeMs}
+								enableBrush
+								onRangeChange={(s, e) => setChartRangeMs([s, e])}
 							/>
 						) : chartMode === "paceRecent" ? (
 							<PaceChart
 								data={recentPaceSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} / ${avgWindowMin}분`}
 								xLabelFormatter={(ts: number) => formatElapsed(ts)}
-								domainWarmupSec={60}
+								xDomain={chartRangeMs}
+								enableBrush
+								onRangeChange={(s, e) => setChartRangeMs([s, e])}
 							/>
 						) : (
 							<PaceChart
 								data={cumulativeSeries}
 								tooltipFormatter={(v: number) => `${formatNumber(v)} 누적`}
 								xLabelFormatter={(ts: number) => formatElapsed(ts)}
-								domainWarmupSec={0}
+								xDomain={chartRangeMs}
+								enableBrush
+								onRangeChange={(s, e) => setChartRangeMs([s, e])}
 							/>
 						)}
 					</div>

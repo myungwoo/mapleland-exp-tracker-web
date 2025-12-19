@@ -6,7 +6,9 @@ type Props = {
   data: Point[];
   tooltipFormatter?: (value: number) => string;
   xLabelFormatter?: (ts: number) => string; // optional label for x (ts in same units as data.ts)
-  domainWarmupSec?: number; // ignore first warmup seconds for y-domain AND rendering (default = smoothingWindowSec)
+  xDomain?: [number, number] | null; // optional external x-domain (ms)
+  enableBrush?: boolean;
+  onRangeChange?: (startMs: number, endMs: number) => void;
 };
 
 export default function PaceChart(props: Props) {
@@ -14,11 +16,15 @@ export default function PaceChart(props: Props) {
     data,
     tooltipFormatter,
     xLabelFormatter,
-    domainWarmupSec,
+    xDomain = null,
+    enableBrush = true,
+    onRangeChange
   } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [hover, setHover] = useState<{ x: number; y: number; idx: number } | null>(null);
+  const [brush, setBrush] = useState<{ startX: number; endX: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -49,13 +55,13 @@ export default function PaceChart(props: Props) {
     const margin = { left: 8, right: 8, top: 8, bottom: 4 };
     const w = Math.max(0, size.width - margin.left - margin.right);
     const h = Math.max(0, size.height - margin.top - margin.bottom);
-    // Warmup: hide the first domainWarmupSec from rendering and domain
-    const warmupMs = Math.max(0, (typeof domainWarmupSec === "number" ? domainWarmupSec : 0) * 1000);
-    const domainStart = data[0].ts + warmupMs;
-    const visible = data.filter(p => p.ts >= domainStart);
-    // x domain
-    let minTs = visible.length ? visible[0].ts : domainStart;
-    let maxTs = visible.length ? visible[visible.length - 1].ts : (domainStart + 1);
+    // x-domain: external or full range
+    const fullMin = data[0].ts;
+    const fullMax = data[data.length - 1].ts;
+    let minTs = xDomain ? xDomain[0] : fullMin;
+    let maxTs = xDomain ? xDomain[1] : fullMax;
+    if (maxTs <= minTs) maxTs = minTs + 1;
+    const visible = data.filter(p => p.ts >= minTs && p.ts <= maxTs);
     // y domain based on visible
     let minVal = Infinity;
     let maxVal = -Infinity;
@@ -90,12 +96,15 @@ export default function PaceChart(props: Props) {
       d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
     }
     return { series: visible, path: d, xScale, yScale, minTs, maxTs, minVal, maxVal };
-  }, [data, size.width, size.height, domainWarmupSec]);
+  }, [data, size.width, size.height, xDomain]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current || !series || series.length === 0) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    if (enableBrush && isDragging) {
+      setBrush(b => (b ? { ...b, endX: x } : null));
+    }
     // find nearest by x
     let bestIdx = 0;
     let bestDist = Infinity;
@@ -112,10 +121,59 @@ export default function PaceChart(props: Props) {
     setHover({ x: px, y: py, idx: bestIdx });
   };
 
-  const handleMouseLeave = () => setHover(null);
+  const handleMouseLeave = () => {
+    setHover(null);
+    if (enableBrush && isDragging) {
+      setIsDragging(false);
+      setBrush(null);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!enableBrush) return;
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    setIsDragging(true);
+    setBrush({ startX: x, endX: x });
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!enableBrush) return;
+    if (!containerRef.current) return;
+    if (!brush) {
+      setIsDragging(false);
+      return;
+    }
+    setIsDragging(false);
+    const startPx = Math.min(brush.startX, brush.endX);
+    const endPx = Math.max(brush.startX, brush.endX);
+    setBrush(null);
+    // Ignore tiny drags
+    if (endPx - startPx < 4) return;
+    // Invert xScale
+    const inv = (px: number) => {
+      // clamp to chart area horizontally
+      const left = 8; // margin.left
+      const right = size.width - 8; // approx margin.right
+      const clamped = Math.max(left, Math.min(right, px));
+      const t = (clamped - left) / Math.max(1, right - left);
+      return minTs + t * (maxTs - minTs);
+    };
+    const sTs = inv(startPx);
+    const eTs = inv(endPx);
+    if (onRangeChange) onRangeChange(Math.min(sTs, eTs), Math.max(sTs, eTs));
+  };
 
   return (
-    <div ref={containerRef} className="w-full h-full relative" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+    <div
+      ref={containerRef}
+      className="w-full h-full relative"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+    >
       {size.width > 0 && size.height > 0 && series && series.length > 0 ? (
         <>
           <svg width={size.width} height={size.height} className="absolute inset-0">
@@ -142,14 +200,23 @@ export default function PaceChart(props: Props) {
             {/* main line */}
             <path d={path} fill="none" stroke="url(#pace-stroke)" strokeWidth={2} />
             {/* hover marker */}
-            {hover ? (
+            {hover && hover.idx >= 0 && hover.idx < series.length ? (
               <>
                 <line x1={hover.x} x2={hover.x} y1={0} y2={size.height} stroke="rgba(255,255,255,0.2)" />
                 <circle cx={hover.x} cy={hover.y} r={3} fill="#34d399" stroke="#111827" />
               </>
             ) : null}
           </svg>
-          {hover ? (
+          {enableBrush && brush ? (
+            <div
+              className="absolute top-0 bottom-0 bg-white/10 border border-white/20 pointer-events-none"
+              style={{
+                left: Math.min(brush.startX, brush.endX),
+                width: Math.abs(brush.endX - brush.startX)
+              }}
+            />
+          ) : null}
+          {hover && hover.idx >= 0 && hover.idx < series.length ? (
             <div
               className="absolute pointer-events-none text-xs bg-black/70 text-white px-2 py-1 rounded border border-white/10"
               style={{
