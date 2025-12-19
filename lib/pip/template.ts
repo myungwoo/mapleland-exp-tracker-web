@@ -1,7 +1,10 @@
 export function pipStyles(): string {
   return `
+    @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
     :root { color-scheme: dark; }
-    html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    /* Center all content vertically when there's extra height */
+    html, body { min-height: 100vh; display: grid; place-content: center; }
     .container { display: grid; grid-template-rows: auto auto auto; gap: 2px; padding: 10px 12px; text-align: center; }
     .row { display: flex; align-items: center; justify-content: center; }
     .timer { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 36px; line-height: 1; letter-spacing: 0.5px; }

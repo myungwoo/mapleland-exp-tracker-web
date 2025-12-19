@@ -8,7 +8,7 @@ export const metadata = {
 export default function RootLayout(props: { children: React.ReactNode }) {
 	return (
 		<html lang="ko">
-			<body className="min-h-screen antialiased">
+			<body className="min-h-screen antialiased font-sans">
 				{props.children}
 			</body>
 		</html>
