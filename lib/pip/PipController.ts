@@ -128,7 +128,6 @@ export class PipController {
     // Toggle button
     const playBtn = qs("pip-toggle");
     if (playBtn) {
-      playBtn.textContent = state.isSampling ? "⏸" : "▶";
       playBtn.setAttribute("aria-label", state.isSampling ? "일시정지" : "시작");
       playBtn.classList.remove("play", "pause");
       playBtn.classList.add(state.isSampling ? "pause" : "play");
