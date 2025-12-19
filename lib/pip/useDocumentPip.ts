@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef } from "react";
 import { PipController } from "./PipController";
 import type { PipCallbacks, PipState } from "./types";
 
+export function isDocumentPipSupported(): boolean {
+  if (typeof window === "undefined") return false;
+  const dpi = (window as any).documentPictureInPicture;
+  return !!(dpi && typeof dpi.requestWindow === "function");
+}
+
 export function useDocumentPip(callbacks: PipCallbacks) {
   const controllerRef = useRef<PipController | null>(null);
   const cbRef = useRef<PipCallbacks>(callbacks);

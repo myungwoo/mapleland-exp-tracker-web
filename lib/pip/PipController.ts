@@ -24,7 +24,7 @@ export class PipController {
     // @ts-ignore experimental
     const dpi: any = (window as any).documentPictureInPicture;
     if (!dpi || typeof dpi.requestWindow !== "function") {
-      alert("이 브라우저는 문서 PIP(Document Picture-in-Picture)를 지원하지 않습니다. 크롬 최신 버전을 사용해 주세요.");
+      alert("이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.");
       return;
     }
     // Close existing if any

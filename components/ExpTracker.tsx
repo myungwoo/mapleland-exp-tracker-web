@@ -9,7 +9,7 @@ import { EXP_TABLE, computeExpDeltaFromTable } from "@/lib/expTable";
 import { usePersistentState } from "@/lib/persist";
 import clsx from "classnames";
 import Modal from "./Modal";
-import { useDocumentPip } from "@/lib/pip/useDocumentPip";
+import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
 import PaceChart from "@/components/PaceChart";
@@ -85,6 +85,9 @@ export default function ExpTracker() {
 			resetSamplingRef.current();
 		}
 	});
+	const pipSupported = isDocumentPipSupported();
+	const pipUnsupportedTooltip =
+		"이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.";
 	// Live sampling state for PiP event handlers (avoid stale closures)
 	const isSamplingRef = useRef<boolean>(false);
 	useEffect(() => { isSamplingRef.current = isSampling; }, [isSampling]);
@@ -715,22 +718,38 @@ fill="currentColor" stroke="none">
 						초기화
 						<span className="ml-2 text-xs opacity-70">R</span>
 					</button>
-					<button className="btn" onClick={openPip}>
-						PIP 열기
-						<svg
-							className="w-4 h-4 ml-2 shrink-0"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="1.8"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							aria-hidden="true"
+					<div className="relative inline-block group">
+						<button
+							className={`btn ${!pipSupported ? "cursor-not-allowed opacity-70" : ""}`}
+							onClick={openPip}
+							disabled={!pipSupported}
+							aria-disabled={!pipSupported}
+							aria-label="PIP 열기"
 						>
-							<rect x="3" y="4" width="18" height="14" rx="2" ry="2" />
-							<rect x="13" y="10" width="7" height="5" rx="1" ry="1" />
-						</svg>
-					</button>
+							PIP 열기
+							<svg
+								className="w-4 h-4 ml-2 shrink-0"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.8"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								aria-hidden="true"
+							>
+								<rect x="3" y="4" width="18" height="14" rx="2" ry="2" />
+								<rect x="13" y="10" width="7" height="5" rx="1" ry="1" />
+							</svg>
+						</button>
+						{!pipSupported && (
+							<div
+								role="tooltip"
+								className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-pre rounded border border-white/10 bg-black/90 px-3 py-2 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+							>
+								{pipUnsupportedTooltip}
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 
@@ -963,6 +982,7 @@ fill="currentColor" stroke="none">
 				open={onboardingOpen}
 				step={onboardingStep}
 				hasStream={!!stream}
+				pipSupported={pipSupported}
 				onSelectWindow={async () => {
 					setSettingsOpen(true);
 					await startCapture();

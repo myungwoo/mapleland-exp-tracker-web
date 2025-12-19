@@ -5,6 +5,7 @@ type Props = {
   open: boolean;
   step: number; // 0..4
   hasStream: boolean;
+  pipSupported?: boolean;
   onSelectWindow: () => Promise<void> | void;
   onActivateLevel: () => void;
   onActivateExp: () => void;
@@ -168,10 +169,26 @@ export default function OnboardingOverlay(props: Props) {
               타이머 시작/일시정지, 초기화를 PIP 창에서도 바로 할 수 있습니다.
             </p>
             <div className="mt-4 flex items-center gap-2">
-              <button className="btn btn-primary" onClick={() => props.onOpenPip && props.onOpenPip()}>
-                PIP 열기
-              </button>
-              <span className="text-xs text-white/70">최신 크롬 권장, 브라우저 지원 필요</span>
+              <div className="relative inline-block group">
+                <button
+                  className={`btn btn-primary ${props.pipSupported === false ? "cursor-not-allowed opacity-70" : ""}`}
+                  onClick={() => props.onOpenPip && props.onOpenPip()}
+                  disabled={props.pipSupported === false}
+                  aria-disabled={props.pipSupported === false}
+                  aria-label="PIP 열기"
+                >
+                  PIP 열기
+                </button>
+                {props.pipSupported === false && (
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-pre rounded border border-white/10 bg-black/90 px-3 py-2 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+                  >
+                    이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.
+                  </div>
+                )}
+              </div>
+              <span className="text-xs text-white/70">PIP 지원을 위해 최신 Chrome·Edge 사용을 권장합니다.</span>
             </div>
           </>
         );
