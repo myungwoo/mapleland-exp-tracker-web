@@ -8,12 +8,12 @@ export function pipStyles(): string {
     .meta { font-size: 12px; opacity: 0.85; display: flex; gap: 8px; justify-content: center; margin-top: 4px; margin-bottom: 4px; }
     .bigger { color: #ffcf33; font-weight: 800; font-size: 24px; }
     .big { color: #ffcf33; font-weight: 800; font-size: 16px; }
-    .reset { margin-right: 3px; }
-    button.pip { background: #ffffff14; color: white; border: 1px solid #ffffff22; border-radius: 8px; width: 40px; height: 40px; font-size: 18px; transition: background-color 120ms ease; }
+    button.pip { background: #ffffff14; color: white; border: 1px solid #ffffff22; border-radius: 8px; width: 40px; height: 40px; font-size: 20px; transition: background-color 120ms ease; }
     button.pip.play { background: #22c55e; border-color: #16a34a; }   /* green */
-    button.pip.pause { background: #f59e0b; border-color: #d97706; }  /* yellow/amber */
-    button.pip.reset { background: #ef4444; border-color: #dc2626; }  /* red */
+    button.pip.pause { background: #ef4444; border-color: #dc2626; font-size: 26px; }  /* red */
     button.pip:active { transform: translateY(1px); }
+    /* Make the play/pause button slightly wider horizontally */
+    #pip-toggle { width: 60px; }
     .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
   `;
 }
@@ -22,7 +22,6 @@ export function pipMarkup(): string {
   return `
     <div class="row" style="gap: 6px;">
       <button id="pip-toggle" class="pip play" aria-label="시작">▶</button>
-      <button id="pip-reset" class="pip reset" aria-label="초기화">↺</button>
       <div class="timer" id="pip-timer">00:00:00</div>
     </div>
     <div class="row meta">

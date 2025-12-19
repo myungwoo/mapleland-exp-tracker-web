@@ -93,8 +93,8 @@ export class PipController {
         const el = e.target as HTMLElement | null;
         const tag = el?.tagName?.toLowerCase();
         const isForm = !!el && (el.isContentEditable || tag === "input" || tag === "textarea" || tag === "select");
-        // If focus is on a button, avoid interfering with button behaviors
-        if (isForm || tag === "button") return;
+        // Allow R to work anywhere except when typing in form controls
+        if (isForm) return;
         e.preventDefault();
         try { this.callbacks.onReset(); } catch {}
       }
@@ -146,9 +146,6 @@ export class PipController {
     if (gainedEl) gainedEl.textContent = state.gainedText;
     const estEl = qs("pip-est");
     if (estEl) estEl.textContent = state.estText;
-    // Keep reset button style
-    const resetBtn = qs("pip-reset");
-    if (resetBtn) resetBtn.classList.add("reset");
   }
 
   close(): void {
