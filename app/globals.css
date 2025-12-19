@@ -29,6 +29,14 @@ body {
 	@apply bg-accent/20 text-teal-200 hover:bg-accent/30;
 }
 
+.btn-danger {
+	@apply bg-rose-500/20 text-rose-200 hover:bg-rose-500/30;
+}
+
+.btn-warning {
+	@apply bg-amber-500/20 text-amber-200 hover:bg-amber-500/30;
+}
+
 /* Form controls - ensure dark dropdown readability */
 select {
 	background-color: rgb(var(--background));
