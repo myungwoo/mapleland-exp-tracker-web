@@ -2,7 +2,7 @@
 
 import PaceChart from "@/components/PaceChart";
 import { cn } from "@/lib/cn";
-import { formatElapsed, formatNumber } from "@/lib/format";
+import { formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
 
 type Stats = {
 	nextAt: Date;
@@ -27,6 +27,11 @@ type Props = {
 
 	chartRangeMs: [number, number] | null;
 	onChartRangeChange: (r: [number, number] | null) => void;
+
+	chartShowAxisLabels: boolean;
+	onChartShowAxisLabelsChange: (v: boolean) => void;
+	chartShowGrid: boolean;
+	onChartShowGridChange: (v: boolean) => void;
 
 	paceOverallSeries: SeriesPoint[];
 	recentPaceSeries: SeriesPoint[];
@@ -91,6 +96,22 @@ export default function TrackerSummary(props: Props) {
 								누적
 							</button>
 						</div>
+						<div className="inline-flex rounded overflow-hidden border border-white/10">
+							<button
+								className={cn("px-2 py-1 text-xs", props.chartShowAxisLabels ? "bg-white/15" : "bg-white/5")}
+								onClick={() => props.onChartShowAxisLabelsChange(!props.chartShowAxisLabels)}
+								title="축 라벨 표시"
+							>
+								축
+							</button>
+							<button
+								className={cn("px-2 py-1 text-xs", props.chartShowGrid ? "bg-white/15" : "bg-white/5")}
+								onClick={() => props.onChartShowGridChange(!props.chartShowGrid)}
+								title="그리드 표시"
+							>
+								그리드
+							</button>
+						</div>
 						{props.chartRangeMs ? (
 							<button
 								className="ml-2 px-2 py-1 text-xs rounded border border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25"
@@ -113,8 +134,11 @@ export default function TrackerSummary(props: Props) {
 						<PaceChart
 							data={props.paceOverallSeries}
 							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.avgWindowMin}분`}
+							yLabelFormatter={(v: number) => formatNumberCompact(v)}
 							xLabelFormatter={(ts: number) => formatElapsed(ts)}
 							xDomain={props.chartRangeMs}
+							showAxisLabels={props.chartShowAxisLabels}
+							showGrid={props.chartShowGrid}
 							enableBrush
 							onRangeChange={(s, e) => props.onChartRangeChange([s, e])}
 						/>
@@ -122,8 +146,11 @@ export default function TrackerSummary(props: Props) {
 						<PaceChart
 							data={props.recentPaceSeries}
 							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.avgWindowMin}분`}
+							yLabelFormatter={(v: number) => formatNumberCompact(v)}
 							xLabelFormatter={(ts: number) => formatElapsed(ts)}
 							xDomain={props.chartRangeMs}
+							showAxisLabels={props.chartShowAxisLabels}
+							showGrid={props.chartShowGrid}
 							enableBrush
 							onRangeChange={(s, e) => props.onChartRangeChange([s, e])}
 						/>
@@ -131,8 +158,11 @@ export default function TrackerSummary(props: Props) {
 						<PaceChart
 							data={props.cumulativeSeries}
 							tooltipFormatter={(v: number) => `${formatNumber(v)} 누적`}
+							yLabelFormatter={(v: number) => formatNumberCompact(v)}
 							xLabelFormatter={(ts: number) => formatElapsed(ts)}
 							xDomain={props.chartRangeMs}
+							showAxisLabels={props.chartShowAxisLabels}
+							showGrid={props.chartShowGrid}
 							enableBrush
 							onRangeChange={(s, e) => props.onChartRangeChange([s, e])}
 						/>

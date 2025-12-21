@@ -37,6 +37,8 @@ export default function ExpTracker() {
 	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 60);
 	// Interactive chart x-range (elapsed ms). Null = full range.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
+	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
+	const [chartShowGrid, setChartShowGrid] = usePersistentState<boolean>("chartShowGrid", true);
 	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // running
@@ -410,6 +412,10 @@ export default function ExpTracker() {
 				onChartModeChange={setChartMode}
 				chartRangeMs={chartRangeMs}
 				onChartRangeChange={setChartRangeMs}
+				chartShowAxisLabels={chartShowAxisLabels}
+				onChartShowAxisLabelsChange={setChartShowAxisLabels}
+				chartShowGrid={chartShowGrid}
+				onChartShowGridChange={setChartShowGrid}
 				paceOverallSeries={paceOverallSeries}
 				recentPaceSeries={recentPaceSeries}
 				cumulativeSeries={cumulativeSeries}
