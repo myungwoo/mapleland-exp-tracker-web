@@ -30,6 +30,12 @@ body {
 	@apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-white/10 hover:bg-white/20 transition;
 }
 
+/* Disabled button visibility */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+	@apply opacity-50 cursor-not-allowed saturate-0 hover:bg-white/10;
+}
+
 .btn-primary {
 	@apply bg-accent/20 text-teal-200 hover:bg-accent/30;
 }

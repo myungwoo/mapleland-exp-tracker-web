@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+export type StopwatchSnapshot = {
+	elapsedMs: number;
+	baseElapsedMs: number;
+	isRunning: boolean;
+};
+
 /**
  * 경과 시간(초 단위 UI 갱신)과 “일시정지 후 재개”를 위한 baseElapsedMs를 함께 관리합니다.
  *
@@ -9,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export function useStopwatch() {
 	const [elapsedMs, setElapsedMs] = useState(0);
 	const [baseElapsedMs, setBaseElapsedMs] = useState(0);
+	const [isRunning, setIsRunning] = useState(false);
 
 	const startAtRef = useRef<number | null>(null);
 	const clockRef = useRef<number | null>(null);
@@ -29,6 +36,7 @@ export function useStopwatch() {
 		// 기존 타이머가 있으면 먼저 정리합니다.
 		stopClock();
 
+		setIsRunning(true);
 		startAtRef.current = Date.now() - baseElapsedMs;
 		// 즉시 1회 갱신해서 “시작 버튼 누른 직후”도 자연스럽게 보이게 합니다.
 		if (startAtRef.current != null) {
@@ -41,8 +49,24 @@ export function useStopwatch() {
 		}, 1000) as unknown as number;
 	}, [baseElapsedMs, stopClock]);
 
+	const startFromElapsed = useCallback((nextElapsedMs: number) => {
+		// applySnapshot 같은 “외부 복원” 시, state 업데이트 타이밍(stale closure)을 피하기 위해
+		// baseElapsedMs를 인자로 직접 받는 별도 API를 둡니다.
+		stopClock();
+		setIsRunning(true);
+		setBaseElapsedMs(nextElapsedMs);
+		startAtRef.current = Date.now() - nextElapsedMs;
+		setElapsedMs(nextElapsedMs);
+		clockRef.current = window.setInterval(() => {
+			const startAt = startAtRef.current;
+			if (startAt == null) return;
+			setElapsedMs(Date.now() - startAt);
+		}, 1000) as unknown as number;
+	}, [stopClock]);
+
 	const pause = useCallback(() => {
 		stopClock();
+		setIsRunning(false);
 		const frozen = elapsedRef.current;
 		setBaseElapsedMs(frozen);
 		// elapsedMs는 이미 frozen 값이므로 별도 set은 필요 없지만,
@@ -53,11 +77,31 @@ export function useStopwatch() {
 	const reset = useCallback(() => {
 		stopClock();
 		startAtRef.current = null;
+		setIsRunning(false);
 		setBaseElapsedMs(0);
 		setElapsedMs(0);
 	}, [stopClock]);
 
-	return { elapsedMs, baseElapsedMs, start, pause, reset };
+	const getSnapshot = useCallback((): StopwatchSnapshot => {
+		return {
+			elapsedMs: elapsedRef.current,
+			baseElapsedMs,
+			isRunning
+		};
+	}, [baseElapsedMs, isRunning]);
+
+	const applySnapshot = useCallback((snap: StopwatchSnapshot) => {
+		stopClock();
+		startAtRef.current = null;
+		setElapsedMs(snap.elapsedMs);
+		setBaseElapsedMs(snap.baseElapsedMs);
+		setIsRunning(snap.isRunning);
+		if (snap.isRunning) {
+			startFromElapsed(snap.elapsedMs);
+		}
+	}, [startFromElapsed, stopClock]);
+
+	return { elapsedMs, baseElapsedMs, isRunning, start, startFromElapsed, pause, reset, getSnapshot, applySnapshot };
 }
 
 

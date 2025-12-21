@@ -9,6 +9,7 @@ type Props = {
 	pipSupported: boolean;
 	pipUnsupportedTooltip: string;
 	onOpenSettings: () => void;
+	onOpenRecords: () => void;
 	onStart: () => void;
 	onPause: () => void;
 	onReset: () => void;
@@ -40,6 +41,16 @@ export default function TrackerToolbar(props: Props) {
 					</g>
 				</svg>
 				설정
+			</button>
+
+			<button className="btn" onClick={props.onOpenRecords}>
+				<svg className="w-4 h-4 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+					<path d="M6 2h9l3 3v17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+					<path d="M9 9h6" />
+					<path d="M9 13h6" />
+					<path d="M9 17h6" />
+				</svg>
+				기록
 			</button>
 
 			<div className="ml-auto flex items-center gap-2">

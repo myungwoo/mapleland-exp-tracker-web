@@ -15,12 +15,15 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey";
 import TrackerToolbar from "@/components/exp-tracker/TrackerToolbar";
 import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
+import RecordsModal from "@/components/exp-tracker/RecordsModal";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
 import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardingRoiAssist";
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
 import { useStopwatch } from "@/features/exp-tracker/hooks/useStopwatch";
 import { useIntervalRunner } from "@/features/exp-tracker/hooks/useIntervalRunner";
 import { useOcrSampling } from "@/features/exp-tracker/hooks/useOcrSampling";
+import type { ExpTrackerSnapshot } from "@/features/exp-tracker/records/types";
+import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
 
 type IntervalSec = 1 | 5 | 10;
 
@@ -50,6 +53,7 @@ export default function ExpTracker() {
 	const [activeRoi, setActiveRoi] = useState<"level" | "exp" | null>(null);
 	const [debugEnabled, setDebugEnabled] = useState(false);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [recordsOpen, setRecordsOpen] = useState(false);
 	const roiContainerRef = useRef<HTMLDivElement | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
 	// Onboarding
@@ -370,7 +374,7 @@ export default function ExpTracker() {
 	}, [pipOpen, updatePipContents]);
 
 	// ----- Pace history and series (time-normalized) -----
-	const { paceOverallSeries, recentPaceSeries, cumulativeSeries } = usePaceSeries({
+	const pace = usePaceSeries({
 		hasStarted,
 		sampleTick: ocr.sampleTick,
 		lastSampleTsRef: ocr.lastSampleTsRef,
@@ -379,6 +383,7 @@ export default function ExpTracker() {
 		elapsedMs,
 		avgWindowMin
 	});
+	const { paceOverallSeries, recentPaceSeries, cumulativeSeries } = pace;
 
 	// Chart mode toggle
 	const [chartMode, setChartMode] = useState<"pace" | "paceRecent" | "cumulative">("pace");
@@ -394,6 +399,7 @@ export default function ExpTracker() {
 				pipSupported={pipSupported}
 				pipUnsupportedTooltip={pipUnsupportedTooltip}
 				onOpenSettings={() => setSettingsOpen(true)}
+				onOpenRecords={() => setRecordsOpen(true)}
 				onStart={() => { void startOrResume(); }}
 				onPause={() => { void pauseSampling(); }}
 				onReset={resetSampling}
@@ -431,6 +437,45 @@ export default function ExpTracker() {
 					expOcrText={ocr.expOcrText}
 				/>
 			)}
+
+			<RecordsModal
+				open={recordsOpen}
+				onClose={() => setRecordsOpen(false)}
+				canSave={hasStarted && !isSampling && !stopwatch.isRunning}
+				canLoad={!isSampling && !stopwatch.isRunning}
+				avgWindowMin={avgWindowMin}
+				getSnapshot={() => {
+					const snap: ExpTrackerSnapshot = {
+						version: 3,
+						capturedAt: Date.now(),
+						runtime: {
+							hasStarted
+						},
+						stopwatch: stopwatch.getSnapshot(),
+						ocr: ocr.getSnapshot(),
+						pace: pace.getSnapshot()
+					};
+					return snap;
+				}}
+				applySnapshot={(raw) => {
+					const snap = normalizeSnapshot(raw);
+					// Stop all running loops first
+					sampler.stop();
+					setIsSampling(false);
+					setSettingsOpen(false);
+					setActiveRoi(null);
+					setRoiSelectionMode(null);
+					setOnboardingOpen(false);
+
+					// Core computed state
+					const nextHasStarted = !!snap.runtime.hasStarted;
+					setHasStarted(nextHasStarted);
+					ocr.applySnapshot(snap.ocr);
+					// Always restore as paused (constraint/UX): never auto-run on load.
+					stopwatch.applySnapshot({ ...snap.stopwatch, isRunning: false });
+					pace.applySnapshot(nextHasStarted ? snap.pace : { history: [] });
+				}}
+			/>
 
 			<Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="설정" disableEscClose={activeRoi !== null || onboardingOpen}>
 				<div className="flex items-center gap-2">

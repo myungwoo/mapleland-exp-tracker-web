@@ -4,12 +4,23 @@ import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/l
 import { computeExpDeltaFromTable, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
 
-type Sample = {
+export type OcrSample = {
 	ts: number;
 	level: number | null;
 	expPercent: number | null;
 	expValue: number | null;
 	isValid?: boolean;
+};
+
+export type OcrSamplingSnapshot = {
+	currentLevel: number | null;
+	currentExpPercent: number | null;
+	currentExpValue: number | null;
+	cumExpPct: number;
+	cumExpValue: number;
+	sampleTick: number;
+	lastSampleTs: number | null;
+	lastValidSample: OcrSample | null;
 };
 
 type Options = {
@@ -35,7 +46,7 @@ export function useOcrSampling(options: Options) {
 	const [cumExpPct, setCumExpPct] = useState(0);
 	const [cumExpValue, setCumExpValue] = useState(0);
 
-	const lastValidSampleRef = useRef<Sample | null>(null);
+	const lastValidSampleRef = useRef<OcrSample | null>(null);
 	const lastSampleTsRef = useRef<number | null>(null);
 	const [sampleTick, setSampleTick] = useState<number>(0);
 
@@ -47,7 +58,7 @@ export function useOcrSampling(options: Options) {
 	const [levelOcrText, setLevelOcrText] = useState<string>("");
 	const [expOcrText, setExpOcrText] = useState<string>("");
 
-	const readOnce = useCallback(async (): Promise<Sample> => {
+	const readOnce = useCallback(async (): Promise<OcrSample> => {
 		const video = captureVideoRef.current;
 		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 		if (video.videoWidth === 0 || video.videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
@@ -102,7 +113,7 @@ export function useOcrSampling(options: Options) {
 	const sampleOnceAndAccumulate = useCallback(async () => {
 		const s = await readOnce();
 		const isValid = s.level != null && s.expValue != null && s.expPercent != null;
-		const sample: Sample = { ...s, isValid };
+		const sample: OcrSample = { ...s, isValid };
 
 		setCurrentLevel(s.level);
 		setCurrentExpPercent(s.expPercent);
@@ -150,6 +161,30 @@ export function useOcrSampling(options: Options) {
 		setSampleTick(0);
 	}, []);
 
+	const getSnapshot = useCallback((): OcrSamplingSnapshot => {
+		return {
+			currentLevel,
+			currentExpPercent,
+			currentExpValue,
+			cumExpPct,
+			cumExpValue,
+			sampleTick,
+			lastSampleTs: lastSampleTsRef.current,
+			lastValidSample: (lastValidSampleRef.current as OcrSample | null)
+		};
+	}, [currentLevel, currentExpPercent, currentExpValue, cumExpPct, cumExpValue, sampleTick]);
+
+	const applySnapshot = useCallback((snap: OcrSamplingSnapshot) => {
+		setCurrentLevel(snap.currentLevel ?? null);
+		setCurrentExpPercent(snap.currentExpPercent ?? null);
+		setCurrentExpValue(snap.currentExpValue ?? null);
+		setCumExpPct(Number.isFinite(snap.cumExpPct) ? snap.cumExpPct : 0);
+		setCumExpValue(Number.isFinite(snap.cumExpValue) ? snap.cumExpValue : 0);
+		lastSampleTsRef.current = snap.lastSampleTs ?? null;
+		lastValidSampleRef.current = (snap.lastValidSample as OcrSample | null) ?? null;
+		setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
+	}, []);
+
 	return {
 		// state
 		currentLevel,
@@ -164,6 +199,8 @@ export function useOcrSampling(options: Options) {
 		readOnce,
 		sampleOnceAndAccumulate,
 		resetTotals,
+		getSnapshot,
+		applySnapshot,
 
 		// debug
 		levelPreviewRaw,

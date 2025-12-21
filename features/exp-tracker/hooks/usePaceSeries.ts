@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type HistoryPoint = { ts: number; cumExp: number; cumPct: number; elapsedAtMs: number };
-type SeriesPoint = { ts: number; value: number };
+export type PaceHistoryPoint = { ts: number; cumExp: number; cumPct: number; elapsedAtMs: number };
+export type PaceSeriesPoint = { ts: number; value: number };
+
+export type PaceSeriesSnapshot = {
+	history: PaceHistoryPoint[];
+};
 
 type Options = {
 	hasStarted: boolean;
@@ -21,7 +25,7 @@ type Options = {
 export function usePaceSeries(options: Options) {
 	const { hasStarted, sampleTick, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs, avgWindowMin } = options;
 
-	const [history, setHistory] = useState<HistoryPoint[]>([]);
+	const [history, setHistory] = useState<PaceHistoryPoint[]>([]);
 	const handledTickRef = useRef<number>(0);
 
 	// Append to history once per valid sampling tick (even if increase is zero)
@@ -47,10 +51,10 @@ export function usePaceSeries(options: Options) {
 		}
 	}, [hasStarted]);
 
-	const paceOverallSeries = useMemo((): SeriesPoint[] => {
+	const paceOverallSeries = useMemo((): PaceSeriesPoint[] => {
 		if (history.length < 1) return [];
 		const scaleSec = avgWindowMin * 60;
-		const points: SeriesPoint[] = [];
+		const points: PaceSeriesPoint[] = [];
 		for (let i = 0; i < history.length; i++) {
 			const h = history[i];
 			const elapsedSec = Math.max(1, Math.floor(h.elapsedAtMs / 1000));
@@ -61,15 +65,15 @@ export function usePaceSeries(options: Options) {
 		return points;
 	}, [history, avgWindowMin]);
 
-	const cumulativeSeries = useMemo((): SeriesPoint[] => {
+	const cumulativeSeries = useMemo((): PaceSeriesPoint[] => {
 		return history.map(h => ({ ts: h.elapsedAtMs, value: h.cumExp }));
 	}, [history]);
 
-	const recentPaceSeries = useMemo((): SeriesPoint[] => {
+	const recentPaceSeries = useMemo((): PaceSeriesPoint[] => {
 		if (history.length < 1) return [];
 		const windowMs = 30 * 1000;
 		const scaleSec = avgWindowMin * 60;
-		const points: SeriesPoint[] = [];
+		const points: PaceSeriesPoint[] = [];
 		let j = 0;
 		for (let i = 0; i < history.length; i++) {
 			const cur = history[i];
@@ -86,7 +90,17 @@ export function usePaceSeries(options: Options) {
 		return points;
 	}, [history, avgWindowMin]);
 
-	return { history, paceOverallSeries, cumulativeSeries, recentPaceSeries };
+	const getSnapshot = useCallback((): PaceSeriesSnapshot => {
+		return { history };
+	}, [history]);
+
+	const applySnapshot = useCallback((snap: PaceSeriesSnapshot) => {
+		const next = Array.isArray(snap.history) ? snap.history : [];
+		setHistory(next);
+		handledTickRef.current = 0;
+	}, []);
+
+	return { history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot };
 }
 
 
