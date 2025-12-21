@@ -10,17 +10,25 @@ type Props = {
 	children: ReactNode;
 	footer?: ReactNode;
 	className?: string;
+	disableEscClose?: boolean;
 };
 
 export default function Modal(props: Props) {
 	useEffect(() => {
 		if (!props.open) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") props.onClose();
+			if (e.key === "Escape") {
+				if (props.disableEscClose) {
+					e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
+				props.onClose();
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [props.open, props.onClose]);
+	}, [props.open, props.onClose, props.disableEscClose]);
 
 	if (!props.open) return null;
 	return (

@@ -60,6 +60,7 @@ export default function ExpTracker() {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [levelOcrText, setLevelOcrText] = useState<string>("");
 	const [expOcrText, setExpOcrText] = useState<string>("");
+	const roiContainerRef = useRef<HTMLDivElement | null>(null);
 	const startAtRef = useRef<number | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
 	// Onboarding
@@ -579,6 +580,84 @@ export default function ExpTracker() {
 		pipClose();
 	}, [pipClose]);
 
+	// ESC: when ROI selection is active, cancel ROI mode. If onboarding was paused for ROI, return to tutorial.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape" && (activeRoi || roiSelectionMode)) {
+				e.preventDefault();
+				e.stopPropagation();
+				setActiveRoi(null);
+				setRoiSelectionMode(null);
+				if (onboardingPausedForRoi) {
+					setOnboardingPausedForRoi(null);
+					setOnboardingOpen(true);
+				}
+			}
+		};
+		// Use capture to preempt other ESC handlers (modal close)
+		window.addEventListener("keydown", onKey, { capture: true } as any);
+		return () => {
+			try {
+				window.removeEventListener("keydown", onKey as any, { capture: true } as any);
+			} catch {
+				window.removeEventListener("keydown", onKey as any);
+			}
+		};
+	}, [activeRoi, roiSelectionMode, onboardingPausedForRoi]);
+
+	// ESC while tutorial (onboarding) is open: act like pressing "Skip" (close tutorial and settings)
+	useEffect(() => {
+		if (!onboardingOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				setOnboardingDone(true);
+				setOnboardingOpen(false);
+				setActiveRoi(null);
+				setSettingsOpen(false);
+			}
+		};
+		// capture to preempt other ESC handlers (e.g., modal)
+		window.addEventListener("keydown", onKey, { capture: true } as any);
+		return () => {
+			try {
+				window.removeEventListener("keydown", onKey as any, { capture: true } as any);
+			} catch {
+				window.removeEventListener("keydown", onKey as any);
+			}
+		};
+	}, [onboardingOpen, setOnboardingDone]);
+
+	// Click outside the game window (ROI container) cancels ROI selection mode
+	useEffect(() => {
+		const onMouseDown = (e: MouseEvent) => {
+			if (!activeRoi && !roiSelectionMode) return;
+			const container = roiContainerRef.current;
+			if (!container) return;
+			const target = e.target as Node | null;
+			if (target && container.contains(target)) {
+				return; // inside ROI container, ignore
+			}
+			// outside the ROI container: cancel ROI mode
+			setActiveRoi(null);
+			setRoiSelectionMode(null);
+			if (onboardingPausedForRoi) {
+				setOnboardingPausedForRoi(null);
+				setOnboardingOpen(true);
+			}
+		};
+		// capture to ensure we see it even if underlying elements stop propagation later
+		window.addEventListener("mousedown", onMouseDown, true);
+		return () => {
+			try {
+				window.removeEventListener("mousedown", onMouseDown, true);
+			} catch {
+				window.removeEventListener("mousedown", onMouseDown);
+			}
+		};
+	}, [activeRoi, roiSelectionMode, onboardingPausedForRoi]);
+
 	const updatePipContents = useCallback(() => {
 		const state: PipState = {
 			isSampling,
@@ -903,7 +982,7 @@ fill="currentColor" stroke="none">
 				</div>
 			)}
 
-			<Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="설정">
+			<Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="설정" disableEscClose={activeRoi !== null || onboardingOpen}>
 				<div className="flex items-center gap-2">
 					<button className="btn btn-primary" onClick={startCapture}>게임 창 선택</button>
 					<button className="btn" onClick={stopCapture} disabled={!stream}>캡처 중지</button>
@@ -932,7 +1011,7 @@ fill="currentColor" stroke="none">
 					</div>
 				</div>
 
-				<div className="relative w-full h-[70vh] overflow-hidden rounded-lg bg-black/50 mt-3">
+				<div ref={roiContainerRef} className="relative w-full h-[70vh] overflow-hidden rounded-lg bg-black/50 mt-3">
 					<video ref={previewVideoRef} className="w-full h-full object-contain" muted playsInline />
 					<RoiOverlay
 						videoRef={previewVideoRef}
@@ -942,6 +1021,14 @@ fill="currentColor" stroke="none">
 						onChangeExp={handleChangeExp}
 						active={activeRoi}
 						onActiveChange={setActiveRoi}
+						onCancelSelection={() => {
+							setActiveRoi(null);
+							setRoiSelectionMode(null);
+							if (onboardingPausedForRoi) {
+								setOnboardingPausedForRoi(null);
+								setOnboardingOpen(true);
+							}
+						}}
 					/>
 				</div>
 
