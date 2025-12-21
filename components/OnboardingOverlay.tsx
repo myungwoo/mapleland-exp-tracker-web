@@ -159,9 +159,12 @@ export default function OnboardingOverlay(props: Props) {
                 return (
                   <button
                     key={s}
-                    className={isCurrent ? "btn btn-primary" : "btn"}
-                    onClick={() => props.onSetIntervalSec(s)}
-                    disabled={isCurrent}
+                    className={isCurrent ? "btn btn-primary cursor-default" : "btn"}
+                    aria-pressed={isCurrent}
+                    onClick={() => {
+                      if (isCurrent) return;
+                      props.onSetIntervalSec(s);
+                    }}
                   >
                     {label}
                   </button>
