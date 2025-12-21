@@ -18,16 +18,27 @@ export function formatNumberCompact(n: number): string {
 	// - 1234 -> "1,234"
 	// - 12345 -> "1.2만"
 	// - 1234567 -> "123.5만"
+	// - 12345678 -> "1235만" (keep digit count <= 4 in compact part)
 	// - 123456789 -> "1.2억"
 	const v = Number.isFinite(n) ? n : 0;
 	const abs = Math.abs(v);
 	const sign = v < 0 ? "-" : "";
-	const trim1 = (x: number) => {
-		const s = x.toFixed(1);
-		return s.endsWith(".0") ? s.slice(0, -2) : s;
+
+	const formatCompactUnit = (scaled: number, suffix: string) => {
+		// Rule: In compact form, keep the number of digits <= 4.
+		// We allow at most 1 decimal place when integer-part length <= 3.
+		const intLen = Math.floor(scaled).toString().length;
+		if (intLen >= 4) {
+			// Too many digits if we show any decimal; round to an integer.
+			return `${sign}${Math.round(scaled)}${suffix}`;
+		}
+		const s = scaled.toFixed(1);
+		const trimmed = s.endsWith(".0") ? s.slice(0, -2) : s;
+		return `${sign}${trimmed}${suffix}`;
 	};
-	if (abs >= 1e8) return `${sign}${trim1(abs / 1e8)}억`;
-	if (abs >= 1e4) return `${sign}${trim1(abs / 1e4)}만`;
+
+	if (abs >= 1e8) return formatCompactUnit(abs / 1e8, "억");
+	if (abs >= 1e4) return formatCompactUnit(abs / 1e4, "만");
 	return formatNumber(abs);
 }
 
