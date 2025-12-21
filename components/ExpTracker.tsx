@@ -69,16 +69,21 @@ export default function ExpTracker() {
 		previewVideoRef,
 		settingsOpen
 	});
-	// Document Picture-in-Picture via service + hook
+	const hasStream = !!stream;
+	// Live refs for PiP event handlers (avoid stale closures)
 	const { open: pipOpen, update: pipUpdate, close: pipClose } = useDocumentPip({
 		onToggle: () => {
 			if (isSamplingRef.current) {
 				pauseSamplingRef.current();
 			} else {
+				// Match main UI: cannot start when no capture stream selected
+				if (!hasStreamRef.current) return;
 				startOrResumeRef.current();
 			}
 		},
 		onReset: () => {
+			// Match main UI: cannot reset before timer has ever started
+			if (!hasStartedRef.current) return;
 			resetSamplingRef.current();
 		}
 	});
@@ -92,6 +97,10 @@ export default function ExpTracker() {
 	// Live sampling state for PiP event handlers (avoid stale closures)
 	const isSamplingRef = useRef<boolean>(false);
 	useEffect(() => { isSamplingRef.current = isSampling; }, [isSampling]);
+	const hasStartedRef = useRef<boolean>(false);
+	useEffect(() => { hasStartedRef.current = hasStarted; }, [hasStarted]);
+	const hasStreamRef = useRef<boolean>(false);
+	useEffect(() => { hasStreamRef.current = hasStream; }, [hasStream]);
 
 	useEffect(() => {
 		initOcr(); // warm up worker lazily
@@ -163,6 +172,8 @@ export default function ExpTracker() {
 	}, [setRoiExp, roiSelectionMode, onboardingPausedForRoi]);
 
 	const startOrResume = useCallback(async () => {
+		// Match toolbar disabled state: cannot start without an active capture stream.
+		if (!stream) return;
 		if (!captureVideoRef.current) return;
 		if (!roiLevel || !roiExp) {
 			alert("먼저 레벨/경험치 영역(ROI)을 설정해주세요.");
@@ -196,7 +207,7 @@ export default function ExpTracker() {
 		sampler.start(intervalSec * 1000, runner);
 
 		setIsSampling(true);
-	}, [intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr]);
+	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr]);
 
 	const pauseSampling = useCallback(async () => {
 		// Stop timers first to freeze state
@@ -212,12 +223,14 @@ export default function ExpTracker() {
 	}, [ocr, sampler, stopwatch]);
 
 	const resetSampling = useCallback(() => {
+		// Match toolbar disabled state: cannot reset before the first start.
+		if (!hasStarted) return;
 		sampler.stop();
 		stopwatch.reset();
 		ocr.resetTotals();
 		setIsSampling(false);
 		setHasStarted(false);
-	}, [sampler, stopwatch, ocr]);
+	}, [hasStarted, sampler, stopwatch, ocr]);
 
 	// Keep latest control functions for PiP handlers to avoid stale closures
 	const startOrResumeRef = useRef(startOrResume);
@@ -265,6 +278,8 @@ export default function ExpTracker() {
 			if (isSampling) {
 				pauseSampling();
 			} else {
+				// Match toolbar disabled state: cannot start without selecting a capture window.
+				if (!stream) return;
 				void startOrResume();
 			}
 		}
@@ -395,7 +410,7 @@ export default function ExpTracker() {
 			<TrackerToolbar
 				isSampling={isSampling}
 				hasStarted={hasStarted}
-				hasStream={!!stream}
+				hasStream={hasStream}
 				pipSupported={pipSupported}
 				pipUnsupportedTooltip={pipUnsupportedTooltip}
 				onOpenSettings={() => setSettingsOpen(true)}
