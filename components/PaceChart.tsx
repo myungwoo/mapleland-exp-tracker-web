@@ -385,7 +385,7 @@ export default function PaceChart(props: Props) {
                         dominantBaseline="middle"
                         fill="rgba(255,255,255,0.55)"
                         fontSize={10}
-                        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
+                        fontFamily='"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                       >
                         {yLabelFormatter ? yLabelFormatter(v) : v.toFixed(0)}
                       </text>
@@ -420,7 +420,7 @@ export default function PaceChart(props: Props) {
                         dominantBaseline="alphabetic"
                         fill="rgba(255,255,255,0.55)"
                         fontSize={10}
-                        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
+                        fontFamily='"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                       >
                         {xLabelFormatter ? xLabelFormatter(t) : new Date(t).toLocaleTimeString()}
                       </text>

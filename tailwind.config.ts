@@ -11,7 +11,8 @@ export default {
 			fontFamily: {
 				sans: ["Pretendard", ...defaultTheme.fontFamily.sans],
 				// Prefer D2Coding for mono; final fallback Pretendard when glyphs missing
-				mono: ["D2Coding", ...defaultTheme.fontFamily.mono]
+				// NOTE: jsDelivr's d2coding.min.css defines the family as "D2 coding" (with a space).
+				mono: ["D2 coding", ...defaultTheme.fontFamily.mono]
 			},
 			colors: {
 				bg: "#0b1020",
