@@ -1,16 +1,16 @@
 import React from "react";
 
-type MushroomIconProps = {
+type MapleLeafIconProps = {
   size?: number;
   className?: string;
   title?: string;
 };
 
-export default function MushroomIcon({
+export default function MapleLeafIcon({
   size = 20,
   className,
-  title = "Mushroom House Icon",
-}: MushroomIconProps) {
+  title = "Maple Leaf Icon",
+}: MapleLeafIconProps) {
   return (
     <svg
       width={size}
