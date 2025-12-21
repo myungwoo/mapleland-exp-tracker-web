@@ -85,7 +85,11 @@ export default function ExpTracker() {
 			resetSamplingRef.current();
 		}
 	});
-	const pipSupported = isDocumentPipSupported();
+	const [pipSupported, setPipSupported] = useState(false);
+	useEffect(() => {
+		// Ensure SSR and first client render match; detect support after mount
+		setPipSupported(isDocumentPipSupported());
+	}, []);
 	const pipUnsupportedTooltip =
 		"이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.";
 	// Live sampling state for PiP event handlers (avoid stale closures)
@@ -762,7 +766,7 @@ fill="currentColor" stroke="none">
 					</div>
 					<div>
 						<div className="opacity-70 text-sm">{stats ? `${stats.nextHours}시간 되는 시각` : "다음 시간 되는 시각"}</div>
-						<div className="font-mono text-xl">{stats ? stats.nextAt.toLocaleTimeString() : "-"}</div>
+						<div className="font-mono text-xl" suppressHydrationWarning>{stats ? stats.nextAt.toLocaleTimeString() : "-"}</div>
 					</div>
 					<div>
 						<div className="opacity-70 text-sm">현재까지 획득한 경험치</div>
