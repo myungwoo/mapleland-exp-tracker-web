@@ -101,7 +101,8 @@ export default function PaceChart(props: Props) {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current || !series || series.length === 0) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const rawX = e.clientX - rect.left;
+    const x = Math.max(0, Math.min(size.width, rawX));
     if (enableBrush && isDragging) {
       setBrush(b => (b ? { ...b, endX: x } : null));
     }
@@ -123,47 +124,65 @@ export default function PaceChart(props: Props) {
 
   const handleMouseLeave = () => {
     setHover(null);
-    if (enableBrush && isDragging) {
-      setIsDragging(false);
-      setBrush(null);
-    }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!enableBrush) return;
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const rawX = e.clientX - rect.left;
+    const x = Math.max(0, Math.min(size.width, rawX));
     setIsDragging(true);
     setBrush({ startX: x, endX: x });
   };
 
-  const handleMouseUp = (e: React.MouseEvent) => {
-    if (!enableBrush) return;
-    if (!containerRef.current) return;
-    if (!brush) {
-      setIsDragging(false);
-      return;
-    }
-    setIsDragging(false);
-    const startPx = Math.min(brush.startX, brush.endX);
-    const endPx = Math.max(brush.startX, brush.endX);
-    setBrush(null);
-    // Ignore tiny drags
-    if (endPx - startPx < 4) return;
-    // Invert xScale
-    const inv = (px: number) => {
-      // clamp to chart area horizontally
-      const left = 8; // margin.left
-      const right = size.width - 8; // approx margin.right
-      const clamped = Math.max(left, Math.min(right, px));
-      const t = (clamped - left) / Math.max(1, right - left);
-      return minTs + t * (maxTs - minTs);
+  useEffect(() => {
+    if (!enableBrush || !isDragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      setBrush(b => {
+        if (!b) return b;
+        const rect = containerRef.current!.getBoundingClientRect();
+        const rawX = e.clientX - rect.left;
+        const x = Math.max(0, Math.min(size.width, rawX));
+        return { ...b, endX: x };
+      });
     };
-    const sTs = inv(startPx);
-    const eTs = inv(endPx);
-    if (onRangeChange) onRangeChange(Math.min(sTs, eTs), Math.max(sTs, eTs));
-  };
+    const onUp = () => {
+      if (!containerRef.current) {
+        setIsDragging(false);
+        setBrush(null);
+        return;
+      }
+      setIsDragging(false);
+      setBrush(prev => {
+        const current = prev;
+        if (!current) return null;
+        const startPx = Math.min(current.startX, current.endX);
+        const endPx = Math.max(current.startX, current.endX);
+        // Ignore tiny drags
+        if (endPx - startPx >= 4) {
+          const inv = (px: number) => {
+            const left = 8; // margin.left
+            const right = size.width - 8; // approx margin.right
+            const clamped = Math.max(left, Math.min(right, px));
+            const t = (clamped - left) / Math.max(1, right - left);
+            return minTs + t * (maxTs - minTs);
+          };
+          const sTs = inv(startPx);
+          const eTs = inv(endPx);
+          if (onRangeChange) onRangeChange(Math.min(sTs, eTs), Math.max(sTs, eTs));
+        }
+        return null;
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [enableBrush, isDragging, size.width, minTs, maxTs, onRangeChange]);
 
   return (
     <div
@@ -172,7 +191,6 @@ export default function PaceChart(props: Props) {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
     >
       {size.width > 0 && size.height > 0 && series && series.length > 0 ? (
         <>
