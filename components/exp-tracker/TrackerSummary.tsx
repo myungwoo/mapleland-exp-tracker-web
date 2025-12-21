@@ -3,6 +3,7 @@
 import PaceChart from "@/components/PaceChart";
 import { cn } from "@/lib/cn";
 import { formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
+import type { Ref } from "react";
 
 type Stats = {
 	nextAt: Date;
@@ -36,11 +37,14 @@ type Props = {
 	paceOverallSeries: SeriesPoint[];
 	recentPaceSeries: SeriesPoint[];
 	cumulativeSeries: SeriesPoint[];
+
+	/** For "결과 이미지 복사": capture the whole summary card as rendered */
+	captureRef?: Ref<HTMLDivElement>;
 };
 
 export default function TrackerSummary(props: Props) {
 	return (
-		<div className="card p-4 space-y-4">
+		<div ref={props.captureRef} className="card p-4 space-y-4">
 			<h2 className="text-lg font-semibold">요약</h2>
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div>
@@ -76,36 +80,36 @@ export default function TrackerSummary(props: Props) {
 					</h3>
 					<div className="flex items-center gap-2">
 						<div className="text-xs text-white/60 hidden md:block">샘플링 {props.intervalSec}초 · 가변 간격 대응</div>
-						<div className="inline-flex rounded overflow-hidden border border-white/10">
+						<div className="inline-flex flex-nowrap whitespace-nowrap rounded overflow-hidden border border-white/10">
 							<button
-								className={cn("px-2 py-1 text-xs", props.chartMode === "pace" ? "bg-white/15" : "bg-white/5")}
+								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "pace" ? "bg-white/15" : "bg-white/5")}
 								onClick={() => props.onChartModeChange("pace")}
 							>
 								페이스
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs", props.chartMode === "paceRecent" ? "bg-white/15" : "bg-white/5")}
+								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "paceRecent" ? "bg-white/15" : "bg-white/5")}
 								onClick={() => props.onChartModeChange("paceRecent")}
 							>
 								최근 30초
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs", props.chartMode === "cumulative" ? "bg-white/15" : "bg-white/5")}
+								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "cumulative" ? "bg-white/15" : "bg-white/5")}
 								onClick={() => props.onChartModeChange("cumulative")}
 							>
 								누적
 							</button>
 						</div>
-						<div className="inline-flex rounded overflow-hidden border border-white/10">
+						<div className="inline-flex flex-nowrap whitespace-nowrap rounded overflow-hidden border border-white/10">
 							<button
-								className={cn("px-2 py-1 text-xs", props.chartShowAxisLabels ? "bg-white/15" : "bg-white/5")}
+								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartShowAxisLabels ? "bg-white/15" : "bg-white/5")}
 								onClick={() => props.onChartShowAxisLabelsChange(!props.chartShowAxisLabels)}
 								title="축 라벨 표시"
 							>
 								축
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs", props.chartShowGrid ? "bg-white/15" : "bg-white/5")}
+								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartShowGrid ? "bg-white/15" : "bg-white/5")}
 								onClick={() => props.onChartShowGridChange(!props.chartShowGrid)}
 								title="그리드 표시"
 							>
@@ -114,7 +118,7 @@ export default function TrackerSummary(props: Props) {
 						</div>
 						{props.chartRangeMs ? (
 							<button
-								className="ml-2 px-2 py-1 text-xs rounded border border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25"
+								className="ml-2 px-2 py-1 text-xs rounded border border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25 whitespace-nowrap leading-none"
 								onClick={() => props.onChartRangeChange(null)}
 							>
 								전체 보기

@@ -16,6 +16,7 @@ import TrackerToolbar from "@/components/exp-tracker/TrackerToolbar";
 import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
+import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
 import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardingRoiAssist";
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
@@ -55,6 +56,7 @@ export default function ExpTracker() {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [recordsOpen, setRecordsOpen] = useState(false);
 	const roiContainerRef = useRef<HTMLDivElement | null>(null);
+	const summaryCaptureRef = useRef<HTMLDivElement | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
 	// Onboarding
 	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false);
@@ -422,6 +424,7 @@ export default function ExpTracker() {
 			/>
 
 			<TrackerSummary
+				captureRef={summaryCaptureRef}
 				elapsedMs={elapsedMs}
 				stats={stats ? { nextAt: stats.nextAt, nextHours: stats.nextHours } : null}
 				cumExpValue={ocr.cumExpValue}
@@ -441,6 +444,20 @@ export default function ExpTracker() {
 				recentPaceSeries={recentPaceSeries}
 				cumulativeSeries={cumulativeSeries}
 			/>
+
+			{/* Share / Copy buttons (below summary card, right aligned) */}
+			<div className="flex justify-end">
+				<ShareResultsActions
+					hasStarted={hasStarted}
+					elapsedMs={elapsedMs}
+					cumExpValue={ocr.cumExpValue}
+					cumExpPct={ocr.cumExpPct}
+					avgWindowMin={avgWindowMin}
+					avgEstimateValue={avgEstimate.val}
+					avgEstimatePct={avgEstimate.pct}
+					getSummaryEl={() => summaryCaptureRef.current}
+				/>
+			</div>
 
 			{debugEnabled && (
 				<DebugOcrPreview
