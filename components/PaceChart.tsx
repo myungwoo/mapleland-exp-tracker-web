@@ -25,6 +25,12 @@ export default function PaceChart(props: Props) {
   const [hover, setHover] = useState<{ x: number; y: number; idx: number } | null>(null);
   const [brush, setBrush] = useState<{ startX: number; endX: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const brushRef = useRef<{ startX: number; endX: number } | null>(null);
+
+  // Keep a ref so global mouseup handler can read latest brush without using a state updater callback.
+  useEffect(() => {
+    brushRef.current = brush;
+  }, [brush]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -155,9 +161,8 @@ export default function PaceChart(props: Props) {
         return;
       }
       setIsDragging(false);
-      setBrush(prev => {
-        const current = prev;
-        if (!current) return null;
+      const current = brushRef.current;
+      if (current) {
         const startPx = Math.min(current.startX, current.endX);
         const endPx = Math.max(current.startX, current.endX);
         // Ignore tiny drags
@@ -173,8 +178,8 @@ export default function PaceChart(props: Props) {
           const eTs = inv(endPx);
           if (onRangeChange) onRangeChange(Math.min(sTs, eTs), Math.max(sTs, eTs));
         }
-        return null;
-      });
+      }
+      setBrush(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

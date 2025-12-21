@@ -5,6 +5,11 @@ const basePath = isGhPages && repo ? `/${repo}` : "";
 
 const nextConfig = {
 	output: "export",
+	images: {
+		// Static export (output: "export") can't use the built-in Image Optimization API.
+		// This makes next/image render without optimization so it works on GitHub Pages / static hosting.
+		unoptimized: true
+	},
 	...(basePath ? { basePath, assetPrefix: basePath } : {}),
 	// Expose basePath to the client for building asset URLs in plain <img> tags
 	env: {

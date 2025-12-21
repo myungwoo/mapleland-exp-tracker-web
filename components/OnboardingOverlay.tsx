@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import { assetPath } from "@/lib/assetPath";
 
 type Props = {
@@ -59,21 +60,25 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              화면의 레벨 숫자만 포함되도록 영역을 드래그해서 지정하세요. 영역 안에 <span className="font-semibold">"LV."</span> 텍스트는 포함되지 않도록 해주세요.
+              화면의 레벨 숫자만 포함되도록 영역을 드래그해서 지정하세요. 영역 안에 <span className="font-semibold">&quot;LV.&quot;</span> 텍스트는 포함되지 않도록 해주세요.
               게임 창 크기를 바꾸면 ROI를 다시 설정해야 합니다.
             </p>
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
               <div className="text-sm text-white/80 mb-2">올바른 선택 예시</div>
-              <img
+              <Image
                 src={assetPath("/examples/level-roi.png")}
                 alt="레벨 ROI 올바른 선택 예시"
-                className="max-h-36 rounded border border-white/10 bg-black/40"
+                width={640}
+                height={200}
+                className="max-h-36 w-auto rounded border border-white/10 bg-black/40"
               />
             </div>
             {props.hasLevelRoi ? (
               <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
                 <div className="text-sm text-white/80 mb-2">이미 선택한 ROI가 있습니다. 확인하고 이상이 없으면 건너뛰셔도 됩니다.</div>
                 {props.levelRoiPreview ? (
+                  // 왜: dataURL 미리보기는 next/image 최적화 이점이 거의 없어 <img>를 사용합니다.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={props.levelRoiPreview}
                     alt="선택된 레벨 ROI 미리보기"
@@ -99,21 +104,25 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              경험치 문자열 전체가 들어오도록 선택하세요. <span className="font-semibold">"EXP."</span> 텍스트는 제외하고, 맨 왼쪽 숫자부터 맨 오른쪽 닫는 괄호 <span className="font-mono">]</span>까지 포함되게 하세요.
+              경험치 문자열 전체가 들어오도록 선택하세요. <span className="font-semibold">&quot;EXP.&quot;</span> 텍스트는 제외하고, 맨 왼쪽 숫자부터 맨 오른쪽 닫는 괄호 <span className="font-mono">]</span>까지 포함되게 하세요.
               위아래로 약간의 여백을 두면 인식이 더 정확합니다. 게임 창 크기를 바꾸면 ROI를 다시 설정해야 합니다.
             </p>
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
               <div className="text-sm text-white/80 mb-2">올바른 선택 예시</div>
-              <img
+              <Image
                 src={assetPath("/examples/exp-roi.png")}
                 alt="경험치 ROI 올바른 선택 예시"
-                className="max-h-36 rounded border border-white/10 bg-black/40"
+                width={640}
+                height={200}
+                className="max-h-36 w-auto rounded border border-white/10 bg-black/40"
               />
             </div>
             {props.hasExpRoi ? (
               <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
                 <div className="text-sm text-white/80 mb-2">이미 선택한 ROI가 있습니다. 확인하고 이상이 없으면 건너뛰셔도 됩니다.</div>
                 {props.expRoiPreview ? (
+                  // 왜: dataURL 미리보기는 next/image 최적화 이점이 거의 없어 <img>를 사용합니다.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={props.expRoiPreview}
                     alt="선택된 경험치 ROI 미리보기"
