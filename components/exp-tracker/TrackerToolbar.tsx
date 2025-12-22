@@ -78,6 +78,7 @@ export default function TrackerToolbar(props: Props) {
 						aria-label="PiP 열기"
 					>
 						PiP 열기
+						<span className="ml-2 text-xs opacity-70">P</span>
 						<svg
 							className="w-4 h-4 ml-2 shrink-0"
 							viewBox="0 0 24 24"

@@ -62,7 +62,14 @@ export class PipController {
     }
     // Keyboard: Space to toggle timer, R to reset (avoid inputs; ensure Space never triggers focused reset button)
     const onKeyDown = (e: KeyboardEvent) => {
+      const key = (e as any).key;
       const code = (e as any).code || (e as any).key;
+      if (code === "Escape" || key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.close();
+        return;
+      }
       if (code === "Space" || (e as any).key === " ") {
         const el = e.target as HTMLElement | null;
         const tag = el?.tagName?.toLowerCase();
@@ -106,7 +113,11 @@ export class PipController {
       win.addEventListener("keydown", onKeyDown);
     }
     try { win.focus?.(); } catch {}
-    const cleanup = () => { this.pipWindow = null; };
+    const cleanup = () => {
+      try { win.removeEventListener("keydown", onKeyDown, true); } catch {}
+      try { win.removeEventListener("keydown", onKeyDown as any); } catch {}
+      this.pipWindow = null;
+    };
     win.addEventListener("pagehide", cleanup);
     win.addEventListener("unload", cleanup);
     try {
@@ -148,7 +159,12 @@ export class PipController {
   }
 
   close(): void {
+    // Close both the stored reference and the current API-managed window, if present.
     try { this.pipWindow?.close(); } catch {}
+    try {
+      const cur: Window | null = (window as any).documentPictureInPicture?.window ?? null;
+      if (cur && !cur.closed) cur.close();
+    } catch {}
     this.pipWindow = null;
   }
 

@@ -73,7 +73,7 @@ export default function ExpTracker() {
 	});
 	const hasStream = !!stream;
 	// Live refs for PiP event handlers (avoid stale closures)
-	const { open: pipOpen, update: pipUpdate, close: pipClose } = useDocumentPip({
+	const { open: pipOpen, update: pipUpdate, close: pipClose, isOpen: pipIsOpen } = useDocumentPip({
 		onToggle: () => {
 			if (isSamplingRef.current) {
 				pauseSamplingRef.current();
@@ -389,6 +389,20 @@ export default function ExpTracker() {
 		await pipOpen();
 		updatePipContents(); // initial paint
 	}, [pipOpen, updatePipContents]);
+
+	// P: PiP 열기 (입력 폼 포커스 시에는 무시)
+	useGlobalHotkey({
+		match: (e) =>
+			(e.code === "KeyP" || e.key === "p" || e.key === "P") &&
+			!e.metaKey &&
+			!e.ctrlKey &&
+			!e.altKey,
+		onTrigger: () => {
+			if (!pipSupported) return;
+			if (pipIsOpen()) return;
+			void openPip();
+		}
+	});
 
 	// ----- Pace history and series (time-normalized) -----
 	const pace = usePaceSeries({
