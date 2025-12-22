@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { cropDigitBoundingBox, drawRoiCanvas, preprocessExpCanvas, preprocessLevelCanvas, toVideoSpaceRect } from "@/lib/canvas";
+import { cropBinaryForegroundBoundingBox, cropDigitBoundingBox, drawRoiCanvas, preprocessExpCanvas, preprocessLevelCanvas, toVideoSpaceRect } from "@/lib/canvas";
 import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import { computeExpDeltaFromTable, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
@@ -63,7 +63,7 @@ export function useOcrSampling(options: Options) {
 		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 		if (video.videoWidth === 0 || video.videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 
-		// ROI는 “표시 좌표”로 저장될 수 있으므로, 비디오 픽셀 공간으로 변환해서 처리합니다.
+		// ROI는 현재 비디오 픽셀 좌표로 저장됩니다. (여기서는 안전하게 정수화만 수행)
 		const rectLevel = toVideoSpaceRect(video, roiLevel);
 		const rectExp = toVideoSpaceRect(video, roiExp);
 
@@ -73,10 +73,17 @@ export function useOcrSampling(options: Options) {
 
 		// 경험치: 괄호 포함 문자열을 OCR 하기 쉽게 전처리
 		const canvasExpProc = preprocessExpCanvas(video, rectExp, { minHeight: 120 });
+		// ROI가 너무 넓어도(자리수 감소 등) 숫자/괄호/퍼센트 영역만 남기도록 타이트 크롭
+		const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
+			foreground: "white",
+			margin: 4,
+			targetHeight: 120,
+			outPad: 6
+		});
 
 		const [levelRes, expRes] = await Promise.all([
 			recognizeLevelDigitsWithText(canvasLevelCrop),
-			recognizeExpBracketedWithText(canvasExpProc)
+			recognizeExpBracketedWithText(canvasExpCrop)
 		]);
 
 		if (debugEnabled) {
@@ -86,7 +93,7 @@ export function useOcrSampling(options: Options) {
 				setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
 				setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 				setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
-				setExpPreviewProc(canvasExpProc.toDataURL("image/png"));
+				setExpPreviewProc(canvasExpCrop.toDataURL("image/png"));
 				setLevelOcrText(levelRes.text || "");
 				setExpOcrText(expRes.text || "");
 			} catch {

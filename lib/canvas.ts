@@ -1,9 +1,23 @@
 import type { RoiRect } from "@/components/RoiOverlay";
 
+/**
+ * 이 파일은 OCR 전처리(ROI 캡처 → 스케일/이진화 → 노이즈 제거 → 타이트 크롭)를 담당합니다.
+ *
+ * - 레벨(LEVEL): 오렌지 타일 위 흰 글자 → "색 기반 마스킹"이 유리
+ * - 경험치(EXP): 한 줄 텍스트(숫자 + [xx.xx%]) → "이진화(Otsu) + UI 보더 제거"가 유리
+ *
+ * 전처리 방식은 다르지만, 아래 단계들은 공통으로 재사용됩니다:
+ * - ROI 캡처/스케일업
+ * - 이진화(바이너리 이미지)
+ * - 가장자리 보더/밴드 제거(크롭이 보더에 끌려가는 문제 방지)
+ * - 타이트 크롭(bbox)
+ * - (권장) 폴라리티 정규화: "검정 글자 / 흰 배경"으로 통일
+ */
+
 export function toVideoSpaceRect(video: HTMLVideoElement, rect: RoiRect): RoiRect {
-	const container = video.getBoundingClientRect();
-	const scaleX = video.videoWidth / container.width;
-	const scaleY = video.videoHeight / container.height;
+	// 현재 ROI는 RoiOverlay에서 "비디오 픽셀 좌표"로 저장됩니다.
+	// 이 함수는 과거 호환/안전성 목적(정수화)로만 유지합니다.
+	// (주의) 만약 ROI를 CSS 픽셀로 저장하는 방식으로 바꾸면, 여기서 실제 변환 로직이 필요합니다.
 	return {
 		x: Math.round(rect.x),
 		y: Math.round(rect.y),
@@ -17,6 +31,7 @@ export function drawRoiCanvas(
 	roi: RoiRect,
 	options: { binarize?: boolean; invert?: boolean; scale?: number; mode?: "avg" | "otsu" } = {}
 ): HTMLCanvasElement {
+	// ROI를 캔버스로 잘라내고(옵션으로) 이진화까지 수행하는 공통 유틸입니다.
 	const scale = options.scale && options.scale > 0 ? options.scale : 1;
 	const outW = Math.max(1, Math.round(roi.w * scale));
 	const outH = Math.max(1, Math.round(roi.h * scale));
@@ -39,7 +54,7 @@ export function drawRoiCanvas(
 }
 
 function binarizeInPlace(data: Uint8ClampedArray, invert = false) {
-	// Convert to grayscale and threshold
+	// 간단 평균 기반 이진화(디버그/간이용)
 	let sum = 0;
 	for (let i = 0; i < data.length; i += 4) {
 		const r = data[i], g = data[i + 1], b = data[i + 2];
@@ -59,7 +74,7 @@ function binarizeInPlace(data: Uint8ClampedArray, invert = false) {
 }
 
 function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
-	// Build grayscale histogram
+	// Otsu 자동 임계값 기반 이진화(권장, 조명/배경 변화에 강함)
 	const hist = new Array<number>(256).fill(0);
 	const gray = new Uint8Array(data.length / 4);
 	for (let i = 0, gi = 0; i < data.length; i += 4, gi++) {
@@ -99,12 +114,141 @@ function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
 	}
 }
 
+function invertBinaryInPlace(data: Uint8ClampedArray) {
+	// 이미 0/255로 이진화된 이미지를 반전합니다. (255 ↔ 0)
+	for (let i = 0; i < data.length; i += 4) {
+		const v = data[i];
+		const out = v > 128 ? 0 : 255;
+		data[i] = data[i + 1] = data[i + 2] = out;
+		// alpha 유지
+	}
+}
+
+function removeUniformEdgeLinesBinaryInPlace(
+	data: Uint8ClampedArray,
+	w: number,
+	h: number,
+	options: {
+		/** foreground가 흰색(255)인지/검정(0)인지 */
+		foreground: "white" | "black";
+		/** 가장자리에서 검사할 영역 크기(픽셀) */
+		edgeY: number;
+		edgeX: number;
+		/** 한 줄(행/열)이 보더로 판정되기 위한 foreground 비율 */
+		thresholdFrac: number;
+	} = { foreground: "white", edgeY: 16, edgeX: 16, thresholdFrac: 0.97 }
+) {
+	// OCR용 이진 이미지에서 UI 보더(얇은 직선)가 남아있으면 bbox가 보더까지 확장되는 문제가 큽니다.
+	// 그래서 "가장자리 근처에서 foreground 픽셀이 지나치게 많은 행/열"을 보더로 보고 제거합니다.
+	const fg = options.foreground;
+	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
+	const rowCount = new Uint16Array(h);
+	const colCount = new Uint16Array(w);
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			if (isFg(data[i])) {
+				rowCount[y]++;
+				colCount[x]++;
+			}
+		}
+	}
+	const rowThresh = Math.floor(w * options.thresholdFrac);
+	const colThresh = Math.floor(h * options.thresholdFrac);
+	const clearRow = (y: number) => {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			data[i] = data[i + 1] = data[i + 2] = fg === "white" ? 0 : 255;
+		}
+	};
+	const clearCol = (x: number) => {
+		for (let y = 0; y < h; y++) {
+			const i = (y * w + x) * 4;
+			data[i] = data[i + 1] = data[i + 2] = fg === "white" ? 0 : 255;
+		}
+	};
+
+	const edgeY = Math.max(1, Math.min(h, options.edgeY));
+	const edgeX = Math.max(1, Math.min(w, options.edgeX));
+
+	// Top/Bottom rows
+	for (let y = 0; y < edgeY; y++) {
+		if (rowCount[y] >= rowThresh) clearRow(y);
+	}
+	for (let y = h - edgeY; y < h; y++) {
+		if (y >= 0 && rowCount[y] >= rowThresh) clearRow(y);
+	}
+	// Left/Right cols
+	for (let x = 0; x < edgeX; x++) {
+		if (colCount[x] >= colThresh) clearCol(x);
+	}
+	for (let x = w - edgeX; x < w; x++) {
+		if (x >= 0 && colCount[x] >= colThresh) clearCol(x);
+	}
+}
+
+function removeUniformTopBottomBandsBinaryInPlace(
+	data: Uint8ClampedArray,
+	w: number,
+	h: number,
+	options: {
+		foreground: "white" | "black";
+		/** 한 행에서 foreground 픽셀이 이 비율 이상이면 "거의 전부 foreground"로 간주 */
+		uniformRowFrac: number;
+		/** 위/아래에서 검사할 윈도우 높이(픽셀) */
+		windowY: number;
+	} = { foreground: "white", uniformRowFrac: 0.9, windowY: 64 }
+) {
+	// EXP 영역에는 종종 상단/하단 장식(띠)나 경계가 들어오는데,
+	// 이게 글자와 분리되어 있어도 bbox를 늘려 OCR을 흔듭니다.
+	const fg = options.foreground;
+	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
+	const rowThresh = Math.floor(w * options.uniformRowFrac);
+	const rowIsUniform: boolean[] = new Array(h).fill(false);
+	for (let y = 0; y < h; y++) {
+		let cnt = 0;
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			if (isFg(data[i])) cnt++;
+		}
+		rowIsUniform[y] = cnt >= rowThresh;
+	}
+
+	const win = Math.max(1, Math.min(h, options.windowY));
+	let top = 0;
+	for (let y = 0; y < win; y++) {
+		if (rowIsUniform[y]) top = y + 1;
+	}
+	let bottom = h - 1;
+	for (let y = h - 1; y >= Math.max(0, h - win); y--) {
+		if (rowIsUniform[y]) bottom = y - 1;
+	}
+
+	const bg = fg === "white" ? 0 : 255;
+	for (let y = 0; y < top; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			data[i] = data[i + 1] = data[i + 2] = bg;
+		}
+	}
+	for (let y = bottom + 1; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			data[i] = data[i + 1] = data[i + 2] = bg;
+		}
+	}
+}
+
 /**
- * Specialized preprocessor for level digits rendered as white glyphs on orange tiles.
- * - Scales up
- * - Extracts near-white pixels via RGB similarity and brightness
- * - Applies morphological closing to thicken strokes
- * - Outputs black digits on white background for OCR
+ * 레벨(LEVEL) 영역 전처리
+ *
+ * 목표: "오렌지 타일 위 흰색 숫자"를 OCR이 잘 읽도록 "검정 글자 / 흰 배경"의 바이너리 이미지로 변환합니다.
+ *
+ * 처리 단계:
+ * - (1) ROI 캡처 + 스케일업: 작은 폰트를 크게 만들어 OCR 신호를 키움
+ * - (2) 색 기반 마스크: "밝고 채도가 낮은(=흰색에 가까운)" 픽셀만 글자로 간주
+ * - (3) 간단 팽창(dilation): 얇은 획을 조금 두껍게 만들어 인식 안정화
+ * - (4) 렌더링: 검정 글자(0) / 흰 배경(255)로 출력
  */
 export function preprocessLevelCanvas(
 	video: HTMLVideoElement,
@@ -180,6 +324,8 @@ export function cropDigitBoundingBox(
 	source: HTMLCanvasElement,
 	options: { margin?: number; targetHeight?: number; outPad?: number } = {}
 ): HTMLCanvasElement {
+	// LEVEL처럼 "검정 글자 / 흰 배경" 바이너리 이미지에서 글자 bbox만 타이트하게 잘라내고,
+	// OCR이 읽기 좋게 targetHeight로 리스케일한 뒤 흰 테두리를 추가합니다.
 	const margin = options.margin ?? 1;
 	const targetH = options.targetHeight ?? 64;
 	const outPad = options.outPad ?? 4; // add white border around cropped digit
@@ -229,6 +375,117 @@ export function cropDigitBoundingBox(
 }
 
 /**
+ * 바이너리(전처리된) 캔버스를 "글자(전경)"의 bounding box로 타이트하게 크롭합니다.
+ *
+ * 왜 필요한가?
+ * - ROI는 넉넉하게 잡는 편이 사용자 UX는 좋은데,
+ *   ROI가 넓을수록 주변 UI/잡음이 OCR에 섞여 정확도가 떨어질 수 있습니다.
+ * - 특히 EXP는 자리수가 줄어들면(10자리→6자리 등) 숫자 영역이 ROI 내에서 작아져
+ *   잡음 비율이 커지기 때문에, "전경만 타이트 크롭"이 효과가 큽니다.
+ *
+ * 입력 가정:
+ * - source는 이미 이진화되어 있음(0 또는 255에 가까움)
+ * - foreground는
+ *   - EXP 전처리: 흰 글자(255) / 검정 배경(0)
+ *   - LEVEL 전처리: 검정 글자(0) / 흰 배경(255)
+ *
+ * 기본 동작:
+ * - 결과는 OCR 안정성을 위해 "검정 글자 / 흰 배경"으로 정규화합니다.
+ */
+export function cropBinaryForegroundBoundingBox(
+	source: HTMLCanvasElement,
+	options: {
+		foreground?: "white" | "black";
+		/**
+		 * OCR 성능을 위해 결과를 "검정 글자 / 흰 배경"으로 통일합니다.
+		 * - foreground가 white(흰 글자 / 검정 배경)인 경우 자동 반전합니다.
+		 */
+		normalizeToBlackOnWhite?: boolean;
+		margin?: number;
+		targetHeight?: number;
+		outPad?: number;
+		/** Minimum foreground pixels in a column/row to be considered part of glyphs (filters speckle noise). */
+		minColPx?: number;
+		minRowPx?: number;
+	} = {}
+): HTMLCanvasElement {
+	const fg = options.foreground ?? "white";
+	const normalize = options.normalizeToBlackOnWhite !== false;
+	const margin = options.margin ?? 2;
+	const targetH = options.targetHeight ?? source.height;
+	const outPad = options.outPad ?? 6;
+	const w = source.width;
+	const h = source.height;
+	const ctx = source.getContext("2d");
+	if (!ctx || w <= 0 || h <= 0) return source;
+
+	const img = ctx.getImageData(0, 0, w, h);
+	const data = img.data;
+	const isForeground = (v: number) => (fg === "white" ? v > 200 : v < 80);
+
+	const minColPx = options.minColPx ?? Math.max(2, Math.floor(h * 0.02));
+	const minRowPx = options.minRowPx ?? Math.max(1, Math.floor(w * 0.01));
+
+	const colCount = new Uint16Array(w);
+	const rowCount = new Uint16Array(h);
+
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 4;
+			const v = data[i]; // red channel is enough after binarize
+			if (isForeground(v)) {
+				colCount[x]++;
+				rowCount[y]++;
+			}
+		}
+	}
+
+	let minX = 0;
+	while (minX < w && colCount[minX] < minColPx) minX++;
+	let maxX = w - 1;
+	while (maxX >= 0 && colCount[maxX] < minColPx) maxX--;
+	let minY = 0;
+	while (minY < h && rowCount[minY] < minRowPx) minY++;
+	let maxY = h - 1;
+	while (maxY >= 0 && rowCount[maxY] < minRowPx) maxY--;
+
+	if (maxX < minX || maxY < minY) return source;
+
+	minX = Math.max(0, minX - margin);
+	minY = Math.max(0, minY - margin);
+	maxX = Math.min(w - 1, maxX + margin);
+	maxY = Math.min(h - 1, maxY + margin);
+
+	const bw = maxX - minX + 1;
+	const bh = maxY - minY + 1;
+	const scale = targetH > 0 ? targetH / Math.max(1, bh) : 1;
+	const outW = Math.max(1, Math.round(bw * scale));
+	const outH = Math.max(1, Math.round(bh * scale));
+
+	const out = document.createElement("canvas");
+	out.width = outW + outPad * 2;
+	out.height = outH + outPad * 2;
+	const octx = out.getContext("2d")!;
+	octx.imageSmoothingEnabled = false;
+
+	// Fill background appropriately for OCR readability (white background is generally better).
+	octx.fillStyle = "#ffffff";
+	octx.fillRect(0, 0, out.width, out.height);
+
+	octx.drawImage(source, minX, minY, bw, bh, outPad, outPad, outW, outH);
+
+	// EXP처럼 "흰 글자 / 검정 배경" 입력은 결과를 "검정 글자 / 흰 배경"으로 반전해 OCR 안정성을 높입니다.
+	if (normalize && fg === "white") {
+		const outImg = octx.getImageData(0, 0, out.width, out.height);
+		invertBinaryInPlace(outImg.data);
+		// 알파는 항상 opaque로(브라우저/캔버스 상태 차이를 줄임)
+		for (let i = 0; i < outImg.data.length; i += 4) outImg.data[i + 3] = 255;
+		octx.putImageData(outImg, 0, 0);
+	}
+	return out;
+}
+
+/**
  * Preprocessor for EXP text like: "451519697 [42.59%]"
  * - Scales up to a minimum height for better OCR at low resolutions
  * - Binarizes using Otsu
@@ -254,40 +511,21 @@ export function preprocessExpCanvas(
 	// Robust binarization; keep foreground (bright glyphs) white on black background
 	const img = ctx.getImageData(0, 0, outW, outH);
 	binarizeOtsuInPlace(img.data, false /* invert */);
-	// Optionally black out uniform white bands at top/bottom (non-text areas)
+	// (1) 가장자리 보더 제거: 상단 흰 줄 같은 UI 요소가 bbox를 오른쪽 끝까지 끌고 가는 문제를 방지
+	removeUniformEdgeLinesBinaryInPlace(img.data, outW, outH, {
+		foreground: "white",
+		edgeY: Math.max(2, Math.min(48, Math.floor(outH * 0.2))),
+		edgeX: Math.max(2, Math.min(48, Math.floor(outW * 0.15))),
+		thresholdFrac: 0.97
+	});
+
+	// (2) 상/하 밴드 제거(옵션): 텍스트가 아닌 장식 영역을 제거해 OCR을 안정화
 	if (options.removeWhiteBands !== false) {
-		const data = img.data;
-		const w = outW, h = outH;
-		const rowIsUniformWhite: boolean[] = new Array(h).fill(false);
-		// A row is considered "uniform white" if >= 99% pixels are white (255)
-		const whiteThreshold = Math.floor(w * 0.90);
-		for (let y = 0; y < h; y++) {
-			let whiteCount = 0;
-			for (let x = 0; x < w; x++) {
-				const i = (y * w + x) * 4;
-				if (data[i] === 255) whiteCount++;
-			}
-			rowIsUniformWhite[y] = whiteCount >= whiteThreshold;
-		}
-		// From top
-		let top = 0;
-		while (top < h && rowIsUniformWhite[top]) top++;
-		// From bottom
-		let bottom = h - 1;
-		while (bottom >= 0 && rowIsUniformWhite[bottom]) bottom--;
-		// Paint the bands black
-		for (let y = 0; y < top; y++) {
-			for (let x = 0; x < w; x++) {
-				const i = (y * w + x) * 4;
-				data[i] = data[i + 1] = data[i + 2] = 0;
-			}
-		}
-		for (let y = bottom + 1; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				const i = (y * w + x) * 4;
-				data[i] = data[i + 1] = data[i + 2] = 0;
-			}
-		}
+		removeUniformTopBottomBandsBinaryInPlace(img.data, outW, outH, {
+			foreground: "white",
+			uniformRowFrac: 0.9,
+			windowY: Math.max(2, Math.min(64, Math.floor(outH * 0.25)))
+		});
 	}
 	ctx.putImageData(img, 0, 0);
 	return canvas;

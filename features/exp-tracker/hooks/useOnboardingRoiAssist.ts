@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox, preprocessExpCanvas } from "@/lib/canvas";
+import { cropBinaryForegroundBoundingBox, drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox, preprocessExpCanvas } from "@/lib/canvas";
 import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import type { RoiRect } from "@/components/RoiOverlay";
 
@@ -69,7 +69,13 @@ export function useOnboardingRoiAssist(options: Options) {
 				if (roiExp) {
 					const rect = toVideoSpaceRect(video, roiExp);
 					const canvasExpProc = preprocessExpCanvas(video, rect, { minHeight: 120 });
-					const res = await recognizeExpBracketedWithText(canvasExpProc);
+					const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
+						foreground: "white",
+						margin: 4,
+						targetHeight: 120,
+						outPad: 6
+					});
+					const res = await recognizeExpBracketedWithText(canvasExpCrop);
 					setOnboardingExpText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
 					setExpRoiShot(cRaw.toDataURL("image/png"));
