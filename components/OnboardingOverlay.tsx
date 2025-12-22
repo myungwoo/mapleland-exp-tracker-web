@@ -110,7 +110,7 @@ export default function OnboardingOverlay(props: Props) {
             <div className="mt-3 p-3 rounded border border-amber-400/30 bg-amber-400/10 text-amber-100">
               <div className="text-sm font-semibold mb-1">중요: 글꼴 설정</div>
               <p className="text-sm text-amber-100/90">
-                게임 내 글꼴을 <span className="font-semibold">비트맵 글꼴</span>로 설정하면 OCR 인식률이 크게 떨어져 정확한 측정이 어렵습니다.
+                게임 내 글꼴을 <span className="font-semibold">비트맵 글꼴</span>로 설정하면 OCR 인식률이 크게 떨어져 정확한 측정이 어렵습니다{' '}
                 <span className="font-semibold">반드시 “메이플스토리 월드 기본”</span> 글꼴을 사용해 주세요.
               </p>
             </div>
