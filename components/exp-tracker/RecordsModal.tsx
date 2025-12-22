@@ -48,6 +48,7 @@ function paceForAvgWindow(cumExpValue: number, elapsedMs: number, avgWindowMin: 
 export default function RecordsModal(props: Props) {
 	const [records, setRecords] = useState<RecordItem[]>([]);
 	const [name, setName] = useState<string>("");
+	const [search, setSearch] = useState<string>("");
 	const [busy, setBusy] = useState<string | null>(null);
 	const [defaultName, setDefaultName] = useState<string>("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -72,8 +73,14 @@ export default function RecordsModal(props: Props) {
 	}, [props.open]);
 
 	const totalCount = records.length;
+	const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
+	const visibleRecords = useMemo(() => {
+		if (!normalizedSearch) return records;
+		return records.filter(r => (r.name ?? "").toLowerCase().includes(normalizedSearch));
+	}, [records, normalizedSearch]);
+	const visibleCount = visibleRecords.length;
 	const selectedCount = selectedIds.size;
-	const allSelected = totalCount > 0 && selectedCount === totalCount;
+	const allSelected = visibleCount > 0 && visibleRecords.every(r => selectedIds.has(r.id));
 
 	const selectedRecords = useMemo(() => {
 		if (selectedIds.size === 0) return [];
@@ -178,8 +185,23 @@ export default function RecordsModal(props: Props) {
 					/>
 				</div>
 
-				<div className="text-sm text-white/60">
-					총 {totalCount}개 · 이전 기록을 불러오거나, 기록을 파일로 내보내기/불러오기 할 수 있습니다.
+				<div className="flex flex-col md:flex-row md:items-center gap-2">
+					<div className="flex-1 text-sm text-white/60">
+						총 {totalCount}개{normalizedSearch ? ` (검색 결과 ${visibleCount}개)` : ""} · 이전 기록을 불러오거나, 기록을 파일로 내보내기/불러오기 할 수 있습니다.
+					</div>
+					<div className="flex items-center gap-2">
+						<input
+							className="w-full md:w-64 bg-white/10 text-white rounded px-3 py-2 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
+							placeholder="기록 검색…"
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+						/>
+						{search ? (
+							<button className="btn" onClick={() => setSearch("")}>
+								지우기
+							</button>
+						) : null}
+					</div>
 				</div>
 				<div className="text-xs text-white/50">
 					기록 저장/불러오기는 <span className="text-white/70">타이머 일시정지 상태</span>에서만 가능합니다.
@@ -190,18 +212,25 @@ export default function RecordsModal(props: Props) {
 						<input
 							type="checkbox"
 							checked={allSelected}
-							disabled={totalCount === 0}
+							disabled={visibleCount === 0}
 							onChange={() => {
-								if (totalCount === 0) return;
+								if (visibleCount === 0) return;
 								setSelectedIds(prev => {
-									if (prev.size === totalCount) return new Set();
-									return new Set(records.map(r => r.id));
+									const next = new Set(prev);
+									if (visibleRecords.every(r => next.has(r.id))) {
+										for (const r of visibleRecords) next.delete(r.id);
+										return next;
+									}
+									for (const r of visibleRecords) next.add(r.id);
+									return next;
 								});
 							}}
 						/>
-						전체 선택
+						전체 선택{normalizedSearch ? " (검색 결과)" : ""}
 					</label>
-					<div className="ml-auto text-sm text-white/70">선택 {selectedCount}개</div>
+					<div className="ml-auto text-sm text-white/70">
+						선택 {selectedCount}개 · 표시 {visibleCount}/{totalCount}
+					</div>
 					<button
 						className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
 						disabled={!!busy || selectedCount === 0}
@@ -240,8 +269,10 @@ export default function RecordsModal(props: Props) {
 				<div className="divide-y divide-white/10 border border-white/10 rounded overflow-hidden">
 					{records.length === 0 ? (
 						<div className="p-4 text-sm text-white/60">저장된 기록이 없습니다. “현재 상태 저장”으로 기록을 만들어보세요.</div>
+					) : visibleRecords.length === 0 ? (
+						<div className="p-4 text-sm text-white/60">검색 결과가 없습니다.</div>
 					) : (
-						records.map((r) => (
+						visibleRecords.map((r) => (
 							<div key={r.id} className="p-3 flex flex-col md:flex-row md:items-center gap-3">
 								<label className="flex items-center gap-2 text-sm">
 									<input
