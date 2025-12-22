@@ -95,7 +95,7 @@ export default function ExpTracker() {
 		setPipSupported(isDocumentPipSupported());
 	}, []);
 	const pipUnsupportedTooltip =
-		"이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.";
+		"이 브라우저에서는 문서 PiP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.";
 	// Live sampling state for PiP event handlers (avoid stale closures)
 	const isSamplingRef = useRef<boolean>(false);
 	useEffect(() => { isSamplingRef.current = isSampling; }, [isSampling]);
@@ -178,7 +178,7 @@ export default function ExpTracker() {
 		if (!stream) return;
 		if (!captureVideoRef.current) return;
 		if (!roiLevel || !roiExp) {
-			alert("먼저 레벨/경험치 영역(ROI)을 설정해주세요.");
+			alert("먼저 레벨/경험치 영역(ROI)을 설정해 주세요.");
 			return;
 		}
 		// Baseline capture: used for both first start and resume
@@ -273,7 +273,7 @@ export default function ExpTracker() {
 		};
 	}, [elapsedMs, avgWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
 
-	// Space: 타이머 시작/일시정지 토글 (입력 폼 포커스 시에는 무시)
+	// Space: 측정 시작/일시정지 토글 (입력 폼 포커스 시에는 무시)
 	useGlobalHotkey({
 		match: (e) => e.code === "Space" || e.key === " ",
 		onTrigger: () => {
@@ -512,9 +512,11 @@ export default function ExpTracker() {
 			<Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="설정" disableEscClose={activeRoi !== null || onboardingOpen}>
 				<div className="flex items-center gap-2">
 					<button className="btn btn-primary" onClick={startCapture}>게임 창 선택</button>
-					<button className="btn" onClick={stopCapture} disabled={!stream}>캡처 중지</button>
+					{stream ? (
+						<button className="btn" onClick={stopCapture}>공유 중지</button>
+					) : null}
 					<div className="ml-auto flex items-center gap-2">
-						<label className="text-sm text-white/70">샘플링 간격</label>
+						<label className="text-sm text-white/70">측정 주기</label>
 						<select
 							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
 							value={intervalSec}

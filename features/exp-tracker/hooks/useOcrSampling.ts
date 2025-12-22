@@ -32,7 +32,7 @@ type Options = {
 };
 
 /**
- * OCR 샘플링(ROI 캡처 → 전처리 → OCR)과 누적(%) / 누적(값) 계산을 담당하는 훅입니다.
+ * OCR 측정(ROI 캡처 → 전처리 → OCR)과 누적(%) / 누적(값) 계산을 담당하는 훅입니다.
  *
  * - 왜: ExpTracker에 OCR/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
@@ -94,7 +94,7 @@ export function useOcrSampling(options: Options) {
 			}
 		}
 
-		// EXP는 잡히는데 레벨이 안 잡히는 경우가 종종 있어서, 레벨을 1로 가정해 추적이 이어지게 합니다.
+		// EXP는 잡히는데 레벨이 안 잡히는 경우가 종종 있어서, 레벨을 1로 가정해 측정이 이어지게 합니다.
 		const inferredLevel =
 			levelRes.value != null
 				? levelRes.value

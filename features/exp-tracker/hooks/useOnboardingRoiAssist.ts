@@ -15,7 +15,7 @@ type Options = {
 /**
  * 온보딩 중 ROI 썸네일과 OCR 인식 텍스트를 자동 갱신하는 훅입니다.
  *
- * - 왜: 온보딩 관련 state/effect가 ExpTracker에 섞여 있으면, 핵심 추적 로직을 읽기 어렵습니다.
+ * - 왜: 온보딩 관련 state/effect가 ExpTracker에 섞여 있으면, 핵심 측정 로직을 읽기 어렵습니다.
  */
 export function useOnboardingRoiAssist(options: Options) {
 	const { onboardingOpen, onboardingStep, stream, captureVideoRef, roiLevel, roiExp } = options;

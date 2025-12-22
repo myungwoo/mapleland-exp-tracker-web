@@ -45,7 +45,7 @@ type Props = {
 export default function TrackerSummary(props: Props) {
 	return (
 		<div ref={props.captureRef} className="card p-4 space-y-4">
-			<h2 className="text-lg font-semibold">요약</h2>
+			<h2 className="text-lg font-semibold">측정 정보</h2>
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div>
 					<div className="opacity-70 text-sm">경과된 시간</div>
@@ -62,7 +62,7 @@ export default function TrackerSummary(props: Props) {
 					</div>
 				</div>
 				<div>
-					<div className="opacity-70 text-sm">예상 경험치 ({props.avgWindowMin}분)</div>
+					<div className="opacity-70 text-sm">페이스 ({props.avgWindowMin}분 기준)</div>
 					<div className="font-mono text-xl">
 						{formatNumber(props.avgEstimate.val)} [{props.avgEstimate.pct.toFixed(2)}%]
 					</div>
@@ -73,13 +73,13 @@ export default function TrackerSummary(props: Props) {
 				<div className="flex items-baseline justify-between">
 					<h3 className="font-semibold">
 						{props.chartMode === "pace"
-							? `페이스 (전체 평균 · 기준 ${props.avgWindowMin}분)`
+							? `전체 페이스 (${props.avgWindowMin}분 기준)`
 							: props.chartMode === "paceRecent"
-								? `최근 30초 페이스 (기준 ${props.avgWindowMin}분)`
+								? `최근 30초 페이스 (${props.avgWindowMin}분 기준)`
 								: "누적 경험치"}
 					</h3>
 					<div className="flex items-center gap-2">
-						<div className="text-xs text-white/60 hidden md:block">샘플링 {props.intervalSec}초 · 가변 간격 대응</div>
+						<div className="text-xs text-white/60 hidden md:block">측정 주기 {props.intervalSec}초 · 가변 간격 대응</div>
 						<div className="inline-flex flex-nowrap whitespace-nowrap rounded overflow-hidden border border-white/10">
 							<button
 								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "pace" ? "bg-white/15" : "bg-white/5")}
@@ -128,9 +128,9 @@ export default function TrackerSummary(props: Props) {
 				</div>
 
 				{props.chartMode === "pace" ? (
-					<p className="text-xs text-white/60 mt-1">시작부터 현재까지의 평균 페이스입니다.</p>
+					<p className="text-xs text-white/60 mt-1">시작부터 시점까지의 평균 페이스입니다.</p>
 				) : props.chartMode === "paceRecent" ? (
-					<p className="text-xs text-white/60 mt-1">현재 시점 기준 최근 30초의 평균 페이스입니다.</p>
+					<p className="text-xs text-white/60 mt-1">시점 기준 최근 30초의 페이스입니다.</p>
 				) : null}
 
 				<div className="mt-2 h-40">

@@ -131,7 +131,7 @@ export default function RecordsModal(props: Props) {
 						disabled={!!busy || !props.canSave}
 						onClick={() => {
 							if (!props.canSave) {
-								openAlert("타이머를 일시정지한 상태에서만 기록을 저장할 수 있습니다.");
+										openAlert("측정을 일시정지한 상태에서만 기록을 저장할 수 있습니다.");
 								return;
 							}
 							try {
@@ -171,9 +171,9 @@ export default function RecordsModal(props: Props) {
 									const text = String(reader.result ?? "");
 									const res = importFromJsonText(text);
 									refresh();
-									openAlert(`가져오기 완료: ${res.imported}개`);
+									openAlert(`불러오기 완료: ${res.imported}개`);
 								} catch (err: any) {
-									openAlert(err?.message ?? "가져오기에 실패했습니다.");
+									openAlert(err?.message ?? "불러오기에 실패했습니다.");
 								} finally {
 									setBusy(null);
 									// allow importing same file again
@@ -198,13 +198,13 @@ export default function RecordsModal(props: Props) {
 						/>
 						{search ? (
 							<button className="btn" onClick={() => setSearch("")}>
-								지우기
+								초기화
 							</button>
 						) : null}
 					</div>
 				</div>
 				<div className="text-xs text-white/50">
-					기록 저장/불러오기는 <span className="text-white/70">타이머 일시정지 상태</span>에서만 가능합니다.
+					기록 저장/불러오기는 <span className="text-white/70">측정 일시정지 상태</span>에서만 가능합니다.
 				</div>
 
 				<div className="flex items-center gap-2 border border-white/10 rounded px-3 py-2 bg-white/5">
@@ -314,7 +314,7 @@ export default function RecordsModal(props: Props) {
 										disabled={!!busy || !props.canLoad}
 										onClick={() => {
 											if (!props.canLoad) {
-												openAlert("타이머를 일시정지한 상태에서만 기록을 불러올 수 있습니다.");
+													openAlert("측정을 일시정지한 상태에서만 기록을 불러올 수 있습니다.");
 												return;
 											}
 											openConfirm({

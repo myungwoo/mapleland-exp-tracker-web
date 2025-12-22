@@ -4,7 +4,7 @@ import type { StopwatchSnapshot } from "@/features/exp-tracker/hooks/useStopwatc
 
 /**
  * 기록(Record)은 “세션 상태”만 저장합니다.
- * - 설정(ROI, 샘플링 간격, 평균 시간, 차트 표시 옵션, 디버그 등)은 기록에 포함하지 않습니다.
+ * - 설정(ROI, 측정 주기, 평균 시간, 차트 표시 옵션, 디버그 등)은 기록에 포함하지 않습니다.
  * - 차트는 원본 데이터(history)를 저장하고, 표시(페이스 스케일 등)는 현재 설정에 의해 계산됩니다.
  */
 export type ExpTrackerSnapshotV3 = {

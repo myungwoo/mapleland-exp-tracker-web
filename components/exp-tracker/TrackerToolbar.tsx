@@ -56,11 +56,11 @@ export default function TrackerToolbar(props: Props) {
 			<div className="ml-auto flex items-center gap-2">
 				{props.isSampling ? (
 					<button className="btn btn-danger" onClick={props.onPause}>
-						타이머 일시정지 <span className="ml-2 text-xs opacity-70">Space</span>
+						측정 일시정지 <span className="ml-2 text-xs opacity-70">Space</span>
 					</button>
 				) : (
 					<button className="btn btn-primary" onClick={props.onStart} disabled={!props.hasStream}>
-						타이머 시작 <span className="ml-2 text-xs opacity-70">Space</span>
+						측정 시작 <span className="ml-2 text-xs opacity-70">Space</span>
 					</button>
 				)}
 
@@ -75,9 +75,9 @@ export default function TrackerToolbar(props: Props) {
 						onClick={props.onOpenPip}
 						disabled={!props.pipSupported}
 						aria-disabled={!props.pipSupported}
-						aria-label="PIP 열기"
+						aria-label="PiP 열기"
 					>
-						PIP 열기
+						PiP 열기
 						<svg
 							className="w-4 h-4 ml-2 shrink-0"
 							viewBox="0 0 24 24"

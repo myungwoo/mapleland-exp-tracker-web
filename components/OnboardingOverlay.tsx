@@ -32,8 +32,8 @@ const stepTitles = [
   "1. 메이플랜드 게임 창 선택",
   "2. 레벨 ROI 영역 선택",
   "3. 경험치 ROI 영역 선택",
-  "4. 렉이 느려지면 샘플링 간격 조절",
-  "5. PIP 모드로 간편하게 보기"
+  "4. 렉이 느려지면 측정 주기 조절",
+  "5. PiP 모드로 간편하게 보기"
 ] as const;
 
 export default function OnboardingOverlay(props: Props) {
@@ -46,7 +46,7 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              브라우저 정책상 페이지를 새로 열 때마다 추적할 게임 창을 다시 선택해야 합니다.
+              브라우저 정책상 페이지를 새로 열 때마다 측정할 게임 창을 다시 선택해야 합니다.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <button className="btn btn-primary" onClick={() => props.onSelectWindow()}>
@@ -60,7 +60,7 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              화면의 레벨 숫자만 포함되도록 영역을 드래그해서 지정하세요. 영역 안에 <span className="font-semibold">&quot;LV.&quot;</span> 텍스트는 포함되지 않도록 해주세요.
+              화면의 레벨 숫자만 포함되도록 영역을 드래그해서 지정하세요. 영역 안에 <span className="font-semibold">&quot;LV.&quot;</span> 텍스트는 포함하지 마세요.
               게임 창 크기를 바꾸면 ROI를 다시 설정해야 합니다.
             </p>
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
@@ -150,7 +150,7 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              측정으로 인해 렉이 느껴진다면 샘플링 간격을 늘려보세요. 기본은 <span className="font-semibold">1초</span>입니다.
+              측정으로 인해 렉이 느껴진다면 측정 주기를 늘려 보세요. 기본값은 <span className="font-semibold">1초</span>입니다.
             </p>
             <div className="mt-4 flex items-center gap-2">
               {options.map((s) => {
@@ -177,8 +177,8 @@ export default function OnboardingOverlay(props: Props) {
         return (
           <>
             <p className="text-white/90">
-              PIP(Document Picture‑in‑Picture) 모드를 사용하면 작은 항상-위 창으로 진행 상황을 볼 수 있어요.
-              타이머 시작/일시정지, 초기화를 PIP 창에서도 바로 할 수 있습니다.
+              PiP(Document Picture‑in‑Picture) 모드를 사용하면 작은 항상 위 창으로 진행 상황을 볼 수 있습니다.
+              측정 시작/일시정지, 초기화를 PiP 창에서도 바로 할 수 있습니다.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <div className="relative inline-block group">
@@ -187,20 +187,20 @@ export default function OnboardingOverlay(props: Props) {
                   onClick={() => props.onOpenPip && props.onOpenPip()}
                   disabled={props.pipSupported === false}
                   aria-disabled={props.pipSupported === false}
-                  aria-label="PIP 열기"
+                  aria-label="PiP 열기"
                 >
-                  PIP 열기
+                  PiP 열기
                 </button>
                 {props.pipSupported === false && (
                   <div
                     role="tooltip"
                     className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-pre rounded border border-white/10 bg-black/90 px-3 py-2 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
                   >
-                    이 브라우저에서는 문서 PIP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.
+                    이 브라우저에서는 문서 PiP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.
                   </div>
                 )}
               </div>
-              <span className="text-xs text-white/70">PIP 지원을 위해 최신 Chrome·Edge 사용을 권장합니다.</span>
+              <span className="text-xs text-white/70">PiP 지원을 위해 최신 Chrome·Edge 사용을 권장합니다.</span>
             </div>
           </>
         );

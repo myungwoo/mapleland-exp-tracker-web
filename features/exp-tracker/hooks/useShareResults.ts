@@ -40,7 +40,7 @@ export function useShareResults(inputs: Inputs): Result {
 	}, []);
 
 	const bumpTextCopiedLabel = useCallback(() => {
-		setTextButtonLabel("텍스트를 복사하였습니다");
+		setTextButtonLabel("텍스트를 복사했습니다");
 		if (textResetTimerRef.current) window.clearTimeout(textResetTimerRef.current);
 		textResetTimerRef.current = window.setTimeout(() => {
 			setTextButtonLabel("결과 텍스트 복사");
@@ -49,7 +49,7 @@ export function useShareResults(inputs: Inputs): Result {
 	}, []);
 
 	const bumpImageCopiedLabel = useCallback(() => {
-		setImageButtonLabel("이미지를 복사하였습니다");
+		setImageButtonLabel("이미지를 복사했습니다");
 		if (imageResetTimerRef.current) window.clearTimeout(imageResetTimerRef.current);
 		imageResetTimerRef.current = window.setTimeout(() => {
 			setImageButtonLabel("결과 이미지 복사");
@@ -97,7 +97,7 @@ export function useShareResults(inputs: Inputs): Result {
 		const gained = `${formatNumber(inputs.cumExpValue)} EXP [${inputs.cumExpPct.toFixed(2)}%]`;
 		const paceText = `${formatNumber(inputs.avgEstimateValue)} EXP [${inputs.avgEstimatePct.toFixed(2)}%] / ${inputs.avgWindowMin}분`;
 		const text =
-			`🍁 메이플랜드 경험치 측정 결과 공유해요!\n\n` +
+			`🍁 메이플랜드 경험치 측정 결과 공유합니다!\n\n` +
 			`⏱️ 경과 시간: ${elapsed}\n` +
 			`✨ 획득 EXP: ${gained}\n` +
 			`🏃 페이스: ${paceText}\n\n` +
@@ -127,7 +127,7 @@ export function useShareResults(inputs: Inputs): Result {
 			if (!ok) throw new Error("copy failed");
 			bumpTextCopiedLabel();
 		} catch {
-			alert("텍스트 복사에 실패했어요. (브라우저 권한을 확인해 주세요)");
+			alert("텍스트 복사에 실패했습니다. (브라우저 권한을 확인해 주세요)");
 		}
 	}, [inputs, bumpTextCopiedLabel]);
 
@@ -138,7 +138,7 @@ export function useShareResults(inputs: Inputs): Result {
 		}
 		const el = inputs.getSummaryEl();
 		if (!el) {
-			alert("요약 영역을 찾지 못했어요.");
+			alert("요약 영역을 찾지 못했습니다.");
 			return;
 		}
 		if (isCopyingImage) return;
@@ -158,10 +158,10 @@ export function useShareResults(inputs: Inputs): Result {
 				bumpImageNeedFocusLabel();
 				if (!pendingAlertedRef.current) {
 					pendingAlertedRef.current = true;
-					alert("다른 창으로 이동해서 복사가 실패했어요.\n이 탭으로 돌아오면 자동으로 다시 복사할게요.");
+					alert("다른 창으로 이동하여 복사에 실패했습니다.\n이 탭으로 돌아오면 자동으로 다시 복사합니다.");
 				}
 			} else {
-				const msg = e instanceof Error ? e.message : "이미지 복사에 실패했어요.";
+				const msg = e instanceof Error ? e.message : "이미지 복사에 실패했습니다.";
 				alert(msg);
 			}
 		} finally {

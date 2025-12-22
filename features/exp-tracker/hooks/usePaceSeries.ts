@@ -18,9 +18,9 @@ type Options = {
 };
 
 /**
- * 샘플링 결과(cumExp/elapsed)를 기반으로 차트 시리즈를 생성하는 훅입니다.
+ * 측정 결과(cumExp/elapsed)를 기반으로 차트 시리즈를 생성하는 훅입니다.
  *
- * - 왜: 히스토리 누적/시리즈 계산이 ExpTracker에 섞이면, “추적 로직”과 “표시 로직”이 얽힙니다.
+ * - 왜: 히스토리 누적/시리즈 계산이 ExpTracker에 섞이면, “측정 로직”과 “표시 로직”이 얽힙니다.
  */
 export function usePaceSeries(options: Options) {
 	const { hasStarted, sampleTick, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs, avgWindowMin } = options;

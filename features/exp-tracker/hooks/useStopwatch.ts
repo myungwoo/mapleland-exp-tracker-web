@@ -10,7 +10,7 @@ export type StopwatchSnapshot = {
  * 경과 시간(초 단위 UI 갱신)과 “일시정지 후 재개”를 위한 baseElapsedMs를 함께 관리합니다.
  *
  * - 왜: ExpTracker 안에서 startAtRef/clockRef/baseElapsedMs가 섞여 있으면
- *   샘플링 로직과 시간 로직이 얽혀서 수정이 어려워집니다.
+ *   측정 로직과 시간 로직이 얽혀서 수정이 어려워집니다.
  */
 export function useStopwatch() {
 	const [elapsedMs, setElapsedMs] = useState(0);
