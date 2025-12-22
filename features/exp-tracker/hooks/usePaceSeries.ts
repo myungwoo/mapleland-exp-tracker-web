@@ -14,7 +14,7 @@ type Options = {
 	cumExpValue: number;
 	cumExpPct: number;
 	elapsedMs: number;
-	avgWindowMin: number;
+	paceWindowMin: number;
 };
 
 /**
@@ -23,7 +23,7 @@ type Options = {
  * - 왜: 히스토리 누적/시리즈 계산이 ExpTracker에 섞이면, “측정 로직”과 “표시 로직”이 얽힙니다.
  */
 export function usePaceSeries(options: Options) {
-	const { hasStarted, sampleTick, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs, avgWindowMin } = options;
+	const { hasStarted, sampleTick, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs, paceWindowMin } = options;
 
 	const [history, setHistory] = useState<PaceHistoryPoint[]>([]);
 	const handledTickRef = useRef<number>(0);
@@ -53,7 +53,7 @@ export function usePaceSeries(options: Options) {
 
 	const paceOverallSeries = useMemo((): PaceSeriesPoint[] => {
 		if (history.length < 1) return [];
-		const scaleSec = avgWindowMin * 60;
+		const scaleSec = paceWindowMin * 60;
 		const points: PaceSeriesPoint[] = [];
 		for (let i = 0; i < history.length; i++) {
 			const h = history[i];
@@ -63,7 +63,7 @@ export function usePaceSeries(options: Options) {
 			points.push({ ts: h.elapsedAtMs, value: ratePerSec * scaleSec });
 		}
 		return points;
-	}, [history, avgWindowMin]);
+	}, [history, paceWindowMin]);
 
 	const cumulativeSeries = useMemo((): PaceSeriesPoint[] => {
 		return history.map(h => ({ ts: h.elapsedAtMs, value: h.cumExp }));
@@ -72,7 +72,7 @@ export function usePaceSeries(options: Options) {
 	const recentPaceSeries = useMemo((): PaceSeriesPoint[] => {
 		if (history.length < 1) return [];
 		const windowMs = 30 * 1000;
-		const scaleSec = avgWindowMin * 60;
+		const scaleSec = paceWindowMin * 60;
 		const points: PaceSeriesPoint[] = [];
 		let j = 0;
 		for (let i = 0; i < history.length; i++) {
@@ -88,7 +88,7 @@ export function usePaceSeries(options: Options) {
 			points.push({ ts: cur.elapsedAtMs, value: ratePerSec * scaleSec });
 		}
 		return points;
-	}, [history, avgWindowMin]);
+	}, [history, paceWindowMin]);
 
 	const getSnapshot = useCallback((): PaceSeriesSnapshot => {
 		return { history };

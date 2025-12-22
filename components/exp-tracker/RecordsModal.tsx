@@ -14,7 +14,7 @@ type Props = {
 	onClose: () => void;
 	canSave: boolean;
 	canLoad: boolean;
-	avgWindowMin: number;
+	paceWindowMin: number;
 	getSnapshot: () => ExpTrackerSnapshot;
 	applySnapshot: (snap: ExpTrackerSnapshot) => void;
 };
@@ -37,10 +37,10 @@ function formatDateTime(ts: number) {
 	}
 }
 
-function paceForAvgWindow(cumExpValue: number, elapsedMs: number, avgWindowMin: number): number | null {
+function paceForWindowMin(cumExpValue: number, elapsedMs: number, paceWindowMin: number): number | null {
 	const ms = Math.max(0, elapsedMs);
 	if (ms < 1000) return null;
-	const factor = (Math.max(1, avgWindowMin) * 60 * 1000) / ms;
+	const factor = (Math.max(1, paceWindowMin) * 60 * 1000) / ms;
 	const v = cumExpValue * factor;
 	return Number.isFinite(v) ? v : null;
 }
@@ -299,12 +299,12 @@ export default function RecordsModal(props: Props) {
 										{" · "}
 										페이스{" "}
 										{(() => {
-											const p = paceForAvgWindow(
+											const p = paceForWindowMin(
 												Number((r.snapshot.ocr?.cumExpValue ?? 0) as number),
 												Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number),
-												props.avgWindowMin
+												props.paceWindowMin
 											);
-											return p == null ? "-" : `${formatNumber(p)} / ${props.avgWindowMin}분`;
+											return p == null ? "-" : `${formatNumber(p)} / ${props.paceWindowMin}분`;
 										})()}
 									</div>
 								</div>

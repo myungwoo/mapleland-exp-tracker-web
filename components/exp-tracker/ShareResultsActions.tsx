@@ -9,9 +9,9 @@ type Props = {
 	elapsedMs: number;
 	cumExpValue: number;
 	cumExpPct: number;
-	avgWindowMin: number;
-	avgEstimateValue: number;
-	avgEstimatePct: number;
+	paceWindowMin: number;
+	paceValue: number;
+	pacePct: number;
 	getSummaryEl: () => HTMLElement | null;
 };
 
@@ -30,9 +30,9 @@ export default function ShareResultsActions(props: Props) {
 		elapsedMs: props.elapsedMs,
 		cumExpValue: props.cumExpValue,
 		cumExpPct: props.cumExpPct,
-		avgWindowMin: props.avgWindowMin,
-		avgEstimateValue: props.avgEstimateValue,
-		avgEstimatePct: props.avgEstimatePct,
+		paceWindowMin: props.paceWindowMin,
+		paceValue: props.paceValue,
+		pacePct: props.pacePct,
 		getSummaryEl: props.getSummaryEl
 	});
 

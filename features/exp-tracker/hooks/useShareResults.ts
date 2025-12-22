@@ -9,9 +9,9 @@ type Inputs = {
 	elapsedMs: number;
 	cumExpValue: number;
 	cumExpPct: number;
-	avgWindowMin: number;
-	avgEstimateValue: number;
-	avgEstimatePct: number;
+	paceWindowMin: number;
+	paceValue: number;
+	pacePct: number;
 	getSummaryEl: () => HTMLElement | null;
 };
 
@@ -95,7 +95,7 @@ export function useShareResults(inputs: Inputs): Result {
 		}
 		const elapsed = formatElapsed(inputs.elapsedMs);
 		const gained = `${formatNumber(inputs.cumExpValue)} EXP [${inputs.cumExpPct.toFixed(2)}%]`;
-		const paceText = `${formatNumber(inputs.avgEstimateValue)} EXP [${inputs.avgEstimatePct.toFixed(2)}%] / ${inputs.avgWindowMin}분`;
+		const paceText = `${formatNumber(inputs.paceValue)} EXP [${inputs.pacePct.toFixed(2)}%] / ${inputs.paceWindowMin}분`;
 		const text =
 			`🍁 메이플랜드 경험치 측정 결과 공유합니다!\n\n` +
 			`⏱️ 경과 시간: ${elapsed}\n` +

@@ -9,7 +9,7 @@ export type PipState = {
   nextAt: Date | null;
   nextHours: number | null;
   gainedText: string;
-  estText: string;
+  paceText: string;
 };
 
 declare global {

@@ -61,7 +61,7 @@ export function pipMarkup(): string {
       <div class="bigger" id="pip-gained">-</div>
     </div>
     <div class="row">
-      <div class="big" id="pip-est">-</div>
+      <div class="big" id="pip-pace">-</div>
     </div>
   `;
 }

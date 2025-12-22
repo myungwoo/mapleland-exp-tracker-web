@@ -8,7 +8,7 @@
 [![Deploy](https://github.com/myungwoo/mapleland-exp-tracker-web/actions/workflows/gh-pages.yml/badge.svg)](.github/workflows/gh-pages.yml)
 
 설치 없이 브라우저에서 바로 사용하는 경험치(Exp) 측정·예측 웹앱입니다. 🎮
-게임 창의 레벨/경험치 영역(ROI)을 화면 캡처로 지정하면, 경과 시간 대비 누적 경험치와 예상치를 깔끔하게 보여줍니다.
+게임 창의 레벨/경험치 영역(ROI)을 화면 캡처로 지정하면, 경과 시간 대비 누적 경험치와 페이스를 깔끔하게 보여줍니다.
 GitHub Pages로 정적 호스팅되어 가볍고 빠릅니다.
 
 ---
@@ -23,7 +23,7 @@ GitHub Pages로 정적 호스팅되어 가볍고 빠릅니다.
 - 화면/창 캡처로 게임 창 선택 (브라우저 권한 필요)
 - ROI 지정: 레벨, 경험치(예: `XXXXXXXX[YY.YY%]`) 영역 드래그 선택
 - 측정 시작/일시정지/재개/초기화 및 Space 단축키
-- 누적 경험치(값/퍼센트), 평균 표시 시간 기반 예상치, 다음 `N시간 되는 시각` 표시
+- 누적 경험치(값/퍼센트), 페이스 기준 시간(X분) 기반 페이스 표시, 다음 `N시간 되는 시각` 표시
 - 디버그 미리보기(전처리 전/후 이미지)
 - 로컬 저장: ROI/설정 자동 유지(LocalStorage)
 - PiP 모드(Document Picture‑in‑Picture): 항상 위 미니 창에서 진행 상황 확인, 타이머 제어(시작/일시정지/초기화)

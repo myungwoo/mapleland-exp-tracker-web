@@ -38,7 +38,7 @@ export default function ExpTracker() {
 	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec);
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
-	const [avgWindowMin, setAvgWindowMin] = usePersistentState<number>("avgWindowMin", 60);
+	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60);
 	// Interactive chart x-range (elapsed ms). Null = full range.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
 	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
@@ -262,16 +262,16 @@ export default function ExpTracker() {
 	}, [elapsedMs, hasStarted, ocr.cumExpPct]);
 
 	// Extrapolate from cumulative totals using elapsed time:
-	// estimate(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
-	const avgEstimate = useMemo(() => {
+	// paceAtWindow(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
+	const paceAtWindow = useMemo(() => {
 		const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
 		if (elapsedSec <= 0) return { pct: 0, val: 0 };
-		const factor = (avgWindowMin * 60) / elapsedSec;
+		const factor = (paceWindowMin * 60) / elapsedSec;
 		return {
 			pct: ocr.cumExpPct * factor,
 			val: ocr.cumExpValue * factor
 		};
-	}, [elapsedMs, avgWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
+	}, [elapsedMs, paceWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
 
 	// Space: 측정 시작/일시정지 토글 (입력 폼 포커스 시에는 무시)
 	useGlobalHotkey({
@@ -375,10 +375,10 @@ export default function ExpTracker() {
 			nextAt: stats ? stats.nextAt : null,
 			nextHours: stats ? stats.nextHours : null,
 			gainedText: `${formatNumber(ocr.cumExpValue)} [${ocr.cumExpPct.toFixed(2)}%]`,
-			estText: `${formatNumber(avgEstimate.val)} [${avgEstimate.pct.toFixed(2)}%] / ${avgWindowMin}분`
+			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`
 		};
 		pipUpdate(state);
-	}, [isSampling, elapsedMs, stats, ocr.cumExpValue, ocr.cumExpPct, avgEstimate.val, avgEstimate.pct, avgWindowMin, pipUpdate]);
+	}, [isSampling, elapsedMs, stats, ocr.cumExpValue, ocr.cumExpPct, paceAtWindow.val, paceAtWindow.pct, paceWindowMin, pipUpdate]);
 
 	// Keep PiP contents in sync whenever relevant values change
 	useEffect(() => {
@@ -398,7 +398,7 @@ export default function ExpTracker() {
 		cumExpValue: ocr.cumExpValue,
 		cumExpPct: ocr.cumExpPct,
 		elapsedMs,
-		avgWindowMin
+		paceWindowMin
 	});
 	const { paceOverallSeries, recentPaceSeries, cumulativeSeries } = pace;
 
@@ -429,8 +429,8 @@ export default function ExpTracker() {
 				stats={stats ? { nextAt: stats.nextAt, nextHours: stats.nextHours } : null}
 				cumExpValue={ocr.cumExpValue}
 				cumExpPct={ocr.cumExpPct}
-				avgWindowMin={avgWindowMin}
-				avgEstimate={avgEstimate}
+				paceWindowMin={paceWindowMin}
+				paceAtWindow={paceAtWindow}
 				intervalSec={intervalSec}
 				chartMode={chartMode}
 				onChartModeChange={setChartMode}
@@ -452,9 +452,9 @@ export default function ExpTracker() {
 					elapsedMs={elapsedMs}
 					cumExpValue={ocr.cumExpValue}
 					cumExpPct={ocr.cumExpPct}
-					avgWindowMin={avgWindowMin}
-					avgEstimateValue={avgEstimate.val}
-					avgEstimatePct={avgEstimate.pct}
+					paceWindowMin={paceWindowMin}
+					paceValue={paceAtWindow.val}
+					pacePct={paceAtWindow.pct}
 					getSummaryEl={() => summaryCaptureRef.current}
 				/>
 			</div>
@@ -475,7 +475,7 @@ export default function ExpTracker() {
 				onClose={() => setRecordsOpen(false)}
 				canSave={hasStarted && !isSampling && !stopwatch.isRunning}
 				canLoad={!isSampling && !stopwatch.isRunning}
-				avgWindowMin={avgWindowMin}
+				paceWindowMin={paceWindowMin}
 				getSnapshot={() => {
 					const snap: ExpTrackerSnapshot = {
 						version: 3,
@@ -526,11 +526,11 @@ export default function ExpTracker() {
 							<option value={5}>5초</option>
 							<option value={10}>10초</option>
 						</select>
-						<label className="text-sm text-white/70 ml-4">평균 표시 시간</label>
+						<label className="text-sm text-white/70 ml-4">페이스 기준 시간</label>
 						<select
 							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-							value={avgWindowMin}
-							onChange={e => setAvgWindowMin(parseInt(e.target.value, 10))}
+							value={paceWindowMin}
+							onChange={e => setPaceWindowMin(parseInt(e.target.value, 10))}
 						>
 							<option value={5}>5분</option>
 							<option value={10}>10분</option>

@@ -19,8 +19,8 @@ type Props = {
 	stats: Stats | null;
 	cumExpValue: number;
 	cumExpPct: number;
-	avgWindowMin: number;
-	avgEstimate: { pct: number; val: number };
+	paceWindowMin: number;
+	paceAtWindow: { pct: number; val: number };
 	intervalSec: number;
 
 	chartMode: ChartMode;
@@ -62,9 +62,9 @@ export default function TrackerSummary(props: Props) {
 					</div>
 				</div>
 				<div>
-					<div className="opacity-70 text-sm">페이스 ({props.avgWindowMin}분 기준)</div>
+					<div className="opacity-70 text-sm">페이스 ({props.paceWindowMin}분 기준)</div>
 					<div className="font-mono text-xl">
-						{formatNumber(props.avgEstimate.val)} [{props.avgEstimate.pct.toFixed(2)}%]
+						{formatNumber(props.paceAtWindow.val)} [{props.paceAtWindow.pct.toFixed(2)}%]
 					</div>
 				</div>
 			</div>
@@ -73,9 +73,9 @@ export default function TrackerSummary(props: Props) {
 				<div className="flex items-baseline justify-between">
 					<h3 className="font-semibold">
 						{props.chartMode === "pace"
-							? `전체 페이스 (${props.avgWindowMin}분 기준)`
+							? `전체 페이스 (${props.paceWindowMin}분 기준)`
 							: props.chartMode === "paceRecent"
-								? `최근 30초 페이스 (${props.avgWindowMin}분 기준)`
+								? `최근 30초 페이스 (${props.paceWindowMin}분 기준)`
 								: "누적 경험치"}
 					</h3>
 					<div className="flex items-center gap-2">
@@ -128,7 +128,7 @@ export default function TrackerSummary(props: Props) {
 				</div>
 
 				{props.chartMode === "pace" ? (
-					<p className="text-xs text-white/60 mt-1">시작부터 시점까지의 평균 페이스입니다.</p>
+					<p className="text-xs text-white/60 mt-1">시작부터 시점까지의 페이스입니다.</p>
 				) : props.chartMode === "paceRecent" ? (
 					<p className="text-xs text-white/60 mt-1">시점 기준 최근 30초의 페이스입니다.</p>
 				) : null}
@@ -137,7 +137,7 @@ export default function TrackerSummary(props: Props) {
 					{props.chartMode === "pace" ? (
 						<PaceChart
 							data={props.paceOverallSeries}
-							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.avgWindowMin}분`}
+							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.paceWindowMin}분`}
 							yLabelFormatter={(v: number) => formatNumberCompact(v)}
 							xLabelFormatter={(ts: number) => formatElapsed(ts)}
 							xDomain={props.chartRangeMs}
@@ -149,7 +149,7 @@ export default function TrackerSummary(props: Props) {
 					) : props.chartMode === "paceRecent" ? (
 						<PaceChart
 							data={props.recentPaceSeries}
-							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.avgWindowMin}분`}
+							tooltipFormatter={(v: number) => `${formatNumber(v)} / ${props.paceWindowMin}분`}
 							yLabelFormatter={(v: number) => formatNumberCompact(v)}
 							xLabelFormatter={(ts: number) => formatElapsed(ts)}
 							xDomain={props.chartRangeMs}

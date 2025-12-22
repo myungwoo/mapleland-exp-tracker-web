@@ -143,8 +143,8 @@ export class PipController {
     // Texts
     const gainedEl = qs("pip-gained");
     if (gainedEl) gainedEl.textContent = state.gainedText;
-    const estEl = qs("pip-est");
-    if (estEl) estEl.textContent = state.estText;
+    const paceEl = qs("pip-pace");
+    if (paceEl) paceEl.textContent = state.paceText;
   }
 
   close(): void {
