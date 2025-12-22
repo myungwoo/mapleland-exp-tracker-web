@@ -107,6 +107,13 @@ export default function OnboardingOverlay(props: Props) {
               경험치 문자열 전체가 들어오도록 선택하세요. <span className="font-semibold">&quot;EXP.&quot;</span> 텍스트는 제외하고, 맨 왼쪽 숫자부터 맨 오른쪽 닫는 괄호 <span className="font-mono">]</span>까지 포함되게 하세요.
               위아래로 약간의 여백을 두면 인식이 더 정확합니다. 게임 창 크기를 바꾸면 ROI를 다시 설정해야 합니다.
             </p>
+            <div className="mt-3 p-3 rounded border border-amber-400/30 bg-amber-400/10 text-amber-100">
+              <div className="text-sm font-semibold mb-1">중요: 글꼴 설정</div>
+              <p className="text-sm text-amber-100/90">
+                게임 내 글꼴을 <span className="font-semibold">비트맵 글꼴</span>로 설정하면 OCR 인식률이 크게 떨어져 정확한 측정이 어렵습니다.
+                <span className="font-semibold">반드시 “메이플스토리 월드 기본”</span> 글꼴을 사용해 주세요.
+              </p>
+            </div>
             <div className="mt-3 p-3 rounded border border-white/15 bg-white/5">
               <div className="text-sm text-white/80 mb-2">올바른 선택 예시</div>
               <Image
