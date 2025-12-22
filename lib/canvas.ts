@@ -283,13 +283,15 @@ export function preprocessLevelCanvas(
 		const minc = Math.min(r, g, b);
 		const mean = (r + g + b) / 3;
 		const chroma = maxc - minc;
-		// Thresholds tuned for white digits with slight antialiasing (relaxed)
-		if (chroma <= 90 && mean >= 120) {
+		// 임계값(레벨 타일용):
+		// - mean(밝기)을 높이고, chroma(색차)를 낮춰 "진짜 흰 글자"만 더 타이트하게 잡습니다.
+		// - 목표: 배경/테두리의 미세 픽셀들이 전경으로 섞이는 것을 줄여 1px 스펙클을 방지
+		if (chroma <= 80 && mean >= 130) {
 			mask[p] = 1;
 		}
 	}
 
-	// 2) Simple dilation to thicken slender strokes (single pass 3x3)
+	// 2) 간단 dilation(3x3): 얇은 획을 조금 두껍게 해서 OCR 안정화
 	const dil = new Uint8Array(w * h);
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
@@ -305,9 +307,30 @@ export function preprocessLevelCanvas(
 			dil[y * w + x] = on;
 		}
 	}
-	const clo = dil; // use dilated mask directly
 
-	// 3) Render black digits on white background
+	// 3) 스펙클 제거: "고립된 점(주변에 이웃이 거의 없는 전경 픽셀)"을 제거합니다.
+	// - dilation만 적용하면 배경의 미세 오검출(1px)이 그대로 전경으로 남아 bbox 크롭을 방해할 수 있습니다.
+	// - 숫자 획은 인접 픽셀들이 충분히 있어서 이 필터에서 대부분 보존됩니다.
+	const clo = new Uint8Array(w * h);
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const idx = y * w + x;
+			if (!dil[idx]) continue;
+			let neighbors = 0;
+			for (let dy = -1; dy <= 1; dy++) {
+				for (let dx = -1; dx <= 1; dx++) {
+					if (dx === 0 && dy === 0) continue;
+					const nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+					if (dil[ny * w + nx]) neighbors++;
+				}
+			}
+			// 1px 또는 얇은 잡점은 이웃이 거의 없으므로 제거 (neighbors>=1이면 유지)
+			if (neighbors >= 1) clo[idx] = 1;
+		}
+	}
+
+	// 4) Render black digits on white background
 	for (let y = 0, p = 0, i = 0; y < h; y++) {
 		for (let x = 0; x < w; x++, p++, i += 4) {
 			const digit = clo[p] === 1;
