@@ -181,18 +181,14 @@ export default function ExpTracker() {
 			alert("먼저 레벨/경험치 영역(ROI)을 설정해 주세요.");
 			return;
 		}
-		// Baseline capture: used for both first start and resume
-		const captureBaseline = async (resetTotals: boolean) => {
-			// baseline은 UI에 보여줄 값만 갱신하고, 누적은 증가시키지 않습니다.
-			await ocr.readOnce();
-			if (resetTotals) {
-				ocr.resetTotals();
-				setHasStarted(true);
-				stopwatch.reset();
-			}
-		};
-		// First start resets totals; resume only resets baseline
-		await captureBaseline(!hasStarted);
+		// 시작/재개 직후 baseline(기준점)을 prev로 기록합니다.
+		// - 누적/차트 히스토리는 증가시키지 않음
+		// - baseline이 %↔값 불일치 등으로 이상하면, 이번 틱은 무시하고 다음 틱을 첫 틱으로 삼음
+		await ocr.captureBaseline({ resetTotals: !hasStarted });
+		if (!hasStarted) {
+			setHasStarted(true);
+			stopwatch.reset();
+		}
 
 		// Start clock
 		stopwatch.start();
