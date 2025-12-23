@@ -239,6 +239,149 @@ function removeUniformTopBottomBandsBinaryInPlace(
 	}
 }
 
+function removeTopRightIslandsBinaryInPlace(
+	data: Uint8ClampedArray,
+	w: number,
+	h: number,
+	options: {
+		foreground: "white" | "black";
+		/**
+		 * "섬"을 찾기 위해 스캔을 시작할 우측 영역 비율 (0~1).
+		 * 예: 0.35면 전체 폭의 오른쪽 35%만 시작점으로 훑습니다.
+		 */
+		scanRightFrac: number;
+		/**
+		 * "섬"을 찾기 위해 스캔을 시작할 상단 영역 비율 (0~1).
+		 * 예: 0.45면 전체 높이의 위쪽 45%만 시작점으로 훑습니다.
+		 */
+		scanTopFrac: number;
+		/** 컴포넌트(연결요소) 면적이 전체 대비 이 비율 이하일 때만 제거 후보 */
+		maxAreaFrac: number;
+		/** bbox 가로/세로가 전체 대비 이 비율 이하일 때만 제거 후보 */
+		maxWidthFrac: number;
+		maxHeightFrac: number;
+		/**
+		 * (레거시) 우측 끝 판정용 마진(px).
+		 * 현재 기본 판정은 "우측 상단 코너 영역 안에 완전히 들어온 작은 컴포넌트"이며,
+		 * 이 값은 매우 근접한 경우 보조적으로만 사용됩니다.
+		 */
+		rightEdgeMarginPx: number;
+		/** 4-연결 또는 8-연결 */
+		connectivity: 4 | 8;
+	} = {
+		foreground: "white",
+		scanRightFrac: 0.35,
+		scanTopFrac: 0.45,
+		maxAreaFrac: 0.01,
+		maxWidthFrac: 0.28,
+		maxHeightFrac: 0.55,
+		rightEdgeMarginPx: 2,
+		connectivity: 8
+	}
+) {
+	// EXP ROI 우측 상단에 UI 잔상/아이콘/노이즈처럼 작은 "섬"이 생기면
+	// bbox 크롭이 그쪽으로 끌려가 OCR이 흔들릴 수 있습니다.
+	// 이 함수는 "우측 상단 영역에서 시작한 작은 연결요소"만 골라 배경으로 지웁니다.
+	const fg = options.foreground;
+	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
+	const bg = fg === "white" ? 0 : 255;
+
+	const scanX0 = Math.max(0, Math.floor(w * (1 - Math.max(0, Math.min(1, options.scanRightFrac)))));
+	const scanY1 = Math.max(0, Math.floor(h * Math.max(0, Math.min(1, options.scanTopFrac))));
+	if (w <= 1 || h <= 1 || scanX0 >= w || scanY1 <= 0) return;
+
+	const maxArea = Math.max(1, Math.floor(w * h * options.maxAreaFrac));
+	const maxW = Math.max(1, Math.floor(w * options.maxWidthFrac));
+	const maxH = Math.max(1, Math.floor(h * options.maxHeightFrac));
+	const rightMargin = Math.max(0, Math.floor(options.rightEdgeMarginPx));
+
+	const visited = new Uint8Array(w * h);
+	const stack: number[] = [];
+	const pixels: number[] = [];
+
+	const push = (x: number, y: number) => {
+		if (x < 0 || y < 0 || x >= w || y >= h) return;
+		const p = y * w + x;
+		if (visited[p]) return;
+		const i = p * 4;
+		if (!isFg(data[i])) return;
+		visited[p] = 1;
+		stack.push(p);
+	};
+
+	for (let y = 0; y < scanY1; y++) {
+		for (let x = scanX0; x < w; x++) {
+			const p0 = y * w + x;
+			if (visited[p0]) continue;
+			const i0 = p0 * 4;
+			if (!isFg(data[i0])) {
+				// background는 방문 처리만 하고 넘어갑니다. (성능 최적화)
+				visited[p0] = 1;
+				continue;
+			}
+
+			// BFS/DFS for this component
+			stack.length = 0;
+			pixels.length = 0;
+			visited[p0] = 1;
+			stack.push(p0);
+
+			let minX = x, maxX = x, minY = y, maxY = y;
+			let area = 0;
+
+			while (stack.length) {
+				const p = stack.pop()!;
+				pixels.push(p);
+				area++;
+				// Early bail: if it grows too big, treat it as not-an-island (e.g., real text)
+				if (area > maxArea) break;
+				const cy = Math.floor(p / w);
+				const cx = p - cy * w;
+				if (cx < minX) minX = cx;
+				if (cx > maxX) maxX = cx;
+				if (cy < minY) minY = cy;
+				if (cy > maxY) maxY = cy;
+
+				// neighbors
+				push(cx - 1, cy);
+				push(cx + 1, cy);
+				push(cx, cy - 1);
+				push(cx, cy + 1);
+				if (options.connectivity === 8) {
+					push(cx - 1, cy - 1);
+					push(cx + 1, cy - 1);
+					push(cx - 1, cy + 1);
+					push(cx + 1, cy + 1);
+				}
+			}
+
+			// If we bailed due to size, don't remove; but keep visited marks to avoid rework.
+			if (area > maxArea) continue;
+
+			const bw = maxX - minX + 1;
+			const bh = maxY - minY + 1;
+
+			// "섬"은 보통 텍스트 라인과 분리되어 코너에만 존재합니다.
+			// 그래서 "코너 영역 안에 완전히 들어온 작은 컴포넌트"를 우선 제거 대상으로 봅니다.
+			// (오른쪽 경계에 딱 붙지 않고 몇 px 떠 있는 케이스를 커버)
+			const isContainedInCorner = minX >= scanX0 && maxY < scanY1;
+			// 경계에 거의 붙은 경우를 좀 더 강하게 허용 (legacy)
+			const isNearRightEdge = maxX >= (w - 1 - rightMargin);
+			const isTopRight = isContainedInCorner || (isNearRightEdge && minX >= scanX0 && minY < scanY1);
+
+			const isSmallEnough = bw <= maxW && bh <= maxH && area <= maxArea;
+
+			if (isTopRight && isSmallEnough) {
+				for (let k = 0; k < pixels.length; k++) {
+					const pp = pixels[k];
+					const ii = pp * 4;
+					data[ii] = data[ii + 1] = data[ii + 2] = bg;
+				}
+			}
+		}
+	}
+}
+
 /**
  * 레벨(LEVEL) 영역 전처리
  *
@@ -514,11 +657,12 @@ export function cropBinaryForegroundBoundingBox(
  * - Binarizes using Otsu
  * - Optionally blacks out uniform white bands at the top/bottom that are not characters
  *   (keeps white glyphs on black background for preview parity)
+ * - Optionally removes small "islands" near the top-right that can pull bbox cropping
  */
 export function preprocessExpCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean } = {}
+	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean; removeTopRightIslands?: boolean } = {}
 ): HTMLCanvasElement {
 	const minHeight = Math.max(24, Math.floor(options.minHeight ?? 64));
 	const desiredScale = options.scale && options.scale > 0 ? options.scale : Math.max(2, Math.min(8, Math.ceil(minHeight / Math.max(1, roi.h))));
@@ -546,8 +690,23 @@ export function preprocessExpCanvas(
 	if (options.removeWhiteBands !== false) {
 		removeUniformTopBottomBandsBinaryInPlace(img.data, outW, outH, {
 			foreground: "white",
-			uniformRowFrac: 0.9,
+			uniformRowFrac: 0.85,
 			windowY: Math.max(2, Math.min(64, Math.floor(outH * 0.25)))
+		});
+	}
+
+	// (3) 우측 상단 "섬" 제거(옵션): 작은 고립 덩어리가 bbox 크롭을 흔들 수 있어 제거합니다.
+	if (options.removeTopRightIslands !== false) {
+		removeTopRightIslandsBinaryInPlace(img.data, outW, outH, {
+			foreground: "white",
+			scanRightFrac: 0.35,
+			// 상단 코너의 작은 노이즈만 제거하고, 텍스트(특히 % 기호)의 일부를 오탐하지 않도록 top 영역을 더 작게 잡습니다.
+			scanTopFrac: 0.25,
+			maxAreaFrac: 0.01,
+			maxWidthFrac: 0.28,
+			maxHeightFrac: 0.55,
+			rightEdgeMarginPx: Math.max(1, Math.floor(outW * 0.01)),
+			connectivity: 8
 		});
 	}
 	ctx.putImageData(img, 0, 0);
