@@ -1,13 +1,13 @@
 import type {
 	RecordItem,
-	RecordsDbV1,
 	RecordsExportArchiveV1,
 	RecordsExportRecordV1
 } from "@/features/exp-tracker/records/types";
 import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
+import { idbDeleteRecord, idbDeleteRecords, idbGetAllRecordIds, idbListRecords, idbPutRecord, idbPutRecords, idbGetMeta, idbSetMeta } from "@/features/exp-tracker/records/idb";
 
 const STORAGE_KEY = "mlExpTracker.records.v1";
-const MAX_BYTES_SOFT = 4.5 * 1024 * 1024; // localStorage is usually ~5MB; keep margin
+const META_MIGRATED_KEY = "migratedFromLocalStorageV1";
 
 function now() {
 	return Date.now();
@@ -29,40 +29,61 @@ function getRandomId(): string {
 	}
 }
 
-function loadDb(): RecordsDbV1 {
-	if (typeof window === "undefined") return { version: 1, records: [] };
-	try {
-		const raw = window.localStorage.getItem(STORAGE_KEY);
-		if (!raw) return { version: 1, records: [] };
-		const parsed = safeParseJson<RecordsDbV1>(raw);
-		if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.records)) return { version: 1, records: [] };
-		// Normalize snapshots (also migrates legacy versions) so app code only deals with v2.
-		return {
-			version: 1,
-			records: parsed.records.map((r: any) => ({ ...r, snapshot: normalizeSnapshot(r.snapshot) }))
-		};
-	} catch {
-		return { version: 1, records: [] };
-	}
-}
+let migrationPromise: Promise<void> | null = null;
 
-function saveDb(db: RecordsDbV1) {
+async function migrateFromLocalStorageIfNeeded(): Promise<void> {
 	if (typeof window === "undefined") return;
-	const raw = JSON.stringify(db);
-	// crude size guard (UTF-16 vs UTF-8 differs, but this is a useful approximation)
-	if (raw.length > MAX_BYTES_SOFT) {
-		throw new Error("기록 저장 용량이 너무 큽니다. (localStorage 한도 초과 가능)");
-	}
-	window.localStorage.setItem(STORAGE_KEY, raw);
+	if (migrationPromise) return migrationPromise;
+	migrationPromise = (async () => {
+		try {
+			const already = await idbGetMeta(META_MIGRATED_KEY);
+			if (already) return;
+		} catch {
+			// ignore and proceed
+		}
+
+		const raw = window.localStorage.getItem(STORAGE_KEY);
+		if (!raw) {
+			// 마이그레이션할 게 없으면 플래그만 세팅해서 이후 체크 비용을 줄입니다.
+			try { await idbSetMeta(META_MIGRATED_KEY, true); } catch {}
+			return;
+		}
+		const parsed = safeParseJson<any>(raw);
+		const recordsRaw = parsed && parsed.version === 1 && Array.isArray(parsed.records) ? parsed.records : [];
+		const migrated: RecordItem[] = [];
+		for (const r of recordsRaw) {
+			if (!r || typeof r !== "object") continue;
+			if (typeof r.id !== "string") continue;
+			if (typeof r.name !== "string") continue;
+			if (typeof r.createdAt !== "number" || typeof r.updatedAt !== "number") continue;
+			if (!r.snapshot || typeof r.snapshot !== "object") continue;
+			migrated.push({
+				id: r.id,
+				name: r.name,
+				createdAt: r.createdAt,
+				updatedAt: r.updatedAt,
+				snapshot: normalizeSnapshot(r.snapshot)
+			});
+		}
+
+		if (migrated.length > 0) {
+			await idbPutRecords(migrated);
+		}
+		// localStorage는 더 이상 기록 저장소로 사용하지 않습니다.
+		try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
+		try { await idbSetMeta(META_MIGRATED_KEY, true); } catch {}
+	})();
+	return migrationPromise;
 }
 
-export function listRecords(): RecordItem[] {
-	const db = loadDb();
-	return [...db.records].sort((a, b) => b.createdAt - a.createdAt);
+export async function listRecords(): Promise<RecordItem[]> {
+	await migrateFromLocalStorageIfNeeded();
+	// IndexedDB에서 createdAt 내림차순으로 바로 읽어옵니다.
+	return await idbListRecords();
 }
 
-export function saveNewRecord(name: string, snapshot: RecordItem["snapshot"]): RecordItem {
-	const db = loadDb();
+export async function saveNewRecord(name: string, snapshot: RecordItem["snapshot"]): Promise<RecordItem> {
+	await migrateFromLocalStorageIfNeeded();
 	const t = now();
 	const rec: RecordItem = {
 		id: getRandomId(),
@@ -71,22 +92,18 @@ export function saveNewRecord(name: string, snapshot: RecordItem["snapshot"]): R
 		updatedAt: t,
 		snapshot
 	};
-	db.records.push(rec);
-	saveDb(db);
+	await idbPutRecord(rec);
 	return rec;
 }
 
-export function deleteRecord(id: string) {
-	const db = loadDb();
-	db.records = db.records.filter(r => r.id !== id);
-	saveDb(db);
+export async function deleteRecord(id: string): Promise<void> {
+	await migrateFromLocalStorageIfNeeded();
+	await idbDeleteRecord(id);
 }
 
-export function deleteRecords(ids: string[]) {
-	const idSet = new Set(ids);
-	const db = loadDb();
-	db.records = db.records.filter(r => !idSet.has(r.id));
-	saveDb(db);
+export async function deleteRecords(ids: string[]): Promise<void> {
+	await migrateFromLocalStorageIfNeeded();
+	await idbDeleteRecords(ids);
 }
 
 export function exportRecordJson(record: RecordItem): string {
@@ -135,25 +152,26 @@ function normalizeImportedRecord(rec: any): RecordItem | null {
 	};
 }
 
-export function importFromJsonText(rawJson: string): { imported: number } {
+export async function importFromJsonText(rawJson: string): Promise<{ imported: number }> {
 	const parsed = safeParseJson<any>(rawJson);
 	if (!parsed) throw new Error("JSON 파싱에 실패했습니다.");
 
-	const db = loadDb();
-	const existingIds = new Set(db.records.map(r => r.id));
+	await migrateFromLocalStorageIfNeeded();
+	const existingIds = new Set(await idbGetAllRecordIds());
+	const toPut: RecordItem[] = [];
 
 	const addOne = (r: RecordItem) => {
 		let id = r.id;
 		while (existingIds.has(id)) id = getRandomId();
 		existingIds.add(id);
-		db.records.push({ ...r, id });
+		toPut.push({ ...r, id });
 	};
 
 	if (isRecordPayload(parsed)) {
 		const rec = normalizeImportedRecord(parsed.record);
 		if (!rec) throw new Error("기록 포맷이 올바르지 않습니다.");
 		addOne(rec);
-		saveDb(db);
+		await idbPutRecords(toPut);
 		return { imported: 1 };
 	}
 
@@ -165,7 +183,7 @@ export function importFromJsonText(rawJson: string): { imported: number } {
 			addOne(rec);
 			count++;
 		}
-		saveDb(db);
+		if (toPut.length > 0) await idbPutRecords(toPut);
 		return { imported: count };
 	}
 
@@ -173,7 +191,7 @@ export function importFromJsonText(rawJson: string): { imported: number } {
 	const maybeRec = normalizeImportedRecord(parsed);
 	if (maybeRec) {
 		addOne(maybeRec);
-		saveDb(db);
+		await idbPutRecords(toPut);
 		return { imported: 1 };
 	}
 

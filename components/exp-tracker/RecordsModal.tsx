@@ -65,11 +65,24 @@ export default function RecordsModal(props: Props) {
 		message: ""
 	});
 
-	const refresh = () => setRecords(listRecords());
+	const refresh = async () => {
+		const next = await listRecords();
+		setRecords(next);
+	};
 
 	useEffect(() => {
-		if (props.open) refresh();
+		if (!props.open) return;
+		let cancelled = false;
+		void (async () => {
+			try {
+				const next = await listRecords();
+				if (!cancelled) setRecords(next);
+			} catch {
+				// ignore
+			}
+		})();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
+		return () => { cancelled = true; };
 	}, [props.open]);
 
 	const totalCount = records.length;
@@ -134,17 +147,19 @@ export default function RecordsModal(props: Props) {
 										openAlert("측정을 일시정지한 상태에서만 기록을 저장할 수 있습니다.");
 								return;
 							}
-							try {
-								setBusy("save");
-								const snap = props.getSnapshot();
-								saveNewRecord(name || defaultName, snap);
-								setName("");
-								refresh();
-							} catch (e: any) {
-								openAlert(e?.message ?? "저장에 실패했습니다.");
-							} finally {
-								setBusy(null);
-							}
+							void (async () => {
+								try {
+									setBusy("save");
+									const snap = props.getSnapshot();
+									await saveNewRecord(name || defaultName, snap);
+									setName("");
+									await refresh();
+								} catch (e: any) {
+									openAlert(e?.message ?? "저장에 실패했습니다.");
+								} finally {
+									setBusy(null);
+								}
+							})();
 						}}
 					>
 						현재 상태 저장
@@ -166,19 +181,21 @@ export default function RecordsModal(props: Props) {
 							if (!file) return;
 							const reader = new FileReader();
 							reader.onload = () => {
-								try {
-									setBusy("import");
-									const text = String(reader.result ?? "");
-									const res = importFromJsonText(text);
-									refresh();
-									openAlert(`불러오기 완료: ${res.imported}개`);
-								} catch (err: any) {
-									openAlert(err?.message ?? "불러오기에 실패했습니다.");
-								} finally {
-									setBusy(null);
-									// allow importing same file again
-									if (fileInputRef.current) fileInputRef.current.value = "";
-								}
+								void (async () => {
+									try {
+										setBusy("import");
+										const text = String(reader.result ?? "");
+										const res = await importFromJsonText(text);
+										await refresh();
+										openAlert(`불러오기 완료: ${res.imported}개`);
+									} catch (err: any) {
+										openAlert(err?.message ?? "불러오기에 실패했습니다.");
+									} finally {
+										setBusy(null);
+										// allow importing same file again
+										if (fileInputRef.current) fileInputRef.current.value = "";
+									}
+								})();
 							};
 							reader.readAsText(file);
 						}}
@@ -255,9 +272,16 @@ export default function RecordsModal(props: Props) {
 								message: `선택한 기록 ${selectedCount}개를 삭제할까요?\n\n삭제한 기록은 되돌릴 수 없습니다.`,
 								danger: true,
 								onConfirm: () => {
-									deleteRecords(Array.from(selectedIds));
-									setSelectedIds(new Set());
-									refresh();
+									void (async () => {
+										try {
+											setBusy("delete-selected");
+											await deleteRecords(Array.from(selectedIds));
+											setSelectedIds(new Set());
+											await refresh();
+										} finally {
+											setBusy(null);
+										}
+									})();
 								}
 							});
 						}}
@@ -358,18 +382,20 @@ export default function RecordsModal(props: Props) {
 												message: `삭제할까요?\n\n"${r.name}"\n\n삭제한 기록은 되돌릴 수 없습니다.`,
 												danger: true,
 												onConfirm: () => {
-													try {
-														setBusy("delete");
-														deleteRecord(r.id);
-														setSelectedIds(prev => {
-															const next = new Set(prev);
-															next.delete(r.id);
-															return next;
-														});
-														refresh();
-													} finally {
-														setBusy(null);
-													}
+													void (async () => {
+														try {
+															setBusy("delete");
+															await deleteRecord(r.id);
+															setSelectedIds(prev => {
+																const next = new Set(prev);
+																next.delete(r.id);
+																return next;
+															});
+															await refresh();
+														} finally {
+															setBusy(null);
+														}
+													})();
 												}
 											});
 										}}
