@@ -47,6 +47,7 @@ export default function ExpTracker() {
 
 	const [isSampling, setIsSampling] = useState(false); // running
 	const [hasStarted, setHasStarted] = useState(false);
+	const [isPreparingSample, setIsPreparingSample] = useState(false);
 	const stopwatch = useStopwatch();
 	const sampler = useIntervalRunner();
 	const elapsedMs = stopwatch.elapsedMs;
@@ -66,10 +67,17 @@ export default function ExpTracker() {
 	const [roiSelectionMode, setRoiSelectionMode] = useState<null | "level" | "exp">(null);
 
 	// 화면/창 캡처 스트림 관리 (start/stop + video attach)
-	const { stream, startCapture, stopCapture } = useDisplayCapture({
+	const { stream, startCapture, stopCapture, ensureCapturePlaying } = useDisplayCapture({
 		captureVideoRef,
 		previewVideoRef,
-		settingsOpen
+		settingsOpen,
+		// 캡처용 hidden video는 "측정/온보딩/측정 준비"에만 재생합니다.
+		// (화면 공유만 켜둔 상태에서의 게임 끊김 리포트 완화 목적)
+		capturePlaybackWanted: isSampling || onboardingOpen || isPreparingSample,
+		// 유저 설정 없이 자동 전환:
+		// - 설정 모달(ROI 잡기) 중에는 프리뷰가 부드럽도록 30fps
+		// - 평소에는 게임 영향 최소화를 위해 3fps
+		captureFps: settingsOpen ? 30 : 3
 	});
 	const hasStream = !!stream;
 	// Live refs for PiP event handlers (avoid stale closures)
@@ -184,7 +192,14 @@ export default function ExpTracker() {
 		// 시작/재개 직후 baseline(기준점)을 prev로 기록합니다.
 		// - 누적/차트 히스토리는 증가시키지 않음
 		// - baseline이 %↔값 불일치 등으로 이상하면, 이번 틱은 무시하고 다음 틱을 첫 틱으로 삼음
-		await ocr.captureBaseline({ resetTotals: !hasStarted });
+		setIsPreparingSample(true);
+		try {
+			// ensure capture video is actually producing frames before OCR
+			await ensureCapturePlaying();
+			await ocr.captureBaseline({ resetTotals: !hasStarted });
+		} finally {
+			setIsPreparingSample(false);
+		}
 		if (!hasStarted) {
 			setHasStarted(true);
 			stopwatch.reset();
@@ -205,7 +220,7 @@ export default function ExpTracker() {
 		sampler.start(intervalSec * 1000, runner);
 
 		setIsSampling(true);
-	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr]);
+	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying]);
 
 	const pauseSampling = useCallback(async () => {
 		// Stop timers first to freeze state
@@ -227,6 +242,7 @@ export default function ExpTracker() {
 		stopwatch.reset();
 		ocr.resetTotals();
 		setIsSampling(false);
+		setIsPreparingSample(false);
 		setHasStarted(false);
 	}, [hasStarted, sampler, stopwatch, ocr]);
 
