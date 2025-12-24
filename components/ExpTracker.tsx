@@ -124,6 +124,23 @@ export default function ExpTracker() {
 		debugEnabled
 	});
 
+	// OCR 작업이 중첩 실행되지 않도록 방지합니다. (OCR이 intervalSec보다 오래 걸릴 때 중요)
+	// 이 가드가 없으면 setInterval이 여러 OCR 작업을 동시에 쌓아 CPU 스파이크/끊김을 유발할 수 있습니다.
+	const sampleInFlightRef = useRef<Promise<void> | null>(null);
+	const runSampleOnce = useCallback(async () => {
+		// 이미 샘플링이 실행 중이면 같은 Promise를 재사용합니다. (예: pause 시 완료를 기다릴 수 있음)
+		if (sampleInFlightRef.current) return sampleInFlightRef.current;
+		const p = ocr.sampleOnceAndAccumulate()
+			.catch(() => {
+				// OCR 실패는 흔할 수 있으므로 사용자 경험을 위해 조용히 무시합니다.
+			})
+			.finally(() => {
+				sampleInFlightRef.current = null;
+			}) as Promise<void>;
+		sampleInFlightRef.current = p;
+		return p;
+	}, [ocr]);
+
 	// On first load, automatically open settings and prompt for window selection or onboarding
 	useEffect(() => {
 		if (autoInitDoneRef.current) return;
@@ -211,29 +228,23 @@ export default function ExpTracker() {
 		// 왜: setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어,
 		// 명시적으로 Promise를 소거(void)하고 실패는 조용히 무시합니다.
 		const runner = () => {
-			void ocr.sampleOnceAndAccumulate().catch(() => {
-				// OCR 실패는 흔할 수 있으므로 사용자 경험을 위해 조용히 무시합니다.
-			});
+			void runSampleOnce();
 		};
 
 		// Start sampling interval
 		sampler.start(intervalSec * 1000, runner);
 
 		setIsSampling(true);
-	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying]);
+	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying, runSampleOnce]);
 
 	const pauseSampling = useCallback(async () => {
 		// Stop timers first to freeze state
 		sampler.stop();
 		stopwatch.pause();
 		// Take an immediate sample at pause time (independent of intervalSec)
-		try {
-			await ocr.sampleOnceAndAccumulate();
-		} catch {
-			// ignore OCR failures on pause
-		}
+		await runSampleOnce();
 		setIsSampling(false);
-	}, [ocr, sampler, stopwatch]);
+	}, [runSampleOnce, sampler, stopwatch]);
 
 	const resetSampling = useCallback(() => {
 		// Match toolbar disabled state: cannot reset before the first start.
