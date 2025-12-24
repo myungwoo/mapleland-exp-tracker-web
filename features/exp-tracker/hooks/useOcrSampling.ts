@@ -42,6 +42,19 @@ type Options = {
 export function useOcrSampling(options: Options) {
 	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled } = options;
 
+	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
+	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+	const getOrCreateCanvas = (r: React.MutableRefObject<HTMLCanvasElement | null>) => {
+		if (!r.current) r.current = document.createElement("canvas");
+		return r.current;
+	};
+
 	const [currentLevel, setCurrentLevel] = useState<number | null>(null);
 	const [currentExpPercent, setCurrentExpPercent] = useState<number | null>(null);
 	const [currentExpValue, setCurrentExpValue] = useState<number | null>(null);
@@ -107,17 +120,30 @@ export function useOcrSampling(options: Options) {
 		const rectExp = toVideoSpaceRect(video, roiExp);
 
 		// 레벨: 색 기반 전처리 → 숫자 bbox로 타이트 크롭
-		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, { scale: 4, pad: 0 });
-		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
+		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, {
+			scale: 4,
+			pad: 0,
+			outCanvas: getOrCreateCanvas(levelProcCanvasRef)
+		});
+		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
+			margin: 3,
+			targetHeight: 72,
+			outPad: 6,
+			outCanvas: getOrCreateCanvas(levelCropCanvasRef)
+		});
 
 		// 경험치: 괄호 포함 문자열을 OCR 하기 쉽게 전처리
-		const canvasExpProc = preprocessExpCanvas(video, rectExp, { minHeight: 120 });
+		const canvasExpProc = preprocessExpCanvas(video, rectExp, {
+			minHeight: 120,
+			outCanvas: getOrCreateCanvas(expProcCanvasRef)
+		});
 		// ROI가 너무 넓어도(자리수 감소 등) 숫자/괄호/퍼센트 영역만 남기도록 타이트 크롭
 		const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
 			foreground: "white",
 			margin: 4,
 			targetHeight: 120,
-			outPad: 6
+			outPad: 6,
+			outCanvas: getOrCreateCanvas(expCropCanvasRef)
 		});
 
 		const [levelRes, expRes] = await Promise.all([
@@ -127,8 +153,8 @@ export function useOcrSampling(options: Options) {
 
 		if (debugEnabled) {
 			try {
-				const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4 });
-				const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2 });
+				const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
+				const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
 				setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
 				setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 				setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));

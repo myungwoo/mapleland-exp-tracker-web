@@ -29,13 +29,13 @@ export function toVideoSpaceRect(video: HTMLVideoElement, rect: RoiRect): RoiRec
 export function drawRoiCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { binarize?: boolean; invert?: boolean; scale?: number; mode?: "avg" | "otsu" } = {}
+	options: { binarize?: boolean; invert?: boolean; scale?: number; mode?: "avg" | "otsu"; outCanvas?: HTMLCanvasElement } = {}
 ): HTMLCanvasElement {
 	// ROI를 캔버스로 잘라내고(옵션으로) 이진화까지 수행하는 공통 유틸입니다.
 	const scale = options.scale && options.scale > 0 ? options.scale : 1;
 	const outW = Math.max(1, Math.round(roi.w * scale));
 	const outH = Math.max(1, Math.round(roi.h * scale));
-	const canvas = document.createElement("canvas");
+	const canvas = options.outCanvas ?? document.createElement("canvas");
 	canvas.width = outW;
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;
@@ -396,7 +396,7 @@ function removeTopRightIslandsBinaryInPlace(
 export function preprocessLevelCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { scale?: number; pad?: number } = {}
+	options: { scale?: number; pad?: number; outCanvas?: HTMLCanvasElement } = {}
 ): HTMLCanvasElement {
 	const scale = options.scale && options.scale > 0 ? options.scale : 4;
 	const pad = Math.max(0, Math.round((options.pad ?? 2) * scale));
@@ -404,7 +404,7 @@ export function preprocessLevelCanvas(
 	const srcH = Math.max(1, Math.round(roi.h * scale));
 	const outW = srcW + pad * 2;
 	const outH = srcH + pad * 2;
-	const canvas = document.createElement("canvas");
+	const canvas = options.outCanvas ?? document.createElement("canvas");
 	canvas.width = outW;
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;
@@ -488,7 +488,7 @@ export function preprocessLevelCanvas(
 
 export function cropDigitBoundingBox(
 	source: HTMLCanvasElement,
-	options: { margin?: number; targetHeight?: number; outPad?: number } = {}
+	options: { margin?: number; targetHeight?: number; outPad?: number; outCanvas?: HTMLCanvasElement } = {}
 ): HTMLCanvasElement {
 	// LEVEL처럼 "검정 글자 / 흰 배경" 바이너리 이미지에서 글자 bbox만 타이트하게 잘라내고,
 	// OCR이 읽기 좋게 targetHeight로 리스케일한 뒤 흰 테두리를 추가합니다.
@@ -528,7 +528,7 @@ export function cropDigitBoundingBox(
 	const scale = targetH / bh;
 	const outW = Math.max(1, Math.round(bw * scale));
 	const outH = Math.max(1, Math.round(bh * scale));
-	const out = document.createElement("canvas");
+	const out = options.outCanvas ?? document.createElement("canvas");
 	out.width = outW + outPad * 2;
 	out.height = outH + outPad * 2;
 	const octx = out.getContext("2d")!;
@@ -573,6 +573,7 @@ export function cropBinaryForegroundBoundingBox(
 		/** Minimum foreground pixels in a column/row to be considered part of glyphs (filters speckle noise). */
 		minColPx?: number;
 		minRowPx?: number;
+		outCanvas?: HTMLCanvasElement;
 	} = {}
 ): HTMLCanvasElement {
 	const fg = options.foreground ?? "white";
@@ -628,7 +629,7 @@ export function cropBinaryForegroundBoundingBox(
 	const outW = Math.max(1, Math.round(bw * scale));
 	const outH = Math.max(1, Math.round(bh * scale));
 
-	const out = document.createElement("canvas");
+	const out = options.outCanvas ?? document.createElement("canvas");
 	out.width = outW + outPad * 2;
 	out.height = outH + outPad * 2;
 	const octx = out.getContext("2d")!;
@@ -662,13 +663,13 @@ export function cropBinaryForegroundBoundingBox(
 export function preprocessExpCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean; removeTopRightIslands?: boolean } = {}
+	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean; removeTopRightIslands?: boolean; outCanvas?: HTMLCanvasElement } = {}
 ): HTMLCanvasElement {
 	const minHeight = Math.max(24, Math.floor(options.minHeight ?? 64));
 	const desiredScale = options.scale && options.scale > 0 ? options.scale : Math.max(2, Math.min(8, Math.ceil(minHeight / Math.max(1, roi.h))));
 	const outW = Math.max(1, Math.round(roi.w * desiredScale));
 	const outH = Math.max(1, Math.round(roi.h * desiredScale));
-	const canvas = document.createElement("canvas");
+	const canvas = options.outCanvas ?? document.createElement("canvas");
 	canvas.width = outW;
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;

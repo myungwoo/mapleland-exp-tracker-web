@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cropBinaryForegroundBoundingBox, drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox, preprocessExpCanvas } from "@/lib/canvas";
 import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import type { RoiRect } from "@/components/RoiOverlay";
@@ -25,6 +25,20 @@ export function useOnboardingRoiAssist(options: Options) {
 	const [onboardingLevelText, setOnboardingLevelText] = useState<string | null>(null);
 	const [onboardingExpText, setOnboardingExpText] = useState<string | null>(null);
 
+	// 온보딩 OCR(1초 주기)에서 매번 캔버스를 새로 만들지 않도록 재사용합니다.
+	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document is undefined) 캔버스를 즉시 생성하면 안 됩니다.
+	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+	const getOrCreateCanvas = (r: React.MutableRefObject<HTMLCanvasElement | null>) => {
+		if (!r.current) r.current = document.createElement("canvas");
+		return r.current;
+	};
+
 	// ROI 썸네일 (정확도 검증용)
 	useEffect(() => {
 		if (!onboardingOpen) return;
@@ -35,12 +49,12 @@ export function useOnboardingRoiAssist(options: Options) {
 		try {
 			if (roiLevel) {
 				const r = toVideoSpaceRect(video, roiLevel);
-				const c = drawRoiCanvas(video, r, { scale: 2 });
+				const c = drawRoiCanvas(video, r, { scale: 2, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
 				setLevelRoiShot(c.toDataURL("image/png"));
 			}
 			if (roiExp) {
 				const r = toVideoSpaceRect(video, roiExp);
-				const c = drawRoiCanvas(video, r, { scale: 2 });
+				const c = drawRoiCanvas(video, r, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
 				setExpRoiShot(c.toDataURL("image/png"));
 			}
 		} catch {
@@ -59,25 +73,38 @@ export function useOnboardingRoiAssist(options: Options) {
 			try {
 				if (roiLevel) {
 					const rect = toVideoSpaceRect(video, roiLevel);
-					const canvasLevelProc = preprocessLevelCanvas(video, rect, { scale: 4, pad: 0 });
-					const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, { margin: 3, targetHeight: 72, outPad: 6 });
+					const canvasLevelProc = preprocessLevelCanvas(video, rect, {
+						scale: 4,
+						pad: 0,
+						outCanvas: getOrCreateCanvas(levelProcCanvasRef)
+					});
+					const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
+						margin: 3,
+						targetHeight: 72,
+						outPad: 6,
+						outCanvas: getOrCreateCanvas(levelCropCanvasRef)
+					});
 					const res = await recognizeLevelDigitsWithText(canvasLevelCrop);
 					setOnboardingLevelText(res.text || "");
-					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
+					const cRaw = drawRoiCanvas(video, rect, { scale: 2, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
 					setLevelRoiShot(cRaw.toDataURL("image/png"));
 				}
 				if (roiExp) {
 					const rect = toVideoSpaceRect(video, roiExp);
-					const canvasExpProc = preprocessExpCanvas(video, rect, { minHeight: 120 });
+					const canvasExpProc = preprocessExpCanvas(video, rect, {
+						minHeight: 120,
+						outCanvas: getOrCreateCanvas(expProcCanvasRef)
+					});
 					const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
 						foreground: "white",
 						margin: 4,
 						targetHeight: 120,
-						outPad: 6
+						outPad: 6,
+						outCanvas: getOrCreateCanvas(expCropCanvasRef)
 					});
 					const res = await recognizeExpBracketedWithText(canvasExpCrop);
 					setOnboardingExpText(res.text || "");
-					const cRaw = drawRoiCanvas(video, rect, { scale: 2 });
+					const cRaw = drawRoiCanvas(video, rect, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
 					setExpRoiShot(cRaw.toDataURL("image/png"));
 				}
 			} catch {

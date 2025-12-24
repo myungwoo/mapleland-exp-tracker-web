@@ -42,7 +42,7 @@ export function useDisplayCapture(options: Options) {
 	const attachStream = useCallback((video: HTMLVideoElement | null, s: MediaStream | null) => {
 		if (!video) return;
 		try {
-			// Avoid redundant assignments; some browsers may restart decode pipeline.
+			// 불필요한 재할당을 피합니다. (일부 브라우저는 srcObject 재설정 시 디코딩 파이프라인이 재시작될 수 있음)
 			if (video.srcObject !== s) video.srcObject = s;
 		} catch {
 			// ignore
@@ -100,8 +100,8 @@ export function useDisplayCapture(options: Options) {
 				});
 			}
 			setStream(s);
-			// If the browser accepted a stream but ignored the initial frameRate hint,
-			// attempt to apply it explicitly (best-effort).
+			// 브라우저가 스트림은 허용했지만 초기 frameRate 힌트를 무시했을 수 있으므로,
+			// 가능한 경우 applyConstraints로 다시 적용을 시도합니다. (best-effort: 실패해도 무시)
 			void applyTrackFps(s, captureFps);
 			// 스트림만 붙여두고, 실제 재생(play)은 필요할 때만 수행합니다.
 			attachStream(captureVideoRef.current, s);
