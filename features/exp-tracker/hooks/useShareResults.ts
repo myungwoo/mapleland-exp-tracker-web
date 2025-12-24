@@ -66,12 +66,12 @@ export function useShareResults(inputs: Inputs): Result {
 		}, 1800);
 	}, []);
 
-	// If we couldn't write due to focus, retry automatically when the window regains focus.
+	// 포커스 문제로 쓰기(write)가 실패하면, 창이 다시 포커스될 때 자동으로 재시도합니다.
 	useEffect(() => {
 		const onFocus = () => {
 			const blob = pendingImageBlobRef.current;
 			if (!blob) return;
-			// Only retry when focused.
+			// 포커스가 있을 때만 재시도합니다.
 			if (typeof document !== "undefined" && !document.hasFocus()) return;
 			void (async () => {
 				try {
@@ -80,7 +80,7 @@ export function useShareResults(inputs: Inputs): Result {
 					pendingAlertedRef.current = false;
 					bumpImageCopiedLabel();
 				} catch {
-					// If it still fails, keep it pending; user can click again.
+					// 계속 실패하면 pending으로 유지합니다. (사용자가 다시 클릭해서 재시도 가능)
 				}
 			})();
 		};
@@ -110,7 +110,7 @@ export function useShareResults(inputs: Inputs): Result {
 				return;
 			}
 		} catch {
-			// fallback below
+			// 아래 대체 로직으로 진행
 		}
 
 		try {
@@ -143,7 +143,7 @@ export function useShareResults(inputs: Inputs): Result {
 		}
 		if (isCopyingImage) return;
 		setIsCopyingImage(true);
-		// Let React paint "이미지 생성 중…" before starting heavy work.
+		// 무거운 작업을 시작하기 전에 React가 "이미지 생성 중…"을 먼저 그리게 합니다.
 		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 		let blob: Blob | null = null;
 		try {
@@ -153,7 +153,7 @@ export function useShareResults(inputs: Inputs): Result {
 		} catch (e) {
 			const anyErr = e as any;
 			if (anyErr?.code === "DOCUMENT_NOT_FOCUSED" || (e instanceof Error && e.message.includes("Document is not focused"))) {
-				// Save for auto-retry on focus.
+				// 포커스 복귀 시 자동 재시도를 위해 저장합니다.
 				if (blob) pendingImageBlobRef.current = blob;
 				bumpImageNeedFocusLabel();
 				if (!pendingAlertedRef.current) {

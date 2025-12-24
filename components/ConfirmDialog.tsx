@@ -32,7 +32,7 @@ export default function ConfirmDialog(props: Props) {
 				onConfirm();
 			}
 		};
-		// capture: Modal의 기본 ESC 핸들러보다 먼저 처리해서 중복 호출을 피합니다.
+		// 캡처: Modal의 기본 ESC 핸들러보다 먼저 처리해서 중복 호출을 피합니다.
 		window.addEventListener("keydown", onKey, { capture: true });
 		return () => window.removeEventListener("keydown", onKey, { capture: true } as any);
 	}, [open, onCancel, onConfirm]);

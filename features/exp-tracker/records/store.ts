@@ -39,7 +39,7 @@ async function migrateFromLocalStorageIfNeeded(): Promise<void> {
 			const already = await idbGetMeta(META_MIGRATED_KEY);
 			if (already) return;
 		} catch {
-			// ignore and proceed
+			// 무시하고 진행
 		}
 
 		const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -187,7 +187,7 @@ export async function importFromJsonText(rawJson: string): Promise<{ imported: n
 		return { imported: count };
 	}
 
-	// Allow importing a raw RecordItem (no wrapper) as a convenience.
+	// 편의 기능: 래퍼 없이 RecordItem을 그대로 가져오는 것도 허용합니다.
 	const maybeRec = normalizeImportedRecord(parsed);
 	if (maybeRec) {
 		addOne(maybeRec);

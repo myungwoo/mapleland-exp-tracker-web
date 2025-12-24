@@ -5,25 +5,25 @@ type Point = { ts: number; value: number };
 type Props = {
   data: Point[];
   tooltipFormatter?: (value: number) => string;
-  xLabelFormatter?: (ts: number) => string; // optional label for x (ts in same units as data.ts)
-  yLabelFormatter?: (value: number) => string; // optional label for y
-  xDomain?: [number, number] | null; // optional external x-domain (ms)
-  showAxisLabels?: boolean; // tick labels + axis lines
-  showGrid?: boolean; // background grid lines
+  xLabelFormatter?: (ts: number) => string; // x축 라벨 포맷터(선택) (ts는 data.ts와 동일 단위)
+  yLabelFormatter?: (value: number) => string; // y축 라벨 포맷터(선택)
+  xDomain?: [number, number] | null; // 외부에서 지정하는 x축 범위(선택) (ms)
+  showAxisLabels?: boolean; // 눈금 라벨 + 축 선
+  showGrid?: boolean; // 배경 그리드 선
   enableBrush?: boolean;
   onRangeChange?: (startMs: number, endMs: number) => void;
 };
 
 const BASE_MARGIN = { left: 10, right: 10, top: 10, bottom: 22 };
-const AXIS_LABEL_GAP = 8; // px between y labels and plot area
-const AXIS_LABEL_PADDING = 6; // extra left padding
+const AXIS_LABEL_GAP = 8; // y 라벨과 플롯 영역 사이 px 간격
+const AXIS_LABEL_PADDING = 6; // 좌측 추가 패딩
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
 function estimateMonoTextWidthPx(text: string, fontSizePx: number) {
-  // Rough but stable: monospace glyphs are ~0.6em wide.
+  // 대략적이지만 안정적: monospace 글리프 폭은 대략 0.6em 정도입니다.
   return Math.ceil(text.length * fontSizePx * 0.62);
 }
 
@@ -50,7 +50,7 @@ function filterTicksByPixelGap(
   for (const v of desc) {
     const y = scaleY(v);
     if (kept.length === 0) {
-      kept.push(v); // always keep max
+      kept.push(v); // 최댓값은 항상 유지
       lastY = y;
       continue;
     }
@@ -59,7 +59,7 @@ function filterTicksByPixelGap(
       lastY = y;
     }
   }
-  // Ensure min is present; if too close, drop the closest neighbor to make room.
+  // 최솟값이 반드시 포함되도록 보장합니다. 너무 가까우면 가장 가까운 이웃을 제거해 자리를 만듭니다.
   const minV = ticksAsc[0];
   const hasMin = kept.some(k => Math.abs(k - minV) <= eps);
   if (!hasMin) {
@@ -93,11 +93,11 @@ function niceTicks(min: number, max: number, approxCount: number): number[] {
   const end = Math.floor(hi / step) * step;
   const out: number[] = [];
   if (!Number.isFinite(start) || !Number.isFinite(end) || step <= 0) return [];
-  // Guard against infinite loops
+  // 무한 루프 방지
   for (let v = start, i = 0; v <= end + step / 2 && i < 100; v += step, i++) {
     out.push(v);
   }
-  // Fallback if range too tiny
+  // 범위가 너무 작아 ticks가 안 나오면 대체 값(lo/hi)을 넣습니다.
   if (out.length === 0) out.push(lo, hi);
   return out;
 }
@@ -122,7 +122,7 @@ export default function PaceChart(props: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const brushRef = useRef<{ startX: number; endX: number } | null>(null);
 
-  // Keep a ref so global mouseup handler can read latest brush without using a state updater callback.
+  // 전역 mouseup 핸들러가 최신 brush를 읽을 수 있도록 ref를 유지합니다. (상태 업데이트 콜백 의존 제거)
   useEffect(() => {
     brushRef.current = brush;
   }, [brush]);
@@ -159,7 +159,7 @@ export default function PaceChart(props: Props) {
       };
     }
 
-    // x-domain: external or full range
+    // x축 범위: 외부 지정값 또는 전체 범위
     const fullMin = data[0].ts;
     const fullMax = data[data.length - 1].ts;
     let minTs = xDomain ? xDomain[0] : fullMin;
@@ -168,7 +168,7 @@ export default function PaceChart(props: Props) {
 
     const visible = data.filter(p => p.ts >= minTs && p.ts <= maxTs);
 
-    // y domain based on visible
+    // y축 범위: 현재 보이는 구간 기준
     let minVal = Infinity;
     let maxVal = -Infinity;
     for (const pnt of visible) {
@@ -183,12 +183,12 @@ export default function PaceChart(props: Props) {
       maxVal = 1;
     }
     if (maxVal === minVal) {
-      // expand a bit to render a flat line nicely
+      // 평평한 선도 보기 좋게 렌더링되도록 약간 확장
       maxVal = minVal + 1;
     }
 
-    // Ticks (independent of margins)
-    const approxPlotW = Math.max(0, size.width - 60); // rough guess to choose tick count
+    // 눈금(ticks) 계산 (margin과 독립)
+    const approxPlotW = Math.max(0, size.width - 60); // tick 개수를 정하기 위한 대략값
     const approxPlotH = Math.max(0, size.height - BASE_MARGIN.top - BASE_MARGIN.bottom);
     const xCount = Math.max(2, Math.min(6, Math.floor(approxPlotW / 90)));
     const yCount = Math.max(2, Math.min(5, Math.floor(approxPlotH / 42)));
@@ -200,15 +200,15 @@ export default function PaceChart(props: Props) {
         xTicks.push(minTs + t * (maxTs - minTs));
       }
     }
-    // Always include endpoints so the max/min are readable at a glance.
-    // (niceTicks alone may skip maxVal if it doesn't land on a "nice" step)
+    // 최댓값/최솟값은 한눈에 보이도록 항상 포함합니다.
+    // (niceTicks만 쓰면 maxVal이 "예쁜" step에 걸리지 않아 빠질 수 있음)
     const yBaseCount = Math.max(0, yCount - 2);
     const yTicksBase = niceTicks(minVal, maxVal, yBaseCount);
     const span = Math.max(1e-12, Math.abs(maxVal - minVal));
     const eps = span * 1e-6;
     const yTicksRaw = uniqSorted([minVal, ...yTicksBase, maxVal], eps);
 
-    // Compute left margin based on widest y-label (compact formatter recommended)
+    // y 라벨 중 가장 긴 값을 기준으로 왼쪽 여백(left margin)을 계산합니다. (축약 포맷터 권장)
     let margin = { ...BASE_MARGIN };
     if (showAxisLabels) {
       const fontSize = 10;
@@ -234,8 +234,8 @@ export default function PaceChart(props: Props) {
       return margin.top + (1 - t) * plotH;
     };
 
-    // Prevent overly-dense y labels (e.g., 2만, 2.2만...) while keeping min/max visible.
-    // This uses pixel distance, so it adapts to chart height.
+    // y 라벨이 너무 촘촘해지는 것을 방지합니다(예: 2만, 2.2만...). 동시에 최소/최대(min/max)는 유지합니다.
+    // 픽셀 거리 기준이라 차트 높이에 따라 자동으로 조정됩니다.
     const MIN_Y_LABEL_GAP_PX = 14;
     const yTicks = showAxisLabels
       ? filterTicksByPixelGap(yTicksRaw, yScale, MIN_Y_LABEL_GAP_PX, eps)
@@ -262,7 +262,7 @@ export default function PaceChart(props: Props) {
     if (enableBrush && isDragging) {
       setBrush(b => (b ? { ...b, endX: x } : null));
     }
-    // find nearest by x
+    // x 기준으로 가장 가까운 점 찾기
     let bestIdx = 0;
     let bestDist = Infinity;
     for (let i = 0; i < series.length; i++) {
@@ -315,7 +315,7 @@ export default function PaceChart(props: Props) {
       if (current) {
         const startPx = Math.min(current.startX, current.endX);
         const endPx = Math.max(current.startX, current.endX);
-        // Ignore tiny drags
+        // 너무 작은 드래그는 무시
         if (endPx - startPx >= 4) {
           const inv = (px: number) => {
             const left = margin.left;
@@ -360,9 +360,9 @@ export default function PaceChart(props: Props) {
                 <stop offset="100%" stopColor="rgba(16,185,129,0.0)" />
               </linearGradient>
             </defs>
-            {/* grid + axes + tick labels */}
+            {/* 그리드 + 축 + 눈금 라벨 */}
             <g pointerEvents="none" style={{ userSelect: "none", WebkitUserSelect: "none" } as React.CSSProperties}>
-              {/* horizontal grid + y labels */}
+              {/* 가로 그리드 + y 라벨 */}
               {yTicks.map((v, i) => {
                 const y = yScale(v);
                 return (
@@ -393,7 +393,7 @@ export default function PaceChart(props: Props) {
                   </g>
                 );
               })}
-              {/* vertical grid + x labels */}
+              {/* 세로 그리드 + x 라벨 */}
               {xTicks.map((t, i) => {
                 const x = xScale(t);
                 const isFirst = i === 0;
@@ -428,7 +428,7 @@ export default function PaceChart(props: Props) {
                   </g>
                 );
               })}
-              {/* axes */}
+              {/* 축 선 */}
               {showAxisLabels ? (
                 <>
                   <line
@@ -450,15 +450,15 @@ export default function PaceChart(props: Props) {
                 </>
               ) : null}
             </g>
-            {/* area fill */}
+            {/* 면 채우기 */}
             <path
               d={`${path} L ${xScale(maxTs)} ${yScale(minVal)} L ${xScale(minTs)} ${yScale(minVal)} Z`}
               fill={`url(#pace-fill-${uid})`}
               stroke="none"
             />
-            {/* main line */}
+            {/* 메인 라인 */}
             <path d={path} fill="none" stroke={`url(#pace-stroke-${uid})`} strokeWidth={2} />
-            {/* hover marker */}
+            {/* 호버 마커 */}
             {hover && hover.idx >= 0 && hover.idx < series.length ? (
               <>
                 <line

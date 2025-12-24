@@ -128,7 +128,7 @@ export default function RoiOverlay(props: Props) {
 				// 왜: 일부 브라우저는 video 레이아웃이 바뀌어도 loadedmetadata를 다시 쏘지 않아서, resize(가능하면)를 추가로 받습니다.
 				video.addEventListener("resize" as any, update as any);
 			} catch {
-				// no-op
+				// 아무 동작 없음
 			}
 		}
 		let ro: ResizeObserver | null = null;
@@ -148,11 +148,11 @@ export default function RoiOverlay(props: Props) {
 					video.removeEventListener("loadedmetadata", update);
 					video.removeEventListener("resize" as any, update as any);
 				} catch {
-					// no-op
+					// 아무 동작 없음
 				}
 			}
 			if (ro) {
-				try { ro.disconnect(); } catch { /* ignore */ }
+				try { ro.disconnect(); } catch { /* 무시 */ }
 			}
 			window.removeEventListener("resize", update);
 		};
@@ -189,7 +189,7 @@ export default function RoiOverlay(props: Props) {
 		}
 		const scaleX = displayW / video.videoWidth;
 		const scaleY = displayH / video.videoHeight;
-		// Guard against NaN/Infinity
+		// NaN/Infinity 방지
 		if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) {
 			return { left: 0, top: 0, width: 0, height: 0 };
 		}
@@ -212,21 +212,21 @@ export default function RoiOverlay(props: Props) {
 			onMouseMove={onMouseMove}
 			onMouseUp={onMouseUp}
 		>
-			{/* Dim the entire screen to emphasize ROI while in selection mode */}
+			{/* ROI 선택 중에는 화면 전체를 어둡게 처리해 ROI를 강조합니다. */}
 			{props.active ? (() => {
-				// compute viewport size and hole rect in CSS pixels
+				// 뷰포트 크기와 hole 영역 사각형을 CSS 픽셀 기준으로 계산
 				const overlay = overlayRef.current;
 				const bounds = overlay ? overlay.getBoundingClientRect() : null;
 				const hole = highlightRect ? getCssRect(highlightRect) : null;
 				const vw = typeof window !== "undefined" ? window.innerWidth : 0;
 				const vh = typeof window !== "undefined" ? window.innerHeight : 0;
 				if (!hole) {
-					// no hole yet: dim entire viewport
+					// 아직 hole이 없으면 뷰포트 전체를 어둡게 처리
 					return (
 						<div className="fixed inset-0 bg-black/50 pointer-events-none z-[60]" />
 					);
 				}
-				// Convert hole to viewport coordinates by adding container offset
+				// 컨테이너 오프셋을 더해 hole을 뷰포트 좌표로 변환
 				const containerLeft = bounds?.left ?? 0;
 				const containerTop = bounds?.top ?? 0;
 				const holeLeftVp = Math.max(0, containerLeft + hole.left);
@@ -239,22 +239,22 @@ export default function RoiOverlay(props: Props) {
 				const bottomH = Math.max(0, vh - holeBottomVp);
 				return (
 					<>
-						{/* top strip */}
+						{/* 상단 스트립 */}
 						<div
 							className="fixed left-0 top-0 bg-black/50 pointer-events-none z-[60]"
 							style={{ width: vw, height: topH }}
 						/>
-						{/* left strip */}
+						{/* 좌측 스트립 */}
 						<div
 							className="fixed bg-black/50 pointer-events-none z-[60]"
 							style={{ left: 0, top: holeTopVp, width: leftW, height: hole.height }}
 						/>
-						{/* right strip */}
+						{/* 우측 스트립 */}
 						<div
 							className="fixed bg-black/50 pointer-events-none z-[60]"
 							style={{ left: holeRightVp, top: holeTopVp, width: rightW, height: hole.height }}
 						/>
-						{/* bottom strip */}
+						{/* 하단 스트립 */}
 						<div
 							className="fixed left-0 bg-black/50 pointer-events-none z-[60]"
 							style={{ top: holeBottomVp, width: vw, height: bottomH }}

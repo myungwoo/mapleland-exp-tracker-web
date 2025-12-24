@@ -117,7 +117,7 @@ export function normalizeSnapshot(input: unknown): ExpTrackerSnapshot {
 		};
 	}
 
-	// Legacy v1 snapshots had `state`.
+	// (구버전) v1 스냅샷은 `state` 필드를 사용했습니다.
 	const stateRaw = isObject((input as any).state) ? (input as any).state : {};
 	return {
 		version: 3,

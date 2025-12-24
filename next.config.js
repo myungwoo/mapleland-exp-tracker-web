@@ -6,12 +6,12 @@ const basePath = isGhPages && repo ? `/${repo}` : "";
 const nextConfig = {
 	output: "export",
 	images: {
-		// Static export (output: "export") can't use the built-in Image Optimization API.
-		// This makes next/image render without optimization so it works on GitHub Pages / static hosting.
+		// 정적 export(output: "export")에서는 Next의 내장 이미지 최적화 API를 사용할 수 없습니다.
+		// next/image가 최적화 없이 렌더링되도록 해서 GitHub Pages / 정적 호스팅에서도 동작하게 합니다.
 		unoptimized: true
 	},
 	...(basePath ? { basePath, assetPrefix: basePath } : {}),
-	// Expose basePath to the client for building asset URLs in plain <img> tags
+	// 일반 <img> 태그에서 asset URL을 만들 수 있도록 basePath를 클라이언트에 노출합니다.
 	env: {
 		NEXT_PUBLIC_BASE_PATH: basePath
 	},

@@ -28,7 +28,7 @@ export function usePaceSeries(options: Options) {
 	const [history, setHistory] = useState<PaceHistoryPoint[]>([]);
 	const handledTickRef = useRef<number>(0);
 
-	// Append to history once per valid sampling tick (even if increase is zero)
+	// 유효한 샘플링 틱마다 1회 히스토리에 추가합니다. (증가량이 0이어도 기록)
 	useEffect(() => {
 		if (!hasStarted) return;
 		if (sampleTick === 0) return;
@@ -37,14 +37,14 @@ export function usePaceSeries(options: Options) {
 		if (ts == null) return;
 		setHistory(prev => {
 			const next = prev.concat({ ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs });
-			// keep last 24h to avoid unbounded growth
-			const cutoff = ts - 24 * 3600 * 1000;
+			// 무한 증가를 막기 위해 최근 3시간만 유지합니다.
+			const cutoff = ts - 3 * 3600 * 1000;
 			return next.filter(p => p.ts >= cutoff);
 		});
 		handledTickRef.current = sampleTick;
 	}, [sampleTick, hasStarted, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs]);
 
-	// Reset history on full reset
+	// 완전 초기화(측정 종료) 시 히스토리를 초기화합니다.
 	useEffect(() => {
 		if (!hasStarted) {
 			setHistory([]);
@@ -59,7 +59,7 @@ export function usePaceSeries(options: Options) {
 			const h = history[i];
 			const elapsedSec = Math.max(1, Math.floor(h.elapsedAtMs / 1000));
 			const ratePerSec = h.cumExp / elapsedSec;
-			// Use elapsed time (ms) as x so pauses do not stretch the domain
+			// 일시정지가 x축 범위를 늘리지 않도록, x에는 경과 시간(ms)을 사용합니다.
 			points.push({ ts: h.elapsedAtMs, value: ratePerSec * scaleSec });
 		}
 		return points;

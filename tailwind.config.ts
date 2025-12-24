@@ -10,8 +10,8 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: ["Pretendard", ...defaultTheme.fontFamily.sans],
-				// Prefer D2Coding for mono; final fallback Pretendard when glyphs missing
-				// NOTE: jsDelivr's d2coding.min.css defines the family as "D2 coding" (with a space).
+				// 모노 폰트는 D2Coding을 우선 사용하고, 글리프가 없을 때는 Pretendard로 대체합니다.
+				// 참고: jsDelivr의 d2coding.min.css는 폰트 패밀리명을 "D2 coding"(공백 포함)으로 정의합니다.
 				mono: ["D2 coding", ...defaultTheme.fontFamily.mono]
 			},
 			colors: {

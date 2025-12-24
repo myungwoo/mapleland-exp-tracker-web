@@ -78,7 +78,7 @@ export default function RecordsModal(props: Props) {
 				const next = await listRecords();
 				if (!cancelled) setRecords(next);
 			} catch {
-				// ignore
+					// 무시
 			}
 		})();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -192,7 +192,7 @@ export default function RecordsModal(props: Props) {
 										openAlert(err?.message ?? "불러오기에 실패했습니다.");
 									} finally {
 										setBusy(null);
-										// allow importing same file again
+										// 같은 파일을 다시 가져올 수 있도록 value를 초기화합니다.
 										if (fileInputRef.current) fileInputRef.current.value = "";
 									}
 								})();

@@ -16,7 +16,7 @@ export function usePersistentState<T>(key: string, initialValue: T) {
 				setValue(JSON.parse(raw) as T);
 			}
 		} catch {
-			// ignore
+			// 무시
 		}
 	}, [key]);
 
@@ -24,7 +24,7 @@ export function usePersistentState<T>(key: string, initialValue: T) {
 		try {
 			window.localStorage.setItem(key, JSON.stringify(value));
 		} catch {
-			// ignore
+			// 무시
 		}
 	}, [key, value]);
 	return [value, setValue] as const;

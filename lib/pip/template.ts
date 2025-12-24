@@ -3,7 +3,7 @@ export function pipStyles(): string {
     @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
     :root { color-scheme: dark; }
     html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    /* Center all content vertically when there's extra height */
+    /* 세로 공간이 남을 때 콘텐츠를 세로 중앙 정렬 */
     html, body { min-height: 100vh; display: grid; place-content: center; }
     .container { display: grid; grid-template-rows: auto auto auto; gap: 2px; padding: 10px 12px; text-align: center; }
     .row { display: flex; align-items: center; justify-content: center; }
@@ -26,15 +26,15 @@ export function pipStyles(): string {
       line-height: 1;
       padding: 0;
     }
-    button.pip.play { background: #22c55e; border-color: #16a34a; }   /* green */
-    button.pip.pause { background: #ef4444; border-color: #dc2626; }  /* red */
+    button.pip.play { background: #22c55e; border-color: #16a34a; }   /* 초록 */
+    button.pip.pause { background: #ef4444; border-color: #dc2626; }  /* 빨강 */
     button.pip:active { transform: translateY(1px); }
-    /* SVG icon sizing and visibility toggling (size follows font-size via em) */
+    /* SVG 아이콘 크기/표시 토글 (em 기준이라 font-size를 따라감) */
     .pip-icon { width: 1em; height: 1em; display: block; fill: currentColor; pointer-events: none; }
     #pip-toggle .pip-icon { display: none; }
     #pip-toggle.play .icon-play { display: block; }
     #pip-toggle.pause .icon-pause { display: block; }
-    /* Ensure timer block visually aligns top/bottom with the 40px button in Edge */
+    /* Edge에서 타이머 블록이 40px 버튼과 상/하 정렬이 맞도록 보정 */
     #pip-timer { height: 40px; line-height: 40px; display: flex; align-items: center; }
     .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
   `;

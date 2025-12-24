@@ -26,7 +26,7 @@ export function useOnboardingRoiAssist(options: Options) {
 	const [onboardingExpText, setOnboardingExpText] = useState<string | null>(null);
 
 	// 온보딩 OCR(1초 주기)에서 매번 캔버스를 새로 만들지 않도록 재사용합니다.
-	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document is undefined) 캔버스를 즉시 생성하면 안 됩니다.
+	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document가 undefined) 캔버스를 즉시 생성하면 안 됩니다.
 	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expProcCanvasRef = useRef<HTMLCanvasElement | null>(null);

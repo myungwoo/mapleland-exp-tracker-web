@@ -13,7 +13,7 @@ export function useDocumentPip(callbacks: PipCallbacks) {
   const cbRef = useRef<PipCallbacks>(callbacks);
   useEffect(() => { cbRef.current = callbacks; }, [callbacks]);
 
-  // Lazily create controller
+  // 필요할 때만 컨트롤러를 생성합니다.
   const ensure = useCallback(() => {
     if (!controllerRef.current) {
       controllerRef.current = new PipController({

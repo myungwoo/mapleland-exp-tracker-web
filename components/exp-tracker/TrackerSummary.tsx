@@ -38,7 +38,7 @@ type Props = {
 	recentPaceSeries: SeriesPoint[];
 	cumulativeSeries: SeriesPoint[];
 
-	/** For "결과 이미지 복사": capture the whole summary card as rendered */
+	/** "결과 이미지 복사"를 위해, 렌더된 요약 카드를 통째로 캡처합니다. */
 	captureRef?: Ref<HTMLDivElement>;
 };
 

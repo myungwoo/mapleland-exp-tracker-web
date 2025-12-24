@@ -17,8 +17,8 @@ function openDb(): Promise<IDBDatabase> {
 		req.onerror = () => reject(req.error ?? new Error("IndexedDB 열기에 실패했습니다."));
 		req.onupgradeneeded = () => {
 			const db = req.result;
-			// NOTE: onupgradeneeded runs inside a versionchange transaction.
-			// We can safely create stores / indexes here.
+			// 참고: onupgradeneeded는 versionchange 트랜잭션 안에서 실행됩니다.
+			// 여기서는 store/index를 안전하게 생성할 수 있습니다.
 			if (!db.objectStoreNames.contains(STORE_RECORDS)) {
 				const store = db.createObjectStore(STORE_RECORDS, { keyPath: "id" });
 				// createdAt 내림차순 정렬 조회를 위해 인덱스를 둡니다.

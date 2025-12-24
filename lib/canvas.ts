@@ -62,14 +62,14 @@ function binarizeInPlace(data: Uint8ClampedArray, invert = false) {
 		sum += y;
 	}
 	const avg = sum / (data.length / 4);
-	const threshold = avg * 0.9; // slightly below average
+	const threshold = avg * 0.9; // 평균보다 약간 낮게
 	for (let i = 0; i < data.length; i += 4) {
 		const r = data[i], g = data[i + 1], b = data[i + 2];
 		const y = 0.299 * r + 0.587 * g + 0.114 * b;
-		let v = y > threshold ? 255 : 0; // white for foreground by default
-		if (invert) v = v === 255 ? 0 : 255; // make digits black on white if invert
+		let v = y > threshold ? 255 : 0; // 기본값: 전경은 흰색
+		if (invert) v = v === 255 ? 0 : 255; // invert면 흰 배경 위 검정 글자로 반전
 		data[i] = data[i + 1] = data[i + 2] = v;
-		// keep alpha
+		// 알파 유지
 	}
 }
 
@@ -83,7 +83,7 @@ function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
 		gray[gi] = y;
 		hist[y]++;
 	}
-	// Otsu threshold
+	// Otsu 임계값 계산
 	let total = gray.length;
 	let sum = 0;
 	for (let t = 0; t < 256; t++) sum += t * hist[t];
@@ -106,7 +106,7 @@ function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
 			threshold = t;
 		}
 	}
-	// Apply threshold
+	// 임계값 적용
 	for (let i = 0, gi = 0; i < data.length; i += 4, gi++) {
 		let v = gray[gi] > threshold ? 255 : 0;
 		if (invert) v = v === 255 ? 0 : 255;
@@ -171,14 +171,14 @@ function removeUniformEdgeLinesBinaryInPlace(
 	const edgeY = Math.max(1, Math.min(h, options.edgeY));
 	const edgeX = Math.max(1, Math.min(w, options.edgeX));
 
-	// Top/Bottom rows
+	// 상/하단 행
 	for (let y = 0; y < edgeY; y++) {
 		if (rowCount[y] >= rowThresh) clearRow(y);
 	}
 	for (let y = h - edgeY; y < h; y++) {
 		if (y >= 0 && rowCount[y] >= rowThresh) clearRow(y);
 	}
-	// Left/Right cols
+	// 좌/우측 열
 	for (let x = 0; x < edgeX; x++) {
 		if (colCount[x] >= colThresh) clearCol(x);
 	}
@@ -320,7 +320,7 @@ function removeTopRightIslandsBinaryInPlace(
 				continue;
 			}
 
-			// BFS/DFS for this component
+			// 이 컴포넌트(연결요소)에 대해 BFS/DFS 수행
 			stack.length = 0;
 			pixels.length = 0;
 			visited[p0] = 1;
@@ -333,7 +333,7 @@ function removeTopRightIslandsBinaryInPlace(
 				const p = stack.pop()!;
 				pixels.push(p);
 				area++;
-				// Early bail: if it grows too big, treat it as not-an-island (e.g., real text)
+				// 조기 중단: 너무 커지면 "섬"이 아니라(예: 실제 텍스트) 제거 대상이 아니라고 판단
 				if (area > maxArea) break;
 				const cy = Math.floor(p / w);
 				const cx = p - cy * w;
@@ -342,7 +342,7 @@ function removeTopRightIslandsBinaryInPlace(
 				if (cy < minY) minY = cy;
 				if (cy > maxY) maxY = cy;
 
-				// neighbors
+				// 이웃 픽셀
 				push(cx - 1, cy);
 				push(cx + 1, cy);
 				push(cx, cy - 1);
@@ -355,7 +355,7 @@ function removeTopRightIslandsBinaryInPlace(
 				}
 			}
 
-			// If we bailed due to size, don't remove; but keep visited marks to avoid rework.
+			// 크기 때문에 중단된 경우 제거하지 않습니다. 대신 visited는 유지해 재탐색 비용을 줄입니다.
 			if (area > maxArea) continue;
 
 			const bw = maxX - minX + 1;
@@ -409,7 +409,7 @@ export function preprocessLevelCanvas(
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;
 	ctx.imageSmoothingEnabled = false;
-	// fill white background to avoid edge artifacts
+	// 가장자리 아티팩트를 줄이기 위해 흰 배경을 먼저 채웁니다.
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(0, 0, outW, outH);
 	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, pad, pad, srcW, srcH);
@@ -419,7 +419,7 @@ export function preprocessLevelCanvas(
 	const w = outW, h = outH;
 	const mask = new Uint8Array(w * h);
 
-	// 1) Color-based mask: near-white (low chroma) and bright
+	// 1) 색 기반 마스크: "밝고(밝기 높음) 채도 낮은(거의 흰색)" 픽셀만 전경으로 간주
 	for (let i = 0, p = 0; i < data.length; i += 4, p++) {
 		const r = data[i], g = data[i + 1], b = data[i + 2];
 		const maxc = Math.max(r, g, b);
@@ -473,12 +473,12 @@ export function preprocessLevelCanvas(
 		}
 	}
 
-	// 4) Render black digits on white background
+	// 4) 흰 배경(255) 위에 검정 글자(0)로 렌더링
 	for (let y = 0, p = 0, i = 0; y < h; y++) {
 		for (let x = 0; x < w; x++, p++, i += 4) {
 			const digit = clo[p] === 1;
 			data[i] = data[i + 1] = data[i + 2] = digit ? 0 : 255;
-			// keep alpha opaque
+			// 알파는 항상 불투명으로 유지
 			data[i + 3] = 255;
 		}
 	}
@@ -494,7 +494,7 @@ export function cropDigitBoundingBox(
 	// OCR이 읽기 좋게 targetHeight로 리스케일한 뒤 흰 테두리를 추가합니다.
 	const margin = options.margin ?? 1;
 	const targetH = options.targetHeight ?? 64;
-	const outPad = options.outPad ?? 4; // add white border around cropped digit
+	const outPad = options.outPad ?? 4; // 잘라낸 숫자 주변에 흰 테두리 추가
 	const w = source.width;
 	const h = source.height;
 	const ctx = source.getContext("2d")!;
@@ -504,9 +504,9 @@ export function cropDigitBoundingBox(
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 4;
-			// black digits on white bg
+			// 흰 배경 위 검정 글자
 			const v = data[i];
-			// treat near-white as background, anything darker as digit
+			// 거의 흰색은 배경, 그보다 어두우면 글자로 간주
 			if (v < 200) {
 				if (x < minX) minX = x;
 				if (x > maxX) maxX = x;
@@ -516,7 +516,7 @@ export function cropDigitBoundingBox(
 		}
 	}
 	if (maxX < minX || maxY < minY) {
-		// nothing found, return original
+		// 글자(전경)를 못 찾으면 원본을 반환
 		return source;
 	}
 	minX = Math.max(0, minX - margin);
@@ -533,7 +533,7 @@ export function cropDigitBoundingBox(
 	out.height = outH + outPad * 2;
 	const octx = out.getContext("2d")!;
 	octx.imageSmoothingEnabled = false;
-	// white padding
+	// 흰색 패딩
 	octx.fillStyle = "#ffffff";
 	octx.fillRect(0, 0, out.width, out.height);
 	octx.drawImage(source, minX, minY, bw, bh, outPad, outPad, outW, outH);
@@ -570,7 +570,7 @@ export function cropBinaryForegroundBoundingBox(
 		margin?: number;
 		targetHeight?: number;
 		outPad?: number;
-		/** Minimum foreground pixels in a column/row to be considered part of glyphs (filters speckle noise). */
+		/** 한 행/열에서 글자(전경)로 간주할 최소 전경 픽셀 수 (잔점(speckle) 노이즈 필터링) */
 		minColPx?: number;
 		minRowPx?: number;
 		outCanvas?: HTMLCanvasElement;
@@ -599,7 +599,7 @@ export function cropBinaryForegroundBoundingBox(
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 4;
-			const v = data[i]; // red channel is enough after binarize
+			const v = data[i]; // 이진화 이후에는 R 채널만으로도 충분합니다.
 			if (isForeground(v)) {
 				colCount[x]++;
 				rowCount[y]++;
@@ -635,7 +635,7 @@ export function cropBinaryForegroundBoundingBox(
 	const octx = out.getContext("2d")!;
 	octx.imageSmoothingEnabled = false;
 
-	// Fill background appropriately for OCR readability (white background is generally better).
+	// OCR 가독성을 위해 배경은 흰색으로 채우는 편이 일반적으로 유리합니다.
 	octx.fillStyle = "#ffffff";
 	octx.fillRect(0, 0, out.width, out.height);
 
@@ -653,12 +653,12 @@ export function cropBinaryForegroundBoundingBox(
 }
 
 /**
- * Preprocessor for EXP text like: "451519697 [42.59%]"
- * - Scales up to a minimum height for better OCR at low resolutions
- * - Binarizes using Otsu
- * - Optionally blacks out uniform white bands at the top/bottom that are not characters
- *   (keeps white glyphs on black background for preview parity)
- * - Optionally removes small "islands" near the top-right that can pull bbox cropping
+ * EXP 텍스트 전처리 (예: "451519697 [42.59%]")
+ * - 저해상도에서도 OCR이 잘 읽도록 최소 높이까지 스케일업
+ * - Otsu로 이진화
+ * - (옵션) 글자가 아닌 상/하단의 균일한 흰 밴드(장식/보더)를 제거
+ *   (프리뷰 일관성을 위해 전경(글자)은 흰색, 배경은 검정색 상태를 유지)
+ * - (옵션) bbox 크롭을 흔드는 우측 상단의 작은 "섬" 노이즈 제거
  */
 export function preprocessExpCanvas(
 	video: HTMLVideoElement,
@@ -673,12 +673,12 @@ export function preprocessExpCanvas(
 	canvas.width = outW;
 	canvas.height = outH;
 	const ctx = canvas.getContext("2d")!;
-	// Preserve original pixel structure when scaling up from low-res
+	// 저해상도 확대 시 원래 픽셀 구조를 최대한 보존합니다.
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
-	// Robust binarization; keep foreground (bright glyphs) white on black background
+	// 강건한 이진화: 전경(밝은 글리프)은 흰색, 배경은 검정색으로 유지합니다.
 	const img = ctx.getImageData(0, 0, outW, outH);
-	binarizeOtsuInPlace(img.data, false /* invert */);
+	binarizeOtsuInPlace(img.data, false /* 반전 */);
 	// (1) 가장자리 보더 제거: 상단 흰 줄 같은 UI 요소가 bbox를 오른쪽 끝까지 끌고 가는 문제를 방지
 	removeUniformEdgeLinesBinaryInPlace(img.data, outW, outH, {
 		foreground: "white",

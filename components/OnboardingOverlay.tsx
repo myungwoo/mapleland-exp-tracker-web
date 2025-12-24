@@ -14,17 +14,17 @@ type Props = {
   onNext: () => void;
   onSkip: () => void;
   onClose: () => void;
-  // Existing ROI previews
+  // 기존 ROI 미리보기
   hasLevelRoi?: boolean;
   levelRoiPreview?: string | null;
   hasExpRoi?: boolean;
   expRoiPreview?: string | null;
-  // OCR texts
+  // OCR 텍스트
   ocrLevelText?: string | null;
   ocrExpText?: string | null;
-  // Current sampling interval (for step 4 button labels)
+  // 현재 측정 주기(4단계 버튼 라벨용)
   currentIntervalSec?: number;
-  // Open PiP (for step 5)
+  // PiP 열기(5단계)
   onOpenPip?: () => void;
 };
 

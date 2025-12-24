@@ -49,16 +49,16 @@ export function computeExpDeltaFromTable(
 	curLevel: number,
 	curValue: number
 ): number | null {
-	// Same level: signed difference
+	// 같은 레벨: 부호 있는 차이
 	if (curLevel === prevLevel) {
 		return curValue - prevValue;
 	}
-	// If decreased (likely OCR miss), compute symmetric negative of upward sum
+	// 감소한 경우(대개 OCR 오인식): 증가 합의 대칭 음수로 계산합니다.
 	if (curLevel < prevLevel) {
 		const up = computeExpDeltaFromTable(table, curLevel, curValue, prevLevel, prevValue);
 		return up == null ? null : -up;
 	}
-	// curLevel > prevLevel: sum across levels (non-negative)
+	// 레벨 증가(curLevel > prevLevel): 레벨을 걸쳐 합산(항상 0 이상)
 	let sum = 0;
 	const prevReq = requiredExpForLevel(table, prevLevel);
 	if (prevReq == null) return null;

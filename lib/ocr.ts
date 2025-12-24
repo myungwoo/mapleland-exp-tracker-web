@@ -12,13 +12,13 @@ export async function initOcr() {
 async function initOcrExp() {
 	if (!expWorkerPromise) {
 		expWorkerPromise = (async () => {
-			// Tesseract v5: language preloaded, no loadLanguage/initialize
+			// Tesseract v5: 언어가 미리 로드되어 있어 loadLanguage/initialize가 필요 없습니다.
 			const worker: TesseractWorker = await createWorker("eng");
 			await worker.setParameters({
 				tessedit_char_whitelist: "0123456789.%[]",
 				preserve_interword_spaces: "1",
-				tessedit_pageseg_mode: PSM.SINGLE_LINE, // treat as single line
-				// Higher DPI helps on low-resolution inputs after upscale
+				tessedit_pageseg_mode: PSM.SINGLE_LINE, // 단일 라인으로 처리
+				// 스케일업 후 저해상도 입력에서는 DPI를 높이는 편이 도움이 됩니다.
 				user_defined_dpi: "500"
 			});
 			return worker;
@@ -30,12 +30,12 @@ async function initOcrExp() {
 async function initOcrDigits() {
 	if (!digitsWorkerPromise) {
 		digitsWorkerPromise = (async () => {
-			// Tesseract v5: language preloaded, no loadLanguage/initialize
+			// Tesseract v5: 언어가 미리 로드되어 있어 loadLanguage/initialize가 필요 없습니다.
 			const worker: TesseractWorker = await createWorker("eng");
 			await worker.setParameters({
 				tessedit_char_whitelist: "0123456789",
 				preserve_interword_spaces: "1",
-				// Single word of digits works best for compact sprites
+				// 작은 스프라이트(컴팩트)에는 숫자 1단어(SINGLE_WORD) 설정이 가장 잘 맞습니다.
 				tessedit_pageseg_mode: PSM.SINGLE_WORD,
 				classify_bln_numeric_mode: "1",
 				user_defined_dpi: "300",
@@ -55,18 +55,18 @@ export async function recognizeExpBracketed(
 	const result = await worker.recognize(source as any);
 	const text = normalizeOcrText(result.data.text);
 
-	// Try to extract [YY.YY%] percent first
+	// 먼저 [YY.YY%] 형태의 퍼센트를 추출합니다.
 	let percent: number | null = null;
 	const bracketPercent = text.match(/\[([0-9]{1,3}(?:\.[0-9]{1,2})?)%]/);
 	if (bracketPercent) {
 		percent = parseFloat(bracketPercent[1]);
 	} else {
-		// fallback: any percent pattern in the string
+		// 대체 경로: 문자열 안의 어떤 % 패턴이든 찾습니다.
 		const anyPercent = text.match(/([0-9]{1,3}(?:\.[0-9]{1,2})?)%/);
 		if (anyPercent) percent = parseFloat(anyPercent[1]);
 	}
 
-	// Extract the integer before the bracket as "value" if present
+	// 대괄호 앞의 정수가 있으면 value로 추출합니다.
 	let value: number | null = null;
 	const valueMatch = text.match(/(\d{2,})\s*\[/);
 	if (valueMatch) {
@@ -116,10 +116,10 @@ export async function recognizeLevelDigitsWithText(
 	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
 ): Promise<{ text: string; value: number | null }> {
 	const worker = await initOcrDigits();
-	// Ensure we operate on a tightly-cropped digit to maximize signal
+	// 신호를 최대화하기 위해 가능한 한 타이트하게 크롭된 숫자를 대상으로 처리합니다.
 	const canvas = source instanceof HTMLCanvasElement ? source : await createCanvasFromSource(source);
 	const cropped = cropDigitBoundingBox(canvas, { margin: 2, targetHeight: 72 });
-	// Pass 1: SINGLE_WORD with high DPI
+	// 1차 시도: SINGLE_WORD + 높은 DPI
 	await worker.setParameters({
 		tessedit_pageseg_mode: PSM.SINGLE_WORD,
 		user_defined_dpi: "500"
@@ -130,7 +130,7 @@ export async function recognizeLevelDigitsWithText(
 	let m = text.match(/^(\d{1,4})$/) || text.match(/(\d{1,4})/);
 	let value = m ? (Number.isNaN(parseInt(m[1], 10)) ? null : parseInt(m[1], 10)) : null;
 	if (value != null) return { text, value };
-	// Pass 2: SINGLE_CHAR fallback (higher DPI)
+	// 2차 시도: SINGLE_CHAR 대체 경로(더 높은 DPI)
 	await worker.setParameters({
 		tessedit_pageseg_mode: PSM.SINGLE_CHAR,
 		user_defined_dpi: "700"
@@ -141,7 +141,7 @@ export async function recognizeLevelDigitsWithText(
 	m = text.match(/^(\d)$/);
 	value = m ? (Number.isNaN(parseInt(m[1], 10)) ? null : parseInt(m[1], 10)) : null;
 	if (value == null) {
-		// Heuristic fallback for '1' using connected-component-like bounding box
+		// 휴리스틱 대체 경로: 연결요소 기반 bbox처럼 보이는 형태를 이용해 '1'을 추정
 		const guess = guessDigitOneFromBinaryCanvas(cropped as HTMLCanvasElement);
 		if (guess) value = 1;
 	}
@@ -153,7 +153,7 @@ async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTM
 	const canvas = document.createElement("canvas");
 	let w: number, h: number;
 	if ("width" in src && "height" in src) {
-		// ImageBitmap or HTMLImageElement
+		// ImageBitmap 또는 HTMLImageElement
 		const sized = src as unknown as { width: number; height: number };
 		w = sized.width;
 		h = sized.height;
@@ -178,8 +178,8 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 		for (let y = 0; y < h; y++) {
 			for (let x = 0; x < w; x++) {
 				const i = (y * w + x) * 4;
-				// Our preprocess renders black digits on white background
-				const v = data[i]; // red channel
+				// 전처리 결과는 "흰 배경 위 검정 글자" 형태입니다.
+				const v = data[i]; // R 채널
 				if (v < 128) {
 					count++;
 					if (x < minX) minX = x;
@@ -194,7 +194,7 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 		const bh = maxY - minY + 1;
 		const ar = bh / Math.max(1, bw);
 		const areaFrac = count / (w * h);
-		// Tall, slim, reasonable area coverage (loosened thresholds and slimness)
+		// 세로로 길고, 얇고, 면적 비율이 합리적인지(임계값은 다소 느슨하게)
 		const slim = (bw / Math.max(1, bh)) <= 0.28;
 		return ar >= 3 && slim && areaFrac >= 0.003 && areaFrac <= 0.6;
 	} catch {
@@ -203,9 +203,9 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 }
 
 function normalizeOcrText(input: string): string {
-	// Normalize common OCR confusions and whitespace
+	// OCR에서 흔히 발생하는 혼동(문자 오인식)과 공백을 정규화합니다.
 	let s = input.replace(/[ \t\r\n]+/g, "");
-	s = s.replace(/[ＯО]/g, "0"); // wide/other O -> 0
+	s = s.replace(/[ＯО]/g, "0"); // 폭이 넓은/다른 형태의 O -> 0
 	s = s.replace(/[oO]/g, "0");
 	s = s.replace(/[lI|]/g, "1");
 	s = s.replace(/Ｓ/g, "5");
@@ -213,7 +213,7 @@ function normalizeOcrText(input: string): string {
 	s = s.replace(/[％]/g, "%");
 	s = s.replace(/[【\[]/g, "[");
 	s = s.replace(/[】\]]/g, "]");
-	// keep only relevant characters
+	// 관련 문자만 남깁니다.
 	s = s.replace(/[^0-9\.\%\[\]]/g, "");
 	return s;
 }

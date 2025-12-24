@@ -60,7 +60,7 @@ export function useDisplayCapture(options: Options) {
 	}, [attachStream, captureVideoRef, ensurePlaying, stream]);
 
 	/**
-	 * Best-effort로 현재 스트림의 video track frameRate를 조정합니다.
+	 * 가능한 범위에서(최선 시도) 현재 스트림의 video track frameRate를 조정합니다.
 	 * - 목적: settingsOpen 토글에 따라 "프리뷰는 부드럽게 / 평소는 저부하"를 구현
 	 * - 주의: 브라우저/OS에 따라 applyConstraints가 무시되거나 실패할 수 있어, 실패는 조용히 무시합니다.
 	 */
