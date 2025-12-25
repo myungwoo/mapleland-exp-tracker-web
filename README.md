@@ -162,6 +162,7 @@ python tools/hotkey-ws/hotkey_ws_server.py --host 127.0.0.1 --port 21537
 > 필요하면 핫키 백엔드를 강제로 선택할 수도 있습니다.
 >
 > ```bash
+> python tools/hotkey-ws/hotkey_ws_server.py --hotkey-backend win32
 > python tools/hotkey-ws/hotkey_ws_server.py --hotkey-backend keyboard
 > python tools/hotkey-ws/hotkey_ws_server.py --hotkey-backend pynput
 > ```

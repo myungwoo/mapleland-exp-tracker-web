@@ -145,13 +145,100 @@ def start_hotkey_listener_keyboard_lib(hub: Hub, toggle_key: str, reset_key: str
 	th.start()
 
 
+def start_hotkey_listener_win32(hub: Hub, toggle_key: str, reset_key: str | None, debug_keys: bool):
+	"""
+	Windows의 RegisterHotKey/WM_HOTKEY를 이용한 전역 핫키 리스너입니다.
+
+	- 훅 기반 라이브러리(pynput/keyboard) 대비 “간헐적 누락”이 적은 편입니다.
+	- 단, 동일 키를 다른 프로그램이 전역 핫키로 선점한 경우 등록에 실패할 수 있습니다.
+	"""
+	if platform.system().lower() != "windows":
+		raise RuntimeError("win32 백엔드는 Windows에서만 사용할 수 있습니다.")
+
+	import ctypes
+	from ctypes import wintypes
+
+	user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+	WM_HOTKEY = 0x0312
+
+	def vk_from_key_name(name: str) -> int:
+		n = name.strip().lower()
+		if n.startswith("f") and n[1:].isdigit():
+			i = int(n[1:])
+			if 1 <= i <= 24:
+				return 0x70 + (i - 1)  # VK_F1(0x70) ~ VK_F24
+		# 알파벳/숫자 단일 키 지원
+		if len(n) == 1:
+			ch = n.upper()
+			code = ord(ch)
+			# '0'~'9', 'A'~'Z'
+			if (48 <= code <= 57) or (65 <= code <= 90):
+				return code
+		raise ValueError(f"지원하지 않는 키 이름: {name}")
+
+	toggle_vk = vk_from_key_name(toggle_key)
+	reset_vk = vk_from_key_name(reset_key) if reset_key else None
+
+	# id는 임의의 정수면 됩니다. (스레드 메시지 큐에 WM_HOTKEY로 올라옴)
+	ID_TOGGLE = 1
+	ID_RESET = 2
+
+	def register(id_: int, vk: int) -> None:
+		ok = user32.RegisterHotKey(None, id_, 0, vk)
+		if not ok:
+			err = ctypes.get_last_error()
+			raise RuntimeError(f"RegisterHotKey 실패 (id={id_}, vk={vk}, err={err})")
+
+	def unregister(id_: int) -> None:
+		try:
+			user32.UnregisterHotKey(None, id_)
+		except Exception:
+			pass
+
+	def run():
+		# 이 스레드에 메시지 큐가 생성되도록 먼저 등록을 시도합니다.
+		try:
+			register(ID_TOGGLE, toggle_vk)
+			if reset_vk is not None:
+				register(ID_RESET, reset_vk)
+		except Exception as e:
+			print(f"win32 핫키 등록 실패: {e}")
+			print("다른 백엔드로 전환해 주세요. (--hotkey-backend keyboard 또는 --hotkey-backend pynput)")
+			return
+
+		try:
+			msg = wintypes.MSG()
+			while True:
+				# GetMessageW는 메시지가 올 때까지 블로킹합니다.
+				r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+				if r == 0:  # WM_QUIT
+					break
+				if msg.message == WM_HOTKEY:
+					hid = int(msg.wParam)
+					if debug_keys:
+						print(f"[키 디버그] WM_HOTKEY id={hid}")
+					if hid == ID_TOGGLE:
+						hub.broadcast_from_thread(jmsg("toggle"))
+					elif hid == ID_RESET and reset_vk is not None:
+						hub.broadcast_from_thread(jmsg("reset"))
+				user32.TranslateMessage(ctypes.byref(msg))
+				user32.DispatchMessageW(ctypes.byref(msg))
+		finally:
+			unregister(ID_TOGGLE)
+			unregister(ID_RESET)
+
+	th = threading.Thread(target=run, daemon=True)
+	th.start()
+
+
 async def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--host", default="127.0.0.1")
 	ap.add_argument("--port", type=int, default=21537)
 	ap.add_argument("--toggle-key", default="f6", help="기본값: f6")
 	ap.add_argument("--reset-key", default="f7", help="기본값: f7 (비활성화하려면 빈 문자열)")
-	ap.add_argument("--hotkey-backend", default="auto", choices=["auto", "keyboard", "pynput"], help="기본값: auto (Windows에서는 keyboard 우선)")
+	ap.add_argument("--hotkey-backend", default="auto", choices=["auto", "win32", "keyboard", "pynput"], help="기본값: auto (Windows에서는 win32 우선)")
 	ap.add_argument("--debug-keys", action="store_true", help="키 인식 디버그 로그 출력")
 	args = ap.parse_args()
 
@@ -161,9 +248,24 @@ async def main():
 	reset_key = args.reset_key.strip() or None
 	backend = args.hotkey_backend
 	if backend == "auto":
-		backend = "keyboard" if platform.system().lower() == "windows" else "pynput"
+		backend = "win32" if platform.system().lower() == "windows" else "pynput"
 
-	if backend == "keyboard":
+	if backend == "win32":
+		try:
+			start_hotkey_listener_win32(hub, args.toggle_key, reset_key, args.debug_keys)
+			print("핫키 백엔드: win32(RegisterHotKey)")
+		except Exception as e:
+			print(f"핫키 백엔드 win32 초기화 실패: {e}")
+			print("keyboard 백엔드로 폴백합니다.")
+			try:
+				start_hotkey_listener_keyboard_lib(hub, args.toggle_key, reset_key, args.debug_keys)
+				print("핫키 백엔드: keyboard")
+			except Exception as e2:
+				print(f"핫키 백엔드 keyboard 초기화 실패: {e2}")
+				print("pynput 백엔드로 폴백합니다.")
+				start_hotkey_listener(hub, args.toggle_key, reset_key)
+				print("핫키 백엔드: pynput")
+	elif backend == "keyboard":
 		try:
 			start_hotkey_listener_keyboard_lib(hub, args.toggle_key, reset_key, args.debug_keys)
 			print("핫키 백엔드: keyboard")
