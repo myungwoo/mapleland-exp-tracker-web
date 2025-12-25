@@ -204,12 +204,56 @@ class HotkeyManager:
 		self._debug_log_cb = debug_log_cb
 		self._handles: list[int] = []
 		self._debug_hooked = False
+		self._debug_hook_handle = None
 
 	def _log(self, msg: str):
 		self._log_cb(msg)
 
 	def _debug_log(self, msg: str):
 		self._debug_log_cb(msg)
+
+	def _set_debug_hook(self, enabled: bool):
+		"""
+		디버그 키 훅을 켜거나 끕니다.
+		- enabled=True: 모든 키 이벤트를 받아 디버그 로그로 기록합니다. (부하가 생길 수 있음)
+		- enabled=False: 디버그 훅을 제거해 부하를 최소화합니다.
+		"""
+		try:
+			import keyboard as kb  # type: ignore
+		except Exception:
+			return
+
+		if enabled:
+			if self._debug_hook_handle is not None:
+				return
+
+			def _dbg(ev):
+				self._debug_log(
+					f"[키 디버그] name={getattr(ev, 'name', None)} "
+					f"event_type={getattr(ev, 'event_type', None)} "
+					f"scan_code={getattr(ev, 'scan_code', None)}"
+				)
+
+			try:
+				self._debug_hook_handle = kb.hook(_dbg)
+				self._debug_hooked = True
+			except Exception:
+				self._debug_hook_handle = None
+				self._debug_hooked = False
+		else:
+			if self._debug_hook_handle is None:
+				self._debug_hooked = False
+				return
+			try:
+				kb.unhook(self._debug_hook_handle)
+			except Exception:
+				pass
+			self._debug_hook_handle = None
+			self._debug_hooked = False
+
+	def set_debug_enabled(self, enabled: bool):
+		"""GUI 체크박스 변경에 맞춰 디버그 훅을 즉시 반영합니다."""
+		self._set_debug_hook(enabled)
 
 	def clear(self):
 		try:
@@ -224,12 +268,9 @@ class HotkeyManager:
 				pass
 		self._handles = []
 
-		if self._debug_hooked:
-			try:
-				kb.unhook_all()
-			except Exception:
-				pass
-			self._debug_hooked = False
+		# 디버그 훅은 전체 unhook_all()로 내리면 다른 훅까지 같이 내려갈 수 있어,
+		# 우리가 만든 훅 핸들만 정확히 제거합니다.
+		self._set_debug_hook(False)
 
 	def apply(self, toggle_hotkey: str, reset_hotkey: str | None, debug_enabled: bool, on_toggle, on_reset):
 		# 기존 등록 해제 후 재등록
@@ -240,15 +281,8 @@ class HotkeyManager:
 			self._log(f"[핫키] keyboard 라이브러리 로드 실패: {e}")
 			return
 
-		if debug_enabled and not self._debug_hooked:
-			def _dbg(ev):
-				self._debug_log(
-					f"[키 디버그] name={getattr(ev, 'name', None)} "
-					f"event_type={getattr(ev, 'event_type', None)} "
-					f"scan_code={getattr(ev, 'scan_code', None)}"
-				)
-			kb.hook(_dbg)
-			self._debug_hooked = True
+		# 디버그 훅은 체크 상태에 맞춰 켜거나 끕니다.
+		self._set_debug_hook(debug_enabled)
 
 		try:
 			h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
@@ -354,6 +388,16 @@ def run_gui():
 
 		hotkeys.apply(toggle_hotkey, reset_hotkey, bool(var_debug.get()), do_toggle, do_reset)
 
+	# 디버그 체크박스 토글 시, 훅을 즉시 켜거나 꺼서 부하를 통제합니다.
+	def on_debug_toggle(*_args):
+		hotkeys.set_debug_enabled(bool(var_debug.get()))
+
+	try:
+		var_debug.trace_add("write", on_debug_toggle)
+	except Exception:
+		# 일부 오래된 Tk 환경에서는 trace_add가 없을 수 있어 무시합니다.
+		pass
+
 	def on_start():
 		host = var_host.get().strip() or "127.0.0.1"
 		try:
@@ -428,18 +472,22 @@ def run_gui():
 		set_status()
 		btn_server.configure(text=("서버 정지" if server.is_running() else "서버 실행"))
 		show_debug = bool(var_debug.get())
+		lines: list[str] = []
 		try:
 			while True:
 				is_debug, line = log_q.get_nowait()
 				if (not is_debug) or show_debug:
-					# 읽기 전용 상태에서는 삽입이 안 되므로, 삽입하는 동안만 잠깐 해제합니다.
-					txt.configure(state="normal")
-					txt.insert("end", line + "\n")
-					txt.see("end")
-					txt.configure(state="disabled")
+					lines.append(line)
 		except queue.Empty:
 			pass
-		root.after(200, pump_logs)
+		if lines:
+			# 읽기 전용 상태에서는 삽입이 안 되므로, 삽입하는 동안만 잠깐 해제합니다.
+			txt.configure(state="normal")
+			txt.insert("end", "\n".join(lines) + "\n")
+			txt.see("end")
+			txt.configure(state="disabled")
+		# UI 갱신 주기를 약간 늘려 CPU 사용을 줄입니다.
+		root.after(300, pump_logs)
 
 	root.protocol("WM_DELETE_WINDOW", on_close)
 	pump_logs()
