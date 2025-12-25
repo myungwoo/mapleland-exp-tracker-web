@@ -151,6 +151,21 @@ python tools/hotkey-ws/hotkey_ws_server.py --host 127.0.0.1 --port 21537
   - **F6** → 측정 시작/일시정지 **토글** (`{"type":"toggle"}`)
   - **F7** → **초기화** (`{"type":"reset"}`)
 
+> 참고: Windows 환경에 따라 전역 키 훅이 막히면 “관리자 권한으로 실행”이 필요할 수 있습니다.
+>
+> F6 인식이 간헐적으로 실패하면 아래처럼 실행해서 “어떤 키로 인식되는지”를 먼저 확인해 보세요.
+>
+> ```bash
+> python tools/hotkey-ws/hotkey_ws_server.py --debug-keys
+> ```
+>
+> 필요하면 핫키 백엔드를 강제로 선택할 수도 있습니다.
+>
+> ```bash
+> python tools/hotkey-ws/hotkey_ws_server.py --hotkey-backend keyboard
+> python tools/hotkey-ws/hotkey_ws_server.py --hotkey-backend pynput
+> ```
+
 ---
 
 ## 🧑‍💻 로컬 실행 (개발용)

@@ -23,6 +23,7 @@ import argparse
 import asyncio
 import json
 import threading
+import platform
 from typing import Set
 
 import websockets
@@ -112,19 +113,68 @@ def start_hotkey_listener(hub: Hub, toggle_key: str, reset_key: str | None):
 	th.start()
 
 
+def start_hotkey_listener_keyboard_lib(hub: Hub, toggle_key: str, reset_key: str | None, debug_keys: bool):
+	"""
+	`keyboard` 라이브러리를 이용한 전역 핫키 리스너입니다. (Windows에서 비교적 안정적인 편)
+	"""
+	import keyboard as kb  # type: ignore
+
+	def on_toggle():
+		hub.broadcast_from_thread(jmsg("toggle"))
+
+	def on_reset():
+		hub.broadcast_from_thread(jmsg("reset"))
+
+	# 디버그 모드에서는 모든 키 이벤트를 출력해 어떤 키로 인식되는지 확인할 수 있게 합니다.
+	if debug_keys:
+		def _dbg(ev):
+			# ev: keyboard.KeyboardEvent
+			print(f"[키 디버그] name={getattr(ev, 'name', None)} event_type={getattr(ev, 'event_type', None)} scan_code={getattr(ev, 'scan_code', None)}")
+		kb.hook(_dbg)
+
+	# hotkey 등록 (대소문자 무시)
+	kb.add_hotkey(toggle_key, on_toggle, suppress=False, trigger_on_release=False)
+	if reset_key:
+		kb.add_hotkey(reset_key, on_reset, suppress=False, trigger_on_release=False)
+
+	# 블로킹 대기(백그라운드 스레드에서 실행)
+	def run():
+		kb.wait()
+
+	th = threading.Thread(target=run, daemon=True)
+	th.start()
+
+
 async def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--host", default="127.0.0.1")
 	ap.add_argument("--port", type=int, default=21537)
 	ap.add_argument("--toggle-key", default="f6", help="기본값: f6")
 	ap.add_argument("--reset-key", default="f7", help="기본값: f7 (비활성화하려면 빈 문자열)")
+	ap.add_argument("--hotkey-backend", default="auto", choices=["auto", "keyboard", "pynput"], help="기본값: auto (Windows에서는 keyboard 우선)")
+	ap.add_argument("--debug-keys", action="store_true", help="키 인식 디버그 로그 출력")
 	args = ap.parse_args()
 
 	loop = asyncio.get_running_loop()
 	hub = Hub(loop)
 
 	reset_key = args.reset_key.strip() or None
-	start_hotkey_listener(hub, args.toggle_key, reset_key)
+	backend = args.hotkey_backend
+	if backend == "auto":
+		backend = "keyboard" if platform.system().lower() == "windows" else "pynput"
+
+	if backend == "keyboard":
+		try:
+			start_hotkey_listener_keyboard_lib(hub, args.toggle_key, reset_key, args.debug_keys)
+			print("핫키 백엔드: keyboard")
+		except Exception as e:
+			print(f"핫키 백엔드 keyboard 초기화 실패: {e}")
+			print("pynput 백엔드로 폴백합니다.")
+			start_hotkey_listener(hub, args.toggle_key, reset_key)
+			print("핫키 백엔드: pynput")
+	else:
+		start_hotkey_listener(hub, args.toggle_key, reset_key)
+		print("핫키 백엔드: pynput")
 
 	print(f"리스닝: ws://{args.host}:{args.port}")
 	print(f"핫키: {args.toggle_key} -> toggle" + (f", {args.reset_key} -> reset" if reset_key else ""))
