@@ -17,6 +17,7 @@ import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
 import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
+import LocalWsTestPanel from "@/components/exp-tracker/LocalWsTestPanel";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
 import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardingRoiAssist";
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
@@ -443,9 +444,17 @@ export default function ExpTracker() {
 	const [chartMode, setChartMode] = useState<"pace" | "paceRecent" | "cumulative">("pace");
 
 	// x축 레이블은 경과 시간(ms)을 바로 사용
+	const wsTestEnabled = useMemo(() => {
+		try {
+			return new URLSearchParams(window.location.search).get("wsTest") === "1";
+		} catch {
+			return false;
+		}
+	}, []);
 
 	return (
 		<div className="space-y-4">
+			{wsTestEnabled && <LocalWsTestPanel defaultUrl="ws://127.0.0.1:21537" />}
 			<TrackerToolbar
 				isSampling={isSampling}
 				hasStarted={hasStarted}
