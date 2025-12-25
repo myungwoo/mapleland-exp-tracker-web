@@ -17,13 +17,13 @@ import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
 import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
-import LocalWsTestPanel from "@/components/exp-tracker/LocalWsTestPanel";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
 import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardingRoiAssist";
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
 import { useStopwatch } from "@/features/exp-tracker/hooks/useStopwatch";
 import { useIntervalRunner } from "@/features/exp-tracker/hooks/useIntervalRunner";
 import { useOcrSampling } from "@/features/exp-tracker/hooks/useOcrSampling";
+import { ExternalWsEvent, useExternalWsControl } from "@/features/exp-tracker/hooks/useExternalWsControl";
 import type { ExpTrackerSnapshot } from "@/features/exp-tracker/records/types";
 import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
 
@@ -266,6 +266,58 @@ export default function ExpTracker() {
 	const resetSamplingRef = useRef(resetSampling);
 	useEffect(() => { resetSamplingRef.current = resetSampling; }, [resetSampling]);
 
+	// 외부(로컬) WebSocket 메시지로 측정 제어 (고급 사용자용, UI 비노출)
+	// - 기본값: 비활성 (성능 영향 없음)
+	// - 활성화 방법(개발자 도구 Console):
+	//   localStorage.setItem("externalWsEnabled", "true")
+	//   localStorage.setItem("externalWsUrl", "ws://127.0.0.1:21537")
+	//   이후 페이지 새로고침
+	const [externalWsConfig, setExternalWsConfig] = useState<{ enabled: boolean; url: string }>(() => ({
+		enabled: false,
+		url: "ws://127.0.0.1:21537"
+	}));
+	useEffect(() => {
+		try {
+			const enabledRaw = window.localStorage.getItem("externalWsEnabled");
+			const enabled = enabledRaw === "true" || enabledRaw === "1" || enabledRaw === "yes";
+			const url = window.localStorage.getItem("externalWsUrl") || "ws://127.0.0.1:21537";
+			setExternalWsConfig({ enabled, url });
+		} catch {
+			// localStorage 접근이 막힌 환경에서는 자동으로 비활성 상태를 유지합니다.
+			setExternalWsConfig({ enabled: false, url: "ws://127.0.0.1:21537" });
+		}
+	}, []);
+	const onExternalWsEvent = useCallback((ev: ExternalWsEvent) => {
+		const t = ev.type;
+		if (t === "toggle") {
+			if (isSamplingRef.current) {
+				void pauseSamplingRef.current();
+			} else {
+				// 메인 UI와 동일: 캡처 스트림이 없으면 시작 불가
+				if (!hasStreamRef.current) return;
+				void startOrResumeRef.current();
+			}
+			return;
+		}
+		if (t === "start") {
+			if (!hasStreamRef.current) return;
+			if (!isSamplingRef.current) void startOrResumeRef.current();
+			return;
+		}
+		if (t === "pause") {
+			if (isSamplingRef.current) void pauseSamplingRef.current();
+			return;
+		}
+		if (t === "reset") {
+			if (hasStartedRef.current) resetSamplingRef.current();
+		}
+	}, []);
+	const externalWs = useExternalWsControl({
+		enabled: externalWsConfig.enabled,
+		url: externalWsConfig.url,
+		onEvent: onExternalWsEvent
+	});
+
 
 	const stats = useMemo(() => {
 		if (!hasStarted) return null;
@@ -444,17 +496,9 @@ export default function ExpTracker() {
 	const [chartMode, setChartMode] = useState<"pace" | "paceRecent" | "cumulative">("pace");
 
 	// x축 레이블은 경과 시간(ms)을 바로 사용
-	const wsTestEnabled = useMemo(() => {
-		try {
-			return new URLSearchParams(window.location.search).get("wsTest") === "1";
-		} catch {
-			return false;
-		}
-	}, []);
 
 	return (
 		<div className="space-y-4">
-			{wsTestEnabled && <LocalWsTestPanel defaultUrl="ws://127.0.0.1:21537" />}
 			<TrackerToolbar
 				isSampling={isSampling}
 				hasStarted={hasStarted}
