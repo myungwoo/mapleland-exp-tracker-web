@@ -1,33 +1,29 @@
 #!/usr/bin/env python3
 """
-WebSocket 브로드캐스트 서버 + 전역(글로벌) 핫키 리스너 (Windows 친화)
+전역(글로벌) 핫키 → 로컬 WebSocket 브로드캐스트 GUI (Windows 전용 지원)
 
-동작:
-  - ws://127.0.0.1:21537 (기본값)에서 WebSocket 서버를 엽니다.
-  - 전역 핫키를 감지합니다. (기본: F6)
-  - 핫키가 눌리면 연결된 모든 클라이언트(웹앱 탭)에 JSON 메시지를 브로드캐스트합니다.
-      {"type":"toggle"}  (F6)
-      {"type":"reset"}   (F7)
+이 파일은 **GUI 모드만** 제공합니다.
 
-설치:
-  python -m pip install -r tools/hotkey-ws/requirements.txt
+기능:
+- WebSocket 서버의 listen address / port 설정
+- 서버 실행/정지(토글)
+- 연결된 커넥션 수 표시
+- 디버그 로그 텍스트 박스(디버그 체크 시에만 디버그 로그 표시)
+- 토글/리셋 핫키를 “수정(캡처)” 버튼으로 직접 입력해 설정하고, “설정 적용”을 눌렀을 때만 반영
 
-실행:
-  python tools/hotkey-ws/hotkey_ws_server.py --host 127.0.0.1 --port 21537
-
-참고:
-  - Windows 환경에 따라 전역 키 훅이 막히면 “관리자 권한으로 실행”이 필요할 수 있습니다.
+핫키 처리:
+- 가능한 조합 제약을 최소화하기 위해 `keyboard` 라이브러리의
+  `read_hotkey()`(캡처) + `add_hotkey()`(등록)를 사용합니다.
 """
 
-import argparse
 import asyncio
 import json
+import queue
 import threading
-import platform
-from typing import Set
+import time
+from typing import Set, Callable
 
 import websockets
-from pynput import keyboard
 
 
 def jmsg(t: str) -> str:
@@ -35,6 +31,8 @@ def jmsg(t: str) -> str:
 
 
 class Hub:
+	"""서버에 연결된 WebSocket 클라이언트를 관리하고 브로드캐스트를 수행합니다."""
+
 	def __init__(self, loop: asyncio.AbstractEventLoop):
 		self.loop = loop
 		self.clients: Set[websockets.WebSocketServerProtocol] = set()
@@ -63,17 +61,14 @@ class Hub:
 			# 클라이언트가 이미 끊어진 경우 등은 조용히 무시합니다.
 			pass
 
-	def broadcast_from_thread(self, payload: str):
-		# pynput 콜백(별도 스레드)에서 asyncio 루프로 안전하게 전달합니다.
-		asyncio.run_coroutine_threadsafe(self.broadcast(payload), self.loop)
-
 
 async def ws_handler(ws, hub: Hub):
+	"""WebSocket 연결을 처리합니다."""
 	await hub.add(ws)
 	try:
 		await ws.send(json.dumps({"type": "hello", "msg": "connected"}, ensure_ascii=False))
 		async for msg in ws:
-			# 디버그/헬스체크 용도: ping/pong만 처리하고 나머지는 에코합니다.
+			# 헬스체크 용도: ping/pong만 처리하고, 나머지는 에코합니다.
 			if msg == "ping":
 				await ws.send("pong")
 				continue
@@ -82,210 +77,376 @@ async def ws_handler(ws, hub: Hub):
 		await hub.remove(ws)
 
 
-def start_hotkey_listener(hub: Hub, toggle_key: str, reset_key: str | None):
-	"""
-	pynput 리스너를 백그라운드 스레드에서 실행합니다.
-	"""
-	toggle = toggle_key.lower()
-	reset = reset_key.lower() if reset_key else None
+class WsServerController:
+	"""Tkinter 메인 스레드와 분리하기 위해 WebSocket 서버를 별도 스레드에서 실행합니다."""
 
-	def key_name(k):
-		# k는 Key 또는 KeyCode일 수 있습니다.
-		if isinstance(k, keyboard.Key):
-			return k.name or str(k)
+	def __init__(self, log_cb: Callable[[str], None]):
+		self._log_cb = log_cb
+		self._thread: threading.Thread | None = None
+		self._loop: asyncio.AbstractEventLoop | None = None
+		self._server = None
+		self._hub: Hub | None = None
+		self._running = False
+		self._client_count = 0
+		self._client_count_lock = threading.Lock()
+
+	def _log(self, msg: str):
+		self._log_cb(msg)
+
+	def is_running(self) -> bool:
+		return self._running
+
+	def get_client_count(self) -> int:
+		with self._client_count_lock:
+			return int(self._client_count)
+
+	def start(self, host: str, port: int):
+		if self._running:
+			return
+		self._running = True
+
+		def run():
+			loop = asyncio.new_event_loop()
+			asyncio.set_event_loop(loop)
+			self._loop = loop
+			self._hub = Hub(loop)
+
+			async def handler(ws):
+				with self._client_count_lock:
+					self._client_count += 1
+				self._log(f"[서버] 연결됨 (현재 {self.get_client_count()}개)")
+				try:
+					await ws_handler(ws, self._hub)  # type: ignore[arg-type]
+				finally:
+					with self._client_count_lock:
+						self._client_count = max(0, self._client_count - 1)
+					self._log(f"[서버] 연결 종료 (현재 {self.get_client_count()}개)")
+
+			async def start_server():
+				self._log(f"[서버] 시작: ws://{host}:{port}")
+				return await websockets.serve(handler, host, port)
+
+			try:
+				self._server = loop.run_until_complete(start_server())
+				loop.run_forever()
+			except Exception as e:
+				self._log(f"[서버] 오류: {e}")
+			finally:
+				try:
+					if self._server is not None:
+						self._server.close()
+						loop.run_until_complete(self._server.wait_closed())
+				except Exception:
+					pass
+				try:
+					loop.close()
+				except Exception:
+					pass
+				self._running = False
+				self._log("[서버] 정지됨")
+
+		self._thread = threading.Thread(target=run, daemon=True)
+		self._thread.start()
+
+	def stop(self):
+		if not self._running:
+			return
+		loop = self._loop
+		if loop is None:
+			self._running = False
+			return
+
+		async def shutdown():
+			# 연결된 클라이언트를 먼저 닫고 서버를 종료합니다.
+			try:
+				if self._hub is not None:
+					async with self._hub._lock:  # type: ignore[attr-defined]
+						clients = list(self._hub.clients)
+					for c in clients:
+						try:
+							await c.close()
+						except Exception:
+							pass
+			except Exception:
+				pass
+			try:
+				if self._server is not None:
+					self._server.close()
+					await self._server.wait_closed()
+			except Exception:
+				pass
+			loop.stop()
+
 		try:
-			return k.char  # type: ignore[attr-defined]
+			asyncio.run_coroutine_threadsafe(shutdown(), loop)
 		except Exception:
-			return str(k)
+			try:
+				loop.call_soon_threadsafe(loop.stop)
+			except Exception:
+				pass
 
-	def on_press(k):
-		name = (key_name(k) or "").lower()
-		if name == toggle:
-			hub.broadcast_from_thread(jmsg("toggle"))
-		elif reset and name == reset:
-			hub.broadcast_from_thread(jmsg("reset"))
-
-	def run():
-		with keyboard.Listener(on_press=on_press) as listener:
-			listener.join()
-
-	th = threading.Thread(target=run, daemon=True)
-	th.start()
-
-
-def start_hotkey_listener_keyboard_lib(hub: Hub, toggle_key: str, reset_key: str | None, debug_keys: bool):
-	"""
-	`keyboard` 라이브러리를 이용한 전역 핫키 리스너입니다. (Windows에서 비교적 안정적인 편)
-	"""
-	import keyboard as kb  # type: ignore
-
-	def on_toggle():
-		hub.broadcast_from_thread(jmsg("toggle"))
-
-	def on_reset():
-		hub.broadcast_from_thread(jmsg("reset"))
-
-	# 디버그 모드에서는 모든 키 이벤트를 출력해 어떤 키로 인식되는지 확인할 수 있게 합니다.
-	if debug_keys:
-		def _dbg(ev):
-			# ev: keyboard.KeyboardEvent
-			print(f"[키 디버그] name={getattr(ev, 'name', None)} event_type={getattr(ev, 'event_type', None)} scan_code={getattr(ev, 'scan_code', None)}")
-		kb.hook(_dbg)
-
-	# hotkey 등록 (대소문자 무시)
-	kb.add_hotkey(toggle_key, on_toggle, suppress=False, trigger_on_release=False)
-	if reset_key:
-		kb.add_hotkey(reset_key, on_reset, suppress=False, trigger_on_release=False)
-
-	# 블로킹 대기(백그라운드 스레드에서 실행)
-	def run():
-		kb.wait()
-
-	th = threading.Thread(target=run, daemon=True)
-	th.start()
-
-
-def start_hotkey_listener_win32(hub: Hub, toggle_key: str, reset_key: str | None, debug_keys: bool):
-	"""
-	Windows의 RegisterHotKey/WM_HOTKEY를 이용한 전역 핫키 리스너입니다.
-
-	- 훅 기반 라이브러리(pynput/keyboard) 대비 “간헐적 누락”이 적은 편입니다.
-	- 단, 동일 키를 다른 프로그램이 전역 핫키로 선점한 경우 등록에 실패할 수 있습니다.
-	"""
-	if platform.system().lower() != "windows":
-		raise RuntimeError("win32 백엔드는 Windows에서만 사용할 수 있습니다.")
-
-	import ctypes
-	from ctypes import wintypes
-
-	user32 = ctypes.WinDLL("user32", use_last_error=True)
-
-	WM_HOTKEY = 0x0312
-
-	def vk_from_key_name(name: str) -> int:
-		n = name.strip().lower()
-		if n.startswith("f") and n[1:].isdigit():
-			i = int(n[1:])
-			if 1 <= i <= 24:
-				return 0x70 + (i - 1)  # VK_F1(0x70) ~ VK_F24
-		# 알파벳/숫자 단일 키 지원
-		if len(n) == 1:
-			ch = n.upper()
-			code = ord(ch)
-			# '0'~'9', 'A'~'Z'
-			if (48 <= code <= 57) or (65 <= code <= 90):
-				return code
-		raise ValueError(f"지원하지 않는 키 이름: {name}")
-
-	toggle_vk = vk_from_key_name(toggle_key)
-	reset_vk = vk_from_key_name(reset_key) if reset_key else None
-
-	# id는 임의의 정수면 됩니다. (스레드 메시지 큐에 WM_HOTKEY로 올라옴)
-	ID_TOGGLE = 1
-	ID_RESET = 2
-
-	def register(id_: int, vk: int) -> None:
-		ok = user32.RegisterHotKey(None, id_, 0, vk)
-		if not ok:
-			err = ctypes.get_last_error()
-			raise RuntimeError(f"RegisterHotKey 실패 (id={id_}, vk={vk}, err={err})")
-
-	def unregister(id_: int) -> None:
+	def broadcast(self, payload: str):
+		loop = self._loop
+		hub = self._hub
+		if not self._running or loop is None or hub is None:
+			return
 		try:
-			user32.UnregisterHotKey(None, id_)
+			asyncio.run_coroutine_threadsafe(hub.broadcast(payload), loop)
 		except Exception:
 			pass
 
-	def run():
-		# 이 스레드에 메시지 큐가 생성되도록 먼저 등록을 시도합니다.
+
+class HotkeyManager:
+	"""keyboard 라이브러리로 핫키를 등록/해제합니다."""
+
+	def __init__(self, log_cb: Callable[[str], None], debug_log_cb: Callable[[str], None]):
+		self._log_cb = log_cb
+		self._debug_log_cb = debug_log_cb
+		self._handles: list[int] = []
+		self._debug_hooked = False
+
+	def _log(self, msg: str):
+		self._log_cb(msg)
+
+	def _debug_log(self, msg: str):
+		self._debug_log_cb(msg)
+
+	def clear(self):
 		try:
-			register(ID_TOGGLE, toggle_vk)
-			if reset_vk is not None:
-				register(ID_RESET, reset_vk)
-		except Exception as e:
-			print(f"win32 핫키 등록 실패: {e}")
-			print("다른 백엔드로 전환해 주세요. (--hotkey-backend keyboard 또는 --hotkey-backend pynput)")
+			import keyboard as kb  # type: ignore
+		except Exception:
 			return
 
-		try:
-			msg = wintypes.MSG()
-			while True:
-				# GetMessageW는 메시지가 올 때까지 블로킹합니다.
-				r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-				if r == 0:  # WM_QUIT
-					break
-				if msg.message == WM_HOTKEY:
-					hid = int(msg.wParam)
-					if debug_keys:
-						print(f"[키 디버그] WM_HOTKEY id={hid}")
-					if hid == ID_TOGGLE:
-						hub.broadcast_from_thread(jmsg("toggle"))
-					elif hid == ID_RESET and reset_vk is not None:
-						hub.broadcast_from_thread(jmsg("reset"))
-				user32.TranslateMessage(ctypes.byref(msg))
-				user32.DispatchMessageW(ctypes.byref(msg))
-		finally:
-			unregister(ID_TOGGLE)
-			unregister(ID_RESET)
-
-	th = threading.Thread(target=run, daemon=True)
-	th.start()
-
-
-async def main():
-	ap = argparse.ArgumentParser()
-	ap.add_argument("--host", default="127.0.0.1")
-	ap.add_argument("--port", type=int, default=21537)
-	ap.add_argument("--toggle-key", default="f6", help="기본값: f6")
-	ap.add_argument("--reset-key", default="f7", help="기본값: f7 (비활성화하려면 빈 문자열)")
-	ap.add_argument("--hotkey-backend", default="auto", choices=["auto", "win32", "keyboard", "pynput"], help="기본값: auto (Windows에서는 win32 우선)")
-	ap.add_argument("--debug-keys", action="store_true", help="키 인식 디버그 로그 출력")
-	args = ap.parse_args()
-
-	loop = asyncio.get_running_loop()
-	hub = Hub(loop)
-
-	reset_key = args.reset_key.strip() or None
-	backend = args.hotkey_backend
-	if backend == "auto":
-		backend = "win32" if platform.system().lower() == "windows" else "pynput"
-
-	if backend == "win32":
-		try:
-			start_hotkey_listener_win32(hub, args.toggle_key, reset_key, args.debug_keys)
-			print("핫키 백엔드: win32(RegisterHotKey)")
-		except Exception as e:
-			print(f"핫키 백엔드 win32 초기화 실패: {e}")
-			print("keyboard 백엔드로 폴백합니다.")
+		for h in self._handles:
 			try:
-				start_hotkey_listener_keyboard_lib(hub, args.toggle_key, reset_key, args.debug_keys)
-				print("핫키 백엔드: keyboard")
-			except Exception as e2:
-				print(f"핫키 백엔드 keyboard 초기화 실패: {e2}")
-				print("pynput 백엔드로 폴백합니다.")
-				start_hotkey_listener(hub, args.toggle_key, reset_key)
-				print("핫키 백엔드: pynput")
-	elif backend == "keyboard":
+				kb.remove_hotkey(h)
+			except Exception:
+				pass
+		self._handles = []
+
+		if self._debug_hooked:
+			try:
+				kb.unhook_all()
+			except Exception:
+				pass
+			self._debug_hooked = False
+
+	def apply(self, toggle_hotkey: str, reset_hotkey: str | None, debug_enabled: bool, on_toggle, on_reset):
+		# 기존 등록 해제 후 재등록
+		self.clear()
 		try:
-			start_hotkey_listener_keyboard_lib(hub, args.toggle_key, reset_key, args.debug_keys)
-			print("핫키 백엔드: keyboard")
+			import keyboard as kb  # type: ignore
 		except Exception as e:
-			print(f"핫키 백엔드 keyboard 초기화 실패: {e}")
-			print("pynput 백엔드로 폴백합니다.")
-			start_hotkey_listener(hub, args.toggle_key, reset_key)
-			print("핫키 백엔드: pynput")
-	else:
-		start_hotkey_listener(hub, args.toggle_key, reset_key)
-		print("핫키 백엔드: pynput")
+			self._log(f"[핫키] keyboard 라이브러리 로드 실패: {e}")
+			return
 
-	print(f"리스닝: ws://{args.host}:{args.port}")
-	print(f"핫키: {args.toggle_key} -> toggle" + (f", {args.reset_key} -> reset" if reset_key else ""))
+		if debug_enabled and not self._debug_hooked:
+			def _dbg(ev):
+				self._debug_log(
+					f"[키 디버그] name={getattr(ev, 'name', None)} "
+					f"event_type={getattr(ev, 'event_type', None)} "
+					f"scan_code={getattr(ev, 'scan_code', None)}"
+				)
+			kb.hook(_dbg)
+			self._debug_hooked = True
 
-	async with websockets.serve(lambda ws: ws_handler(ws, hub), args.host, args.port):
-		await asyncio.Future()
+		try:
+			h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
+			self._handles.append(h1)
+			self._log(f"[핫키] 토글 등록됨: {toggle_hotkey}")
+		except Exception as e:
+			self._log(f"[핫키] 토글 등록 실패 ({toggle_hotkey}): {e}")
+
+		if reset_hotkey:
+			try:
+				h2 = kb.add_hotkey(reset_hotkey, on_reset, suppress=False, trigger_on_release=False)
+				self._handles.append(h2)
+				self._log(f"[핫키] 리셋 등록됨: {reset_hotkey}")
+			except Exception as e:
+				self._log(f"[핫키] 리셋 등록 실패 ({reset_hotkey}): {e}")
+
+
+def run_gui():
+	"""Tkinter GUI를 실행합니다."""
+	import tkinter as tk
+	from tkinter import ttk
+
+	# (is_debug, message)
+	log_q: "queue.Queue[tuple[bool, str]]" = queue.Queue()
+
+	def _stamp(msg: str) -> str:
+		return f"{time.strftime('%H:%M:%S')} {msg}"
+
+	def push_log(msg: str):
+		log_q.put((False, _stamp(msg)))
+
+	def push_debug(msg: str):
+		log_q.put((True, _stamp(msg)))
+
+	server = WsServerController(log_cb=push_log)
+	hotkeys = HotkeyManager(log_cb=push_log, debug_log_cb=push_debug)
+
+	root = tk.Tk()
+	root.title("Mapleland EXP Tracker - Hotkey WS Server")
+
+	var_host = tk.StringVar(value="127.0.0.1")
+	var_port = tk.StringVar(value="21537")
+	var_toggle = tk.StringVar(value="f6")
+	var_reset = tk.StringVar(value="f7")
+	var_debug = tk.BooleanVar(value=False)
+	var_running = tk.StringVar(value="정지")
+	var_clients = tk.StringVar(value="0")
+	var_capture_hint = tk.StringVar(value="")
+
+	def set_status():
+		var_running.set("실행 중" if server.is_running() else "정지")
+		var_clients.set(str(server.get_client_count()))
+
+	_capture_lock = threading.Lock()
+	_capture_in_progress = False
+
+	def start_hotkey_capture(target_var: tk.StringVar, label: str):
+		nonlocal _capture_in_progress
+		with _capture_lock:
+			if _capture_in_progress:
+				push_log("[핫키] 이미 다른 핫키 캡처가 진행 중입니다.")
+				return
+			_capture_in_progress = True
+
+		var_capture_hint.set(f"{label} 핫키 입력 대기 중... (원하는 키 조합을 한 번 누르세요)")
+		push_log(f"[핫키] {label} 캡처 시작")
+
+		def worker():
+			nonlocal _capture_in_progress
+			try:
+				import keyboard as kb  # type: ignore
+				hk = kb.read_hotkey(suppress=False)
+				root.after(0, lambda: target_var.set(hk))
+				root.after(0, lambda: push_log(f"[핫키] {label} 캡처됨: {hk}"))
+			except Exception as e:
+				root.after(0, lambda: push_log(f"[핫키] {label} 캡처 실패: {e}"))
+			finally:
+				def done():
+					nonlocal _capture_in_progress
+					with _capture_lock:
+						_capture_in_progress = False
+					var_capture_hint.set("")
+				root.after(0, done)
+
+		threading.Thread(target=worker, daemon=True).start()
+
+	def on_apply_hotkeys():
+		toggle_hotkey = var_toggle.get().strip()
+		reset_hotkey = var_reset.get().strip()
+		if not toggle_hotkey:
+			push_log("[핫키] 토글 핫키가 비어있습니다.")
+			return
+		if reset_hotkey == "":
+			reset_hotkey = None
+
+		def do_toggle():
+			push_log("[핫키] 토글 트리거")
+			server.broadcast(jmsg("toggle"))
+
+		def do_reset():
+			push_log("[핫키] 리셋 트리거")
+			server.broadcast(jmsg("reset"))
+
+		hotkeys.apply(toggle_hotkey, reset_hotkey, bool(var_debug.get()), do_toggle, do_reset)
+
+	def on_start():
+		host = var_host.get().strip() or "127.0.0.1"
+		try:
+			port = int(var_port.get().strip())
+		except Exception:
+			push_log("[서버] 포트 값이 올바르지 않습니다.")
+			return
+		server.start(host, port)
+		on_apply_hotkeys()
+		set_status()
+
+	def on_stop():
+		hotkeys.clear()
+		server.stop()
+		set_status()
+
+	def on_toggle_server():
+		if server.is_running():
+			on_stop()
+		else:
+			on_start()
+
+	def on_close():
+		try:
+			on_stop()
+		finally:
+			root.destroy()
+
+	frame_top = ttk.Frame(root, padding=10)
+	frame_top.pack(fill="x")
+
+	ttk.Label(frame_top, text="Listen Address").grid(row=0, column=0, sticky="w")
+	ttk.Entry(frame_top, textvariable=var_host, width=18).grid(row=0, column=1, padx=5)
+	ttk.Label(frame_top, text="Port").grid(row=0, column=2, sticky="w")
+	ttk.Entry(frame_top, textvariable=var_port, width=8).grid(row=0, column=3, padx=5)
+
+	btn_server = ttk.Button(frame_top, text="서버 실행", command=on_toggle_server)
+	btn_server.grid(row=0, column=4, padx=5)
+
+	ttk.Label(frame_top, text="상태").grid(row=1, column=0, sticky="w", pady=(8, 0))
+	ttk.Label(frame_top, textvariable=var_running).grid(row=1, column=1, sticky="w", pady=(8, 0))
+	ttk.Label(frame_top, text="연결 수").grid(row=1, column=2, sticky="w", pady=(8, 0))
+	ttk.Label(frame_top, textvariable=var_clients).grid(row=1, column=3, sticky="w", pady=(8, 0))
+
+	frame_hotkey = ttk.LabelFrame(root, text="핫키 설정", padding=10)
+	frame_hotkey.pack(fill="x", padx=10, pady=(0, 10))
+
+	ttk.Label(frame_hotkey, text="토글").grid(row=0, column=0, sticky="w")
+	ttk.Entry(frame_hotkey, textvariable=var_toggle, width=24).grid(row=0, column=1, padx=5)
+	ttk.Button(frame_hotkey, text="수정", command=lambda: start_hotkey_capture(var_toggle, "토글")).grid(row=0, column=2, padx=5)
+	ttk.Label(frame_hotkey, text="리셋").grid(row=0, column=3, sticky="w")
+	ttk.Entry(frame_hotkey, textvariable=var_reset, width=24).grid(row=0, column=4, padx=5)
+	ttk.Button(frame_hotkey, text="수정", command=lambda: start_hotkey_capture(var_reset, "리셋")).grid(row=0, column=5, padx=5)
+
+	ttk.Button(frame_hotkey, text="설정 적용", command=on_apply_hotkeys).grid(row=0, column=6, padx=5)
+
+	ttk.Checkbutton(frame_hotkey, text="디버그", variable=var_debug).grid(row=1, column=0, sticky="w", pady=(8, 0))
+	ttk.Label(frame_hotkey, textvariable=var_capture_hint).grid(row=1, column=1, columnspan=6, sticky="w", pady=(8, 0))
+
+	frame_log = ttk.LabelFrame(root, text="로그", padding=10)
+	frame_log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+	txt = tk.Text(frame_log, height=18, wrap="word")
+	txt.pack(side="left", fill="both", expand=True)
+	scroll = ttk.Scrollbar(frame_log, command=txt.yview)
+	scroll.pack(side="right", fill="y")
+	txt.configure(yscrollcommand=scroll.set)
+	# 로그 텍스트 박스는 읽기 전용으로 유지합니다. (복사/스크롤은 가능)
+	txt.configure(state="disabled")
+
+	def pump_logs():
+		set_status()
+		btn_server.configure(text=("서버 정지" if server.is_running() else "서버 실행"))
+		show_debug = bool(var_debug.get())
+		try:
+			while True:
+				is_debug, line = log_q.get_nowait()
+				if (not is_debug) or show_debug:
+					# 읽기 전용 상태에서는 삽입이 안 되므로, 삽입하는 동안만 잠깐 해제합니다.
+					txt.configure(state="normal")
+					txt.insert("end", line + "\n")
+					txt.see("end")
+					txt.configure(state="disabled")
+		except queue.Empty:
+			pass
+		root.after(200, pump_logs)
+
+	root.protocol("WM_DELETE_WINDOW", on_close)
+	pump_logs()
+	root.mainloop()
 
 
 if __name__ == "__main__":
-	asyncio.run(main())
+	run_gui()
 
 
