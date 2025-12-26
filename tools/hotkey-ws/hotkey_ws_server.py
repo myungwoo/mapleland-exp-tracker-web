@@ -410,7 +410,7 @@ def run_gui():
 	"""Tkinter GUI를 실행합니다."""
 	import tkinter as tk
 	from tkinter import ttk
-	from PIL import Image, ImageDraw  # type: ignore
+	from PIL import Image, ImageDraw, ImageFont  # type: ignore
 
 	MAX_LOG_LINES = 300
 
@@ -602,8 +602,24 @@ def run_gui():
 		d = ImageDraw.Draw(img)
 		# background
 		d.rounded_rectangle((4, 4, size - 4, size - 4), radius=12, fill=(30, 90, 200, 255))
-		# "M" glyph
-		d.text((size * 0.30, size * 0.18), "M", fill=(255, 255, 255, 255))
+		# centered "WS" glyph (white)
+		try:
+			# Windows 기본 폰트가 대부분 존재합니다.
+			font = ImageFont.truetype("arial.ttf", int(size * 0.42))
+		except Exception:
+			font = ImageFont.load_default()
+
+		text = "HK"
+		# PIL 버전에 따라 anchor 지원 여부가 달라 bbox 기반으로 중앙 정렬합니다.
+		try:
+			bbox = d.textbbox((0, 0), text, font=font)
+			tw = bbox[2] - bbox[0]
+			th = bbox[3] - bbox[1]
+		except Exception:
+			tw, th = d.textsize(text, font=font)  # type: ignore[attr-defined]
+		x = (size - tw) / 2
+		y = (size - th) / 2 - (size * 0.02)  # 시각적으로 살짝 위로 보정
+		d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 		return img
 
 	def show_window():
