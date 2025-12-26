@@ -488,6 +488,27 @@ def run_gui():
 		# 사용자가 "설정 적용"을 눌렀을 때의 값을 저장해, 재실행 시에도 유지되도록 합니다.
 		persist_settings(include_listen=False, include_hotkeys=True)
 
+		# 일부 키(예: CapsLock)는 OS/드라이버 특성상 이벤트가 두 번 들어올 수 있어
+		# 콜백에 디바운스를 걸어 "짧은 시간 내 연속 트리거"를 1회로 합칩니다.
+		DEBOUNCE_MS = 250
+		_last_fire = {"toggle": 0.0, "reset": 0.0}
+		_fire_lock = threading.Lock()
+
+		def _debounced(name: str, fn):
+			def wrapper():
+				now = time.monotonic()
+				with _fire_lock:
+					last = float(_last_fire.get(name, 0.0))
+					if (now - last) * 1000.0 < DEBOUNCE_MS:
+						# 로그 스팸을 줄이기 위해 디버그 모드에서만 표시합니다.
+						if bool(var_debug.get()):
+							push_debug(f"[핫키] {name} 디바운스: {(now - last) * 1000.0:.0f}ms")
+						return
+					_last_fire[name] = now
+				fn()
+
+			return wrapper
+
 		def do_toggle():
 			push_log("[핫키] 토글 트리거")
 			server.broadcast(jmsg("toggle"))
@@ -496,7 +517,13 @@ def run_gui():
 			push_log("[핫키] 리셋 트리거")
 			server.broadcast(jmsg("reset"))
 
-		hotkeys.apply(toggle_hotkey, reset_hotkey, bool(var_debug.get()), do_toggle, do_reset)
+		hotkeys.apply(
+			toggle_hotkey,
+			reset_hotkey,
+			bool(var_debug.get()),
+			_debounced("toggle", do_toggle),
+			_debounced("reset", do_reset),
+		)
 
 	# 디버그 체크박스 토글 시, 훅을 즉시 켜거나 꺼서 부하를 통제합니다.
 	def on_debug_toggle(*_args):
