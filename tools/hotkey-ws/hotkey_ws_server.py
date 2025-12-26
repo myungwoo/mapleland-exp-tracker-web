@@ -283,7 +283,8 @@ class HotkeyManager:
 	def __init__(self, log_cb: Callable[[str], None], debug_log_cb: Callable[[str], None]):
 		self._log_cb = log_cb
 		self._debug_log_cb = debug_log_cb
-		self._handles: list[int] = []
+		# 등록 타입에 따라 해제 API가 달라서 (add_hotkey vs on_press_key) 구분해서 저장합니다.
+		self._handles: list[tuple[str, object]] = []
 		self._debug_hooked = False
 		self._debug_hook_handle = None
 
@@ -342,9 +343,12 @@ class HotkeyManager:
 		except Exception:
 			return
 
-		for h in self._handles:
+		for kind, h in self._handles:
 			try:
-				kb.remove_hotkey(h)
+				if kind == "hotkey":
+					kb.remove_hotkey(h)  # type: ignore[arg-type]
+				elif kind == "hook":
+					kb.unhook(h)  # type: ignore[arg-type]
 			except Exception:
 				pass
 		self._handles = []
@@ -352,6 +356,18 @@ class HotkeyManager:
 		# 디버그 훅은 전체 unhook_all()로 내리면 다른 훅까지 같이 내려갈 수 있어,
 		# 우리가 만든 훅 핸들만 정확히 제거합니다.
 		self._set_debug_hook(False)
+
+	@staticmethod
+	def _is_single_key_hotkey(hk: str) -> bool:
+		"""
+		단일 키 핫키인지 판별합니다.
+		- 예: "caps lock", "f6", "space"
+		- 조합/복수는 제외: "ctrl+f6", "alt+shift+x", "a, b"
+		"""
+		s = (hk or "").strip()
+		if not s:
+			return False
+		return ("+" not in s) and ("," not in s)
 
 	def apply(self, toggle_hotkey: str, reset_hotkey: str | None, debug_enabled: bool, on_toggle, on_reset):
 		# 기존 등록 해제 후 재등록
@@ -366,16 +382,25 @@ class HotkeyManager:
 		self._set_debug_hook(debug_enabled)
 
 		try:
-			h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
-			self._handles.append(h1)
+			# 단일 키 핫키는 다른 키를 누르고 있어도 트리거되도록 on_press_key를 사용합니다.
+			if self._is_single_key_hotkey(toggle_hotkey):
+				h1 = kb.on_press_key(toggle_hotkey, lambda _e: on_toggle(), suppress=False)
+				self._handles.append(("hook", h1))
+			else:
+				h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
+				self._handles.append(("hotkey", h1))
 			self._log(f"[핫키] 토글 등록됨: {toggle_hotkey}")
 		except Exception as e:
 			self._log(f"[핫키] 토글 등록 실패 ({toggle_hotkey}): {e}")
 
 		if reset_hotkey:
 			try:
-				h2 = kb.add_hotkey(reset_hotkey, on_reset, suppress=False, trigger_on_release=False)
-				self._handles.append(h2)
+				if self._is_single_key_hotkey(reset_hotkey):
+					h2 = kb.on_press_key(reset_hotkey, lambda _e: on_reset(), suppress=False)
+					self._handles.append(("hook", h2))
+				else:
+					h2 = kb.add_hotkey(reset_hotkey, on_reset, suppress=False, trigger_on_release=False)
+					self._handles.append(("hotkey", h2))
 				self._log(f"[핫키] 리셋 등록됨: {reset_hotkey}")
 			except Exception as e:
 				self._log(f"[핫키] 리셋 등록 실패 ({reset_hotkey}): {e}")
