@@ -1,4 +1,9 @@
 websockets>=12.0
 keyboard>=0.13.5
 
+# system tray icon (Windows)
+pystray>=0.19.5
+pillow>=10.0.0
+pywin32>=306
+
 

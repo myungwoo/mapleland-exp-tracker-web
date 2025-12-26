@@ -410,6 +410,7 @@ def run_gui():
 	"""Tkinter GUI를 실행합니다."""
 	import tkinter as tk
 	from tkinter import ttk
+	from PIL import Image, ImageDraw  # type: ignore
 
 	MAX_LOG_LINES = 300
 
@@ -586,13 +587,108 @@ def run_gui():
 		else:
 			on_start()
 
-	def on_close():
+	# ---- system tray integration ----
+	# 닫기(X)는 기본적으로 "숨김(트레이로)" 처리하고,
+	# 트레이 메뉴 "Exit"에서만 완전 종료합니다.
+	_quitting = False
+	_tray_icon = None
+
+	def _create_tray_image(size: int = 64) -> "Image.Image":
+		"""
+		트레이 아이콘용 간단한 이미지를 런타임에 생성합니다.
+		(별도 .ico 파일 없이 동작)
+		"""
+		img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+		d = ImageDraw.Draw(img)
+		# background
+		d.rounded_rectangle((4, 4, size - 4, size - 4), radius=12, fill=(30, 90, 200, 255))
+		# "M" glyph
+		d.text((size * 0.30, size * 0.18), "M", fill=(255, 255, 255, 255))
+		return img
+
+	def show_window():
+		# Tk는 메인 스레드에서만 안전하므로 after로 감쌉니다.
+		def _do():
+			try:
+				root.deiconify()
+				root.lift()
+				root.focus_force()
+			except Exception:
+				pass
+
+		root.after(0, _do)
+
+	def hide_window():
+		def _do():
+			try:
+				root.withdraw()
+			except Exception:
+				pass
+
+		root.after(0, _do)
+
+	def request_exit():
+		nonlocal _quitting
+		_quitting = True
+
+		def _do_exit():
+			# 트레이에서 나가기: 설정 저장 + 서버/훅 정리 후 종료
+			try:
+				persist_settings(include_listen=True, include_hotkeys=True)
+				on_stop()
+			finally:
+				try:
+					if _tray_icon is not None:
+						_tray_icon.stop()
+				except Exception:
+					pass
+				try:
+					root.destroy()
+				except Exception:
+					pass
+
+		root.after(0, _do_exit)
+
+	def _start_tray():
+		# pystray는 별도 스레드에서 run()을 돌리는 게 안전합니다.
 		try:
-			# 종료 시점의 현재 UI 값을 저장합니다.
-			persist_settings(include_listen=True, include_hotkeys=True)
-			on_stop()
-		finally:
-			root.destroy()
+			import pystray  # type: ignore
+		except Exception as e:
+			push_log(f"[트레이] pystray 로드 실패: {e}")
+			return
+
+		nonlocal _tray_icon
+
+		menu = pystray.Menu(
+			pystray.MenuItem("열기", lambda _i, _m: show_window(), default=True),
+			pystray.MenuItem("종료", lambda _i, _m: request_exit()),
+		)
+		_tray_icon = pystray.Icon(
+			"mapleland-exp-tracker-hotkey-ws",
+			_create_tray_image(64),
+			"Mapleland EXP Tracker (Hotkey WS)",
+			menu=menu,
+		)
+
+		def _run():
+			try:
+				_tray_icon.run()
+			except Exception as e:
+				push_log(f"[트레이] 실행 오류: {e}")
+
+		threading.Thread(target=_run, daemon=True).start()
+
+	# 시작과 동시에 트레이 아이콘을 띄웁니다.
+	_start_tray()
+
+	def on_close():
+		# 사용자가 창을 닫아도 프로그램은 계속 실행(트레이로 숨김)
+		if _quitting:
+			# request_exit() 경로에서 WM_DELETE_WINDOW가 들어온 경우(환경에 따라)
+			return
+		persist_settings(include_listen=True, include_hotkeys=True)
+		hide_window()
+		push_log("[트레이] 창이 숨겨졌습니다. 트레이 아이콘에서 다시 열 수 있습니다.")
 
 	frame_top = ttk.Frame(root, padding=10)
 	frame_top.pack(fill="x")
