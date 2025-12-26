@@ -21,6 +21,7 @@ import json
 import queue
 import threading
 import time
+from pathlib import Path
 from typing import Set, Callable
 
 import websockets
@@ -28,6 +29,86 @@ import websockets
 
 def jmsg(t: str) -> str:
 	return json.dumps({"type": t}, ensure_ascii=False)
+
+
+SETTINGS_PATH = Path(__file__).with_name("settings.local.json")
+
+
+def _default_settings() -> dict:
+	return {
+		"listen_host": "127.0.0.1",
+		"listen_port": 21537,
+		"toggle_hotkey": "f6",
+		"reset_hotkey": "f7",  # null 허용
+		"debug_enabled": False,
+	}
+
+
+def load_settings() -> dict:
+	"""
+	로컬 설정 파일을 읽어 기본값과 병합합니다.
+	- 파일이 없거나 JSON이 깨졌으면 기본값을 사용합니다.
+	"""
+	base = _default_settings()
+	try:
+		if not SETTINGS_PATH.exists():
+			return base
+		raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+		if not isinstance(raw, dict):
+			return base
+	except Exception:
+		return base
+
+	merged = dict(base)
+	for k in base.keys():
+		if k in raw:
+			merged[k] = raw[k]
+
+	# 간단한 타입/값 보정
+	try:
+		merged["listen_host"] = str(merged.get("listen_host") or base["listen_host"])
+	except Exception:
+		merged["listen_host"] = base["listen_host"]
+
+	try:
+		merged["listen_port"] = int(merged.get("listen_port") or base["listen_port"])
+	except Exception:
+		merged["listen_port"] = base["listen_port"]
+
+	try:
+		th = merged.get("toggle_hotkey")
+		merged["toggle_hotkey"] = str(th) if th else base["toggle_hotkey"]
+	except Exception:
+		merged["toggle_hotkey"] = base["toggle_hotkey"]
+
+	try:
+		rh = merged.get("reset_hotkey")
+		merged["reset_hotkey"] = (str(rh) if rh else None)
+	except Exception:
+		merged["reset_hotkey"] = base["reset_hotkey"]
+
+	try:
+		merged["debug_enabled"] = bool(merged.get("debug_enabled"))
+	except Exception:
+		merged["debug_enabled"] = base["debug_enabled"]
+
+	return merged
+
+
+def save_settings(settings: dict) -> None:
+	"""설정을 로컬 JSON 파일로 저장합니다(원자적 교체)."""
+	try:
+		data = dict(_default_settings())
+		for k in data.keys():
+			if k in settings:
+				data[k] = settings[k]
+
+		tmp = SETTINGS_PATH.with_suffix(SETTINGS_PATH.suffix + ".tmp")
+		tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+		tmp.replace(SETTINGS_PATH)
+	except Exception:
+		# 설정 저장 실패는 프로그램 동작을 막지 않도록 조용히 무시합니다.
+		pass
 
 
 class Hub:
@@ -305,6 +386,8 @@ def run_gui():
 	import tkinter as tk
 	from tkinter import ttk
 
+	MAX_LOG_LINES = 300
+
 	# (is_debug, message)
 	log_q: "queue.Queue[tuple[bool, str]]" = queue.Queue()
 
@@ -323,14 +406,38 @@ def run_gui():
 	root = tk.Tk()
 	root.title("Mapleland EXP Tracker - Hotkey WS Server")
 
-	var_host = tk.StringVar(value="127.0.0.1")
-	var_port = tk.StringVar(value="21537")
-	var_toggle = tk.StringVar(value="f6")
-	var_reset = tk.StringVar(value="f7")
-	var_debug = tk.BooleanVar(value=False)
+	loaded = load_settings()
+
+	var_host = tk.StringVar(value=str(loaded.get("listen_host", "127.0.0.1")))
+	var_port = tk.StringVar(value=str(loaded.get("listen_port", "21537")))
+	var_toggle = tk.StringVar(value=str(loaded.get("toggle_hotkey", "f6")))
+	_reset_loaded = loaded.get("reset_hotkey", "f7")
+	var_reset = tk.StringVar(value="" if (_reset_loaded is None) else str(_reset_loaded))
+	var_debug = tk.BooleanVar(value=bool(loaded.get("debug_enabled", False)))
 	var_running = tk.StringVar(value="정지")
 	var_clients = tk.StringVar(value="0")
 	var_capture_hint = tk.StringVar(value="")
+
+	def persist_settings(include_listen: bool = True, include_hotkeys: bool = True):
+		"""
+		현재 UI 값을 설정 파일에 저장합니다.
+		- include_listen: host/port 저장
+		- include_hotkeys: hotkey/debug 저장
+		"""
+		out: dict = {}
+		if include_listen:
+			out["listen_host"] = var_host.get().strip() or "127.0.0.1"
+			try:
+				out["listen_port"] = int(var_port.get().strip())
+			except Exception:
+				# 저장은 하되, 깨진 값은 기본값으로 보정
+				out["listen_port"] = 21537
+		if include_hotkeys:
+			out["toggle_hotkey"] = var_toggle.get().strip() or "f6"
+			rh = var_reset.get().strip()
+			out["reset_hotkey"] = (rh if rh else None)
+			out["debug_enabled"] = bool(var_debug.get())
+		save_settings(out)
 
 	def set_status():
 		var_running.set("실행 중" if server.is_running() else "정지")
@@ -378,6 +485,9 @@ def run_gui():
 		if reset_hotkey == "":
 			reset_hotkey = None
 
+		# 사용자가 "설정 적용"을 눌렀을 때의 값을 저장해, 재실행 시에도 유지되도록 합니다.
+		persist_settings(include_listen=False, include_hotkeys=True)
+
 		def do_toggle():
 			push_log("[핫키] 토글 트리거")
 			server.broadcast(jmsg("toggle"))
@@ -405,6 +515,10 @@ def run_gui():
 		except Exception:
 			push_log("[서버] 포트 값이 올바르지 않습니다.")
 			return
+
+		# 서버 실행 시점의 listen 설정을 저장합니다.
+		persist_settings(include_listen=True, include_hotkeys=False)
+
 		server.start(host, port)
 		on_apply_hotkeys()
 		set_status()
@@ -422,6 +536,8 @@ def run_gui():
 
 	def on_close():
 		try:
+			# 종료 시점의 현재 UI 값을 저장합니다.
+			persist_settings(include_listen=True, include_hotkeys=True)
 			on_stop()
 		finally:
 			root.destroy()
@@ -468,9 +584,33 @@ def run_gui():
 	# 로그 텍스트 박스는 읽기 전용으로 유지합니다. (복사/스크롤은 가능)
 	txt.configure(state="disabled")
 
-	def pump_logs():
+	def _trim_log_lines():
+		"""Text 위젯의 로그 라인을 MAX_LOG_LINES로 유지합니다."""
+		try:
+			total_lines = int(txt.index("end-1c").split(".")[0])
+		except Exception:
+			return
+		excess = total_lines - MAX_LOG_LINES
+		if excess <= 0:
+			return
+		# excess줄을 지우면 (excess+1)번째 줄의 시작이 새 1번째 줄이 됩니다.
+		try:
+			txt.delete("1.0", f"{excess + 1}.0")
+		except Exception:
+			pass
+
+	def pump_status():
+		# 연결 수/상태는 1초에 한 번만 갱신합니다.
 		set_status()
 		btn_server.configure(text=("서버 정지" if server.is_running() else "서버 실행"))
+		root.after(1000, pump_status)
+
+	def pump_logs():
+		"""
+		로그는 '필요할 때만' Text 위젯을 갱신합니다.
+		- 큐가 비어 있으면 Text를 건드리지 않습니다.
+		- 로그가 들어오는 동안은 빠르게(100ms) 비우고, 평소에는 느리게(500ms) 확인합니다.
+		"""
 		show_debug = bool(var_debug.get())
 		lines: list[str] = []
 		try:
@@ -480,16 +620,20 @@ def run_gui():
 					lines.append(line)
 		except queue.Empty:
 			pass
+
 		if lines:
 			# 읽기 전용 상태에서는 삽입이 안 되므로, 삽입하는 동안만 잠깐 해제합니다.
 			txt.configure(state="normal")
 			txt.insert("end", "\n".join(lines) + "\n")
+			_trim_log_lines()
 			txt.see("end")
 			txt.configure(state="disabled")
-		# UI 갱신 주기를 약간 늘려 CPU 사용을 줄입니다.
-		root.after(300, pump_logs)
+			root.after(100, pump_logs)
+		else:
+			root.after(500, pump_logs)
 
 	root.protocol("WM_DELETE_WINDOW", on_close)
+	pump_status()
 	pump_logs()
 	root.mainloop()
 
