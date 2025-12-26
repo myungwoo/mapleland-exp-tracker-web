@@ -20,6 +20,85 @@ type Options = {
 };
 
 /**
+ * video.play()는 resolve되더라도 "새 프레임이 도착했다"는 보장은 없습니다.
+ * (특히 pause() 직후 재개, 저FPS 캡처(예: 3fps), 브라우저/OS의 캡처 파이프라인 지연에서 자주 발생)
+ *
+ * baseline을 stale frame(일시정지 직전 프레임)에서 잡으면,
+ * 다음 틱에서 "일시정지 중 증가분"이 한 번에 누적되어 페이스가 튀는 문제가 생길 수 있습니다.
+ *
+ * 그래서 재개 직후에는 "최소 1프레임이 새로 도착"하는 것을 best-effort로 기다립니다.
+ * - 가능하면 requestVideoFrameCallback 사용(가장 정확)
+ * - 없으면 currentTime이 변할 때까지 rAF 폴백
+ * - 캡처가 freeze된 환경에서도 UX가 멈추지 않도록 timeout으로 빠져나옵니다.
+ */
+async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: number): Promise<boolean> {
+	// 스트림이 끊겨 readyState가 낮으면 currentTime이 고정될 수 있으니,
+	// "새 프레임"을 기다리되 무한 대기하지 않게 합니다.
+	const startMediaTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+
+	return await new Promise<boolean>((resolve) => {
+		let done = false;
+		let rafId = 0;
+		let vfcId: number | null = null;
+		const anyVideo = video as any;
+
+		const finish = (ok: boolean) => {
+			if (done) return;
+			done = true;
+			try { if (rafId) cancelAnimationFrame(rafId); } catch {}
+			try {
+				const cancel = (anyVideo as any).cancelVideoFrameCallback as undefined | ((id: number) => void);
+				if (cancel && vfcId != null) cancel.call(video, vfcId);
+			} catch {}
+			clearTimeout(tid);
+			resolve(ok);
+		};
+
+		const tid = window.setTimeout(() => finish(false), Math.max(0, timeoutMs));
+
+		// 최우선: requestVideoFrameCallback (크롬/엣지 등)
+		const rvfc = (anyVideo as any).requestVideoFrameCallback as undefined | ((cb: (now: number, meta: any) => void) => number);
+		if (rvfc) {
+			try {
+				vfcId = rvfc.call(video, (_now: number, meta: any) => {
+					// meta.mediaTime은 "해당 프레임의 미디어 타임"으로, 재생 직후 stale frame이면 그대로일 수 있습니다.
+					// 다만 requestVideoFrameCallback 자체가 "새 프레임이 페인트되는 시점"에 호출되므로,
+					// 여기까지 왔다면 baseline stale 위험이 크게 줄어듭니다.
+					const mt = typeof meta?.mediaTime === "number" ? meta.mediaTime : video.currentTime;
+					if (Number.isFinite(mt) && mt !== startMediaTime) {
+						finish(true);
+						return;
+					}
+					// 혹시 동일 mediaTime으로 한 번 호출되는 특이 케이스가 있으면 한 번 더 기다립니다.
+					try {
+						vfcId = rvfc.call(video, (_now2: number, meta2: any) => {
+							const mt2 = typeof meta2?.mediaTime === "number" ? meta2.mediaTime : video.currentTime;
+							finish(Number.isFinite(mt2) ? mt2 !== startMediaTime : true);
+						});
+					} catch {
+						finish(true);
+					}
+				});
+				return;
+			} catch {
+				// rvfc가 존재하지만 호출이 실패할 수 있으니 폴백으로 진행합니다.
+			}
+		}
+
+		// 폴백: currentTime이 변할 때까지(= 프레임이 진행될 가능성이 큼) rAF로 폴링
+		const tick = () => {
+			const t = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+			if (t !== startMediaTime) {
+				finish(true);
+				return;
+			}
+			rafId = requestAnimationFrame(tick);
+		};
+		rafId = requestAnimationFrame(tick);
+	});
+}
+
+/**
  * 화면/창 캡처 스트림을 선택하고, 필요한 비디오 엘리먼트에 연결하는 훅입니다.
  *
  * - 왜: ExpTracker에 스트림/비디오 attach 관련 useEffect가 흩어져 있어, 읽기 어려워지고 수정 시 사이드이펙트가 커집니다.
@@ -55,8 +134,21 @@ export function useDisplayCapture(options: Options) {
 	const ensureCapturePlaying = useCallback(async () => {
 		const video = captureVideoRef.current;
 		if (!video) return;
+		if (!stream) return;
+		// 재개 전 상태를 기억해, "play() 직후 stale frame" 위험이 높은 케이스에서 더 적극적으로 기다립니다.
+		const wasPaused = video.paused;
+		const beforeTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
 		attachStream(video, stream);
 		await ensurePlaying(video);
+		// 핵심: play()가 resolve된 직후에도 화면이 아직 갱신되지 않았을 수 있으므로,
+		// 최소 1프레임(또는 currentTime 변화)을 best-effort로 기다린 뒤 OCR을 시작합니다.
+		//
+		// - 기본 캡처 FPS가 3fps인 환경에서 1프레임은 ~333ms이므로, 여유 있게 1200ms를 둡니다.
+		// - 이미 재생 중이었거나(currentTime이 이미 변함) 프레임이 빠르게 도착하면 즉시 반환합니다.
+		// - 캡처가 freeze된 환경에서도 UX가 멈추지 않도록 timeout으로 빠져나옵니다.
+		if (wasPaused || video.paused || (Number.isFinite(video.currentTime) && video.currentTime === beforeTime)) {
+			await waitForAtLeastOneFreshFrame(video, 1200);
+		}
 	}, [attachStream, captureVideoRef, ensurePlaying, stream]);
 
 	/**
