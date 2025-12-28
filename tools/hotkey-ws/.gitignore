@@ -10,3 +10,8 @@ venv/
 # Local persisted settings (do not commit)
 settings.local.json
 
+# PyInstaller build outputs
+dist/
+build/
+*.spec
+

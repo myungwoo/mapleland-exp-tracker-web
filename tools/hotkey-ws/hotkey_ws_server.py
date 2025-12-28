@@ -19,6 +19,7 @@
 import asyncio
 import json
 import queue
+import sys
 import threading
 import time
 from pathlib import Path
@@ -31,7 +32,37 @@ def jmsg(t: str) -> str:
 	return json.dumps({"type": t}, ensure_ascii=False)
 
 
-SETTINGS_PATH = Path(__file__).with_name("settings.local.json")
+def _app_dir() -> Path:
+	"""
+	실행 기준 디렉터리를 반환합니다.
+	- 개발(스크립트 실행): 이 파일이 있는 폴더
+	- PyInstaller --onefile 빌드 실행: exe가 있는 폴더
+	"""
+	try:
+		if getattr(sys, "frozen", False) and getattr(sys, "executable", None):
+			return Path(sys.executable).resolve().parent
+	except Exception:
+		pass
+	return Path(__file__).resolve().parent
+
+
+def _resource_dir() -> Path:
+	"""
+	PyInstaller --onefile에서 번들된 리소스가 풀리는 디렉터리를 반환합니다.
+	- frozen: sys._MEIPASS (임시 추출 폴더)
+	- dev: 소스 파일 폴더
+	"""
+	try:
+		if getattr(sys, "frozen", False):
+			meipass = getattr(sys, "_MEIPASS", None)
+			if meipass:
+				return Path(meipass).resolve()
+	except Exception:
+		pass
+	return Path(__file__).resolve().parent
+
+
+SETTINGS_PATH = _app_dir() / "settings.local.json"
 
 
 def _default_settings() -> dict:
@@ -436,7 +467,7 @@ def run_gui():
 	# - iconbitmap(.ico)는 Windows 작업표시줄/Alt-Tab에서 더 잘 반영됩니다.
 	# - iconphoto는 일부 환경에서의 보조(fallback) 용도입니다.
 	_app_icon_photo = None
-	_icon_path = Path(__file__).with_name("hotkey_ws.ico")
+	_icon_path = _resource_dir() / "hotkey_ws.ico"
 	if _icon_path.exists():
 		try:
 			root.iconbitmap(str(_icon_path))
