@@ -410,7 +410,7 @@ def run_gui():
 	"""Tkinter GUI를 실행합니다."""
 	import tkinter as tk
 	from tkinter import ttk
-	from PIL import Image, ImageDraw, ImageFont  # type: ignore
+	from PIL import Image, ImageTk  # type: ignore
 
 	MAX_LOG_LINES = 300
 
@@ -431,6 +431,28 @@ def run_gui():
 
 	root = tk.Tk()
 	root.title("Mapleland EXP Tracker - Hotkey WS Server")
+
+	# 트레이에서 쓰는 아이콘과 동일한 아이콘(.ico)을 메인 윈도우에도 적용합니다.
+	# - iconbitmap(.ico)는 Windows 작업표시줄/Alt-Tab에서 더 잘 반영됩니다.
+	# - iconphoto는 일부 환경에서의 보조(fallback) 용도입니다.
+	_app_icon_photo = None
+	_icon_path = Path(__file__).with_name("hotkey_ws.ico")
+	if _icon_path.exists():
+		try:
+			root.iconbitmap(str(_icon_path))
+		except Exception:
+			pass
+		try:
+			# Tk의 iconphoto는 PhotoImage를 요구하므로 PIL->PhotoImage로 변환해 설정합니다.
+			ico_img = Image.open(_icon_path)
+			try:
+				ico_img = ico_img.convert("RGBA")
+			except Exception:
+				pass
+			_app_icon_photo = ImageTk.PhotoImage(ico_img)
+			root.iconphoto(True, _app_icon_photo)
+		except Exception:
+			_app_icon_photo = None
 
 	loaded = load_settings()
 
@@ -593,35 +615,6 @@ def run_gui():
 	_quitting = False
 	_tray_icon = None
 
-	def _create_tray_image(size: int = 64) -> "Image.Image":
-		"""
-		트레이 아이콘용 간단한 이미지를 런타임에 생성합니다.
-		(별도 .ico 파일 없이 동작)
-		"""
-		img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-		d = ImageDraw.Draw(img)
-		# background
-		d.rounded_rectangle((4, 4, size - 4, size - 4), radius=12, fill=(30, 90, 200, 255))
-		# centered "WS" glyph (white)
-		try:
-			# Windows 기본 폰트가 대부분 존재합니다.
-			font = ImageFont.truetype("arial.ttf", int(size * 0.42))
-		except Exception:
-			font = ImageFont.load_default()
-
-		text = "HK"
-		# PIL 버전에 따라 anchor 지원 여부가 달라 bbox 기반으로 중앙 정렬합니다.
-		try:
-			bbox = d.textbbox((0, 0), text, font=font)
-			tw = bbox[2] - bbox[0]
-			th = bbox[3] - bbox[1]
-		except Exception:
-			tw, th = d.textsize(text, font=font)  # type: ignore[attr-defined]
-		x = (size - tw) / 2
-		y = (size - th) / 2 - (size * 0.02)  # 시각적으로 살짝 위로 보정
-		d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
-		return img
-
 	def show_window():
 		# Tk는 메인 스레드에서만 안전하므로 after로 감쌉니다.
 		def _do():
@@ -675,13 +668,28 @@ def run_gui():
 
 		nonlocal _tray_icon
 
+		if not _icon_path.exists():
+			push_log(f"[트레이] 아이콘 파일이 없어 트레이 아이콘을 띄울 수 없습니다: {_icon_path}")
+			return
+
+		try:
+			tray_img = Image.open(_icon_path)
+			# pystray는 PIL Image를 받습니다.
+			try:
+				tray_img = tray_img.convert("RGBA")
+			except Exception:
+				pass
+		except Exception as e:
+			push_log(f"[트레이] 아이콘 파일 로드 실패: {e}")
+			return
+
 		menu = pystray.Menu(
 			pystray.MenuItem("열기", lambda _i, _m: show_window(), default=True),
 			pystray.MenuItem("종료", lambda _i, _m: request_exit()),
 		)
 		_tray_icon = pystray.Icon(
 			"mapleland-exp-tracker-hotkey-ws",
-			_create_tray_image(64),
+			tray_img,
 			"Mapleland EXP Tracker (Hotkey WS)",
 			menu=menu,
 		)
