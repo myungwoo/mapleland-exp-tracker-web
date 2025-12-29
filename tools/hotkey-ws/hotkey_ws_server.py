@@ -400,6 +400,77 @@ class HotkeyManager:
 			return False
 		return ("+" not in s) and ("," not in s)
 
+	@staticmethod
+	def _normalize_key_name(k: str) -> str:
+		"""
+		keyboard 라이브러리에서 흔히 쓰는 키 이름을 최대한 정규화합니다.
+		- read_hotkey()가 반환하는 값(예: 'shift+esc')과의 호환을 우선합니다.
+		"""
+		s = (k or "").strip().lower()
+		# 흔한 동의어/표기 보정
+		if s == "control":
+			return "ctrl"
+		if s == "windows":
+			return "win"
+		if s == "command":
+			return "cmd"
+		return s
+
+	@classmethod
+	def _is_modifier_key(cls, k: str) -> bool:
+		s = cls._normalize_key_name(k)
+		return s in {"shift", "ctrl", "alt", "win", "cmd"}
+
+	@classmethod
+	def _split_plus_hotkey(cls, hk: str) -> list[str]:
+		# keyboard의 hotkey 표현은 보통 "a+b+c" 형태입니다.
+		# (콤마는 시퀀스이므로 여기서는 별도로 처리)
+		raw = (hk or "").strip()
+		if not raw:
+			return []
+		return [cls._normalize_key_name(p) for p in raw.split("+") if p.strip()]
+
+	@classmethod
+	def _try_register_modifier_combo_on_press_key(cls, kb, hk: str, fn):
+		"""
+		복합키 중 '모디파이어들 + 단일 키 1개' 형태는 add_hotkey 대신 on_press_key로 등록합니다.
+		이렇게 하면 다른 키(예: 방향키)가 같이 눌려 있어도, 지정한 단일 키가 눌릴 때 트리거될 수 있습니다.
+
+		반환: (등록 성공 여부, handle_or_none)
+		"""
+		s = (hk or "").strip()
+		if (not s) or ("," in s) or ("+" not in s):
+			return (False, None)
+
+		parts = cls._split_plus_hotkey(s)
+		if len(parts) < 2:
+			return (False, None)
+
+		mods = [p for p in parts if cls._is_modifier_key(p)]
+		non_mods = [p for p in parts if not cls._is_modifier_key(p)]
+		# 모디파이어 + 단일 키 1개만 지원(그 외는 add_hotkey로 폴백)
+		if (not mods) or (len(non_mods) != 1):
+			return (False, None)
+
+		main_key = non_mods[0]
+
+		def _handler(_e):
+			try:
+				# 지정한 모디파이어가 "모두 눌려있기만" 하면 트리거합니다.
+				# 다른 모디파이어/키가 추가로 눌려 있어도 막지 않습니다.
+				for m in mods:
+					if not kb.is_pressed(m):
+						return
+			except Exception:
+				return
+			fn()
+
+		try:
+			h = kb.on_press_key(main_key, _handler, suppress=False)
+			return (True, h)
+		except Exception:
+			return (False, None)
+
 	def apply(self, toggle_hotkey: str, reset_hotkey: str | None, debug_enabled: bool, on_toggle, on_reset):
 		# 기존 등록 해제 후 재등록
 		self.clear()
@@ -414,12 +485,17 @@ class HotkeyManager:
 
 		try:
 			# 단일 키 핫키는 다른 키를 누르고 있어도 트리거되도록 on_press_key를 사용합니다.
+			# 또한 "shift+esc" 같은 (모디파이어 + 단일 키) 조합도 동일한 이유로 on_press_key 기반으로 등록합니다.
 			if self._is_single_key_hotkey(toggle_hotkey):
 				h1 = kb.on_press_key(toggle_hotkey, lambda _e: on_toggle(), suppress=False)
 				self._handles.append(("hook", h1))
 			else:
-				h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
-				self._handles.append(("hotkey", h1))
+				ok, h1 = self._try_register_modifier_combo_on_press_key(kb, toggle_hotkey, on_toggle)
+				if ok and h1 is not None:
+					self._handles.append(("hook", h1))
+				else:
+					h1 = kb.add_hotkey(toggle_hotkey, on_toggle, suppress=False, trigger_on_release=False)
+					self._handles.append(("hotkey", h1))
 			self._log(f"[핫키] 토글 등록됨: {toggle_hotkey}")
 		except Exception as e:
 			self._log(f"[핫키] 토글 등록 실패 ({toggle_hotkey}): {e}")
@@ -430,8 +506,12 @@ class HotkeyManager:
 					h2 = kb.on_press_key(reset_hotkey, lambda _e: on_reset(), suppress=False)
 					self._handles.append(("hook", h2))
 				else:
-					h2 = kb.add_hotkey(reset_hotkey, on_reset, suppress=False, trigger_on_release=False)
-					self._handles.append(("hotkey", h2))
+					ok, h2 = self._try_register_modifier_combo_on_press_key(kb, reset_hotkey, on_reset)
+					if ok and h2 is not None:
+						self._handles.append(("hook", h2))
+					else:
+						h2 = kb.add_hotkey(reset_hotkey, on_reset, suppress=False, trigger_on_release=False)
+						self._handles.append(("hotkey", h2))
 				self._log(f"[핫키] 리셋 등록됨: {reset_hotkey}")
 			except Exception as e:
 				self._log(f"[핫키] 리셋 등록 실패 ({reset_hotkey}): {e}")
