@@ -62,7 +62,7 @@ def _resource_dir() -> Path:
 	return Path(__file__).resolve().parent
 
 
-SETTINGS_PATH = _app_dir() / "settings.local.json"
+SETTINGS_PATH = _app_dir() / "hotkey_ws_server_config.json"
 
 
 def _default_settings() -> dict:

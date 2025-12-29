@@ -8,7 +8,7 @@ venv/
 .venv/
 
 # Local persisted settings (do not commit)
-settings.local.json
+hotkey_ws_server_config.json
 
 # PyInstaller build outputs
 dist/
