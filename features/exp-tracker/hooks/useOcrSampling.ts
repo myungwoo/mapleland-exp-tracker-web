@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { cropBinaryForegroundBoundingBox, cropDigitBoundingBox, drawRoiCanvas, preprocessExpCanvas, preprocessLevelCanvas, toVideoSpaceRect } from "@/lib/canvas";
-import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
+import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
 
@@ -42,6 +42,11 @@ type Options = {
 export function useOcrSampling(options: Options) {
 	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled } = options;
 
+	// 장시간 실행 시 워커 내부 메모리 누적/단편화 완화: 일정 샘플마다 워커를 재시작합니다.
+	// (1초 샘플링 기준 30분 주기)
+	const recycleEverySamples = 1800;
+	const recycleCounterRef = useRef<number>(0);
+
 	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
 	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -73,6 +78,7 @@ export function useOcrSampling(options: Options) {
 	const [expPreviewProc, setExpPreviewProc] = useState<string | null>(null);
 	const [levelOcrText, setLevelOcrText] = useState<string>("");
 	const [expOcrText, setExpOcrText] = useState<string>("");
+	const lastDebugPreviewAtRef = useRef<number>(0);
 
 	const annotateOutlier = useCallback((sample: OcrSample, reason: string): OcrSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
@@ -153,17 +159,30 @@ export function useOcrSampling(options: Options) {
 
 		if (debugEnabled) {
 			try {
-				const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
-				const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
-				setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
-				setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
-				setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
-				setExpPreviewProc(canvasExpCrop.toDataURL("image/png"));
-				setLevelOcrText(levelRes.text || "");
-				setExpOcrText(expRes.text || "");
+				// toDataURL은 비용이 크므로(메모리/CPU) 과도한 갱신을 피합니다.
+				const now = Date.now();
+				if (now - lastDebugPreviewAtRef.current >= 1000) {
+					lastDebugPreviewAtRef.current = now;
+					const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
+					const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
+					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
+					setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
+					setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
+					setExpPreviewProc(canvasExpCrop.toDataURL("image/png"));
+					setLevelOcrText(levelRes.text || "");
+					setExpOcrText(expRes.text || "");
+				}
 			} catch {
 				// 프리뷰 생성 실패는 치명적이지 않으므로 무시합니다.
 			}
+		}
+
+		// 워커 재활용(장시간 실행 방어): 이번 샘플이 끝난 뒤에만 수행합니다.
+		recycleCounterRef.current += 1;
+		if (recycleCounterRef.current >= recycleEverySamples) {
+			recycleCounterRef.current = 0;
+			// 다음 샘플에서 워커가 다시 초기화됩니다. (샘플링 루프는 단일 in-flight로 보호됨)
+			void resetOcrWorkers();
 		}
 
 		return {

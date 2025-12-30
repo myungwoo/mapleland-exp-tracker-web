@@ -28,6 +28,10 @@ export function usePaceSeries(options: Options) {
 	const [history, setHistory] = useState<PaceHistoryPoint[]>([]);
 	const handledTickRef = useRef<number>(0);
 
+	// 장시간 실행(수시간)에서도 메모리/GC 압박을 줄이기 위한 정책:
+	// - 최대 포인트 수를 제한(브라우저 크래시/탭 프리즈 방지)
+	const HISTORY_MAX_POINTS = 12000; // 3시간 * (1점/1초) = 10800 < 12000
+
 	// 유효한 샘플링 틱마다 1회 히스토리에 추가합니다. (증가량이 0이어도 기록)
 	useEffect(() => {
 		if (!hasStarted) return;
@@ -35,11 +39,23 @@ export function usePaceSeries(options: Options) {
 		if (handledTickRef.current === sampleTick) return;
 		const ts = lastSampleTsRef.current;
 		if (ts == null) return;
+
 		setHistory(prev => {
-			const next = prev.concat({ ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs });
+			let next = prev.length
+				? [...prev, { ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs }]
+				: [{ ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs }];
+
 			// 무한 증가를 막기 위해 최근 3시간만 유지합니다.
 			const cutoff = ts - 3 * 3600 * 1000;
-			return next.filter(p => p.ts >= cutoff);
+			let start = 0;
+			while (start < next.length && next[start]!.ts < cutoff) start++;
+			if (start > 0) next = next.slice(start);
+
+			// 포인트 수 상한(브라우저 장시간 안정성)
+			if (next.length > HISTORY_MAX_POINTS) {
+				next = next.slice(next.length - HISTORY_MAX_POINTS);
+			}
+			return next;
 		});
 		handledTickRef.current = sampleTick;
 	}, [sampleTick, hasStarted, lastSampleTsRef, cumExpValue, cumExpPct, elapsedMs]);

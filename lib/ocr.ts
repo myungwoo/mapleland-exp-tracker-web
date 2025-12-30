@@ -4,6 +4,8 @@ import { cropDigitBoundingBox } from "./canvas";
 
 let expWorkerPromise: Promise<TesseractWorker> | null = null;
 let digitsWorkerPromise: Promise<TesseractWorker> | null = null;
+let expWorker: TesseractWorker | null = null;
+let digitsWorker: TesseractWorker | null = null;
 
 export async function initOcr() {
 	await Promise.all([initOcrExp(), initOcrDigits()]);
@@ -21,6 +23,7 @@ async function initOcrExp() {
 				// 스케일업 후 저해상도 입력에서는 DPI를 높이는 편이 도움이 됩니다.
 				user_defined_dpi: "500"
 			});
+			expWorker = worker;
 			return worker;
 		})();
 	}
@@ -42,10 +45,33 @@ async function initOcrDigits() {
 				load_system_dawg: "0",
 				load_freq_dawg: "0"
 			});
+			digitsWorker = worker;
 			return worker;
 		})();
 	}
 	return digitsWorkerPromise;
+}
+
+/**
+ * 장시간 실행 시(수시간) tesseract.js 워커의 내부 메모리 누적/단편화를 완화하기 위해,
+ * 워커를 종료하고 다음 OCR 호출에서 새로 생성되게 합니다.
+ *
+ * 주의:
+ * - OCR 작업이 진행 중인 순간에 호출하면 인식이 실패할 수 있으니,
+ *   호출자는 "샘플링 루프가 idle" 상태일 때 호출하는 것을 권장합니다.
+ */
+export async function resetOcrWorkers() {
+	const w1 = expWorker;
+	const w2 = digitsWorker;
+	// 다음 호출에서 새로 생성되게 먼저 비웁니다.
+	expWorker = null;
+	digitsWorker = null;
+	expWorkerPromise = null;
+	digitsWorkerPromise = null;
+	await Promise.allSettled([
+		w1 ? w1.terminate() : Promise.resolve(),
+		w2 ? w2.terminate() : Promise.resolve()
+	]);
 }
 
 export async function recognizeExpBracketed(
