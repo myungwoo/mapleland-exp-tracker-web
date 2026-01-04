@@ -40,6 +40,7 @@ export default function ExpTracker() {
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
 	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60);
+	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true);
 	// 차트의 인터랙티브 x축 범위(경과 ms). null이면 전체 범위.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
 	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
@@ -122,7 +123,8 @@ export default function ExpTracker() {
 		roiLevel,
 		roiExp,
 		expTable,
-		debugEnabled
+		debugEnabled,
+		expPercentValidationEnabled
 	});
 
 	// OCR 작업이 중첩 실행되지 않도록 방지합니다. (OCR이 intervalSec보다 오래 걸릴 때 중요)
@@ -683,6 +685,24 @@ export default function ExpTracker() {
 					<label className="ml-auto flex items-center gap-2 text-sm">
 						<input type="checkbox" checked={debugEnabled} onChange={e => setDebugEnabled(e.target.checked)} />
 						디버그 미리보기
+					</label>
+				</div>
+
+				<div className="mt-3 space-y-2">
+					<label className="flex items-start gap-2 text-sm">
+						<input
+							type="checkbox"
+							className="mt-1"
+							checked={expPercentValidationEnabled}
+							onChange={(e) => setExpPercentValidationEnabled(e.target.checked)}
+						/>
+						<div>
+							<div className="text-white/90">EXP% 검증 활성화</div>
+							<div className="text-white/60 text-xs">
+								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 OCR 결과를 검증해 이상치를 걸러냅니다.<br />
+								꺼짐: 레벨/퍼센트 오인식 때문에 측정이 막히는 경우를 완화하지만, 누적/페이스가 더 부정확해질 수 있습니다.
+							</div>
+						</div>
 					</label>
 				</div>
 			</Modal>

@@ -32,6 +32,12 @@ type Options = {
 	roiExp: RoiRect | null;
 	expTable: ExpTable;
 	debugEnabled: boolean;
+	/**
+	 * 값(EXP) ↔ 퍼센트(EXP%) 정합성(테이블 기반) 검증을 적용할지 여부
+	 * - true(기본): OCR 오탐을 줄이기 위해 mismatch 샘플을 이상치로 처리
+	 * - false: 레벨/퍼센트가 흔들리는 환경에서 측정이 "아예 시작 못 하는" 문제를 완화
+	 */
+	expPercentValidationEnabled: boolean;
 };
 
 /**
@@ -40,7 +46,7 @@ type Options = {
  * - 왜: ExpTracker에 OCR/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
 export function useOcrSampling(options: Options) {
-	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled } = options;
+	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled } = options;
 
 	// 장시간 실행 시 워커 내부 메모리 누적/단편화 완화: 일정 샘플마다 워커를 재시작합니다.
 	// (1초 샘플링 기준 30분 주기)
@@ -219,7 +225,7 @@ export function useOcrSampling(options: Options) {
 		const isStructValid = s.level != null && s.expValue != null && s.expPercent != null;
 		let sample: OcrSample = { ...s, isValid: isStructValid };
 		// baseline은 prev가 없더라도 최소한의 검증(%↔값 일관성)은 통과해야 채택합니다.
-		if (isStructValid) {
+		if (isStructValid && expPercentValidationEnabled) {
 			if (!isPercentValueConsistent(s.level as number, s.expValue as number, s.expPercent as number)) {
 				sample = annotateOutlier(sample, "pct_value_mismatch");
 			}
@@ -236,7 +242,7 @@ export function useOcrSampling(options: Options) {
 			lastValidSampleRef.current = null;
 			lastSampleTsRef.current = null;
 		}
-	}, [annotateOutlier, isPercentValueConsistent, readOnce, resetTotals]);
+	}, [annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled]);
 
 	const sampleOnceAndAccumulate = useCallback(async () => {
 		const raw = await readOnce();
@@ -259,7 +265,7 @@ export function useOcrSampling(options: Options) {
 
 		// 이상치 감지: 이번 틱이 이상해 보이면 "유효 샘플"로 취급하지 않습니다.
 		// 이렇게 하면 sampleTick이 증가하지 않아 차트 히스토리에 기록되지 않습니다.
-		if (isStructValid) {
+		if (isStructValid && expPercentValidationEnabled) {
 			// 첫 틱(또는 재개 직후)처럼 prev가 없을 때도, 최소한 %↔값 일관성은 통과해야 합니다.
 			if (!isPercentValueConsistent(s.level as number, s.expValue as number, s.expPercent as number)) {
 				sample = annotateOutlier(sample, "pct_value_mismatch");
@@ -271,7 +277,7 @@ export function useOcrSampling(options: Options) {
 				sample = annotateOutlier(sample, "level_jump");
 			} else if (s.level != null && s.expValue != null && s.expPercent != null) {
 				// 같은 레벨로 해석했을 때, 값/퍼센트의 상호 일관성을 검사합니다. (테이블 기반)
-				if (!isPercentValueConsistent(s.level, s.expValue, s.expPercent)) {
+				if (expPercentValidationEnabled && !isPercentValueConsistent(s.level, s.expValue, s.expPercent)) {
 					sample = annotateOutlier(sample, "pct_value_mismatch");
 				} else {
 					// 같은 레벨에서 감소는 정상(사망 패널티 등)일 수 있으므로 허용하되,
@@ -320,7 +326,7 @@ export function useOcrSampling(options: Options) {
 			lastSampleTsRef.current = sample.ts;
 			setSampleTick((t) => t + 1);
 		}
-	}, [readOnce, expTable, annotateOutlier, isPercentValueConsistent, isPlausibleSameLevelDrop]);
+	}, [readOnce, expTable, annotateOutlier, isPercentValueConsistent, isPlausibleSameLevelDrop, expPercentValidationEnabled]);
 
 	const getSnapshot = useCallback((): OcrSamplingSnapshot => {
 		return {
