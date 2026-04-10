@@ -5,20 +5,20 @@ export function pipStyles(): string {
     html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
     /* 세로 공간이 남을 때 콘텐츠를 세로 중앙 정렬 */
     html, body { min-height: 100vh; display: grid; place-content: center; }
-    .container { display: grid; grid-template-rows: auto auto auto; gap: 2px; padding: 10px 12px; text-align: center; }
+    .container { display: grid; grid-template-rows: auto auto auto; gap: 2px; padding: clamp(4px, 4.5vmin, 10px) clamp(4px, 5.5vmin, 12px); text-align: center; }
     .row { display: flex; align-items: center; justify-content: center; }
-    .timer { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 36px; line-height: 1; letter-spacing: 0.5px; }
-    .meta { font-size: 12px; opacity: 0.85; display: flex; gap: 8px; justify-content: center; margin-top: 4px; margin-bottom: 4px; }
-    .bigger { color: #ffcf33; font-weight: 800; font-size: 24px; }
-    .big { color: #ffcf33; font-weight: 800; font-size: 16px; }
+    .timer { font-variant-numeric: tabular-nums; font-weight: 800; font-size: clamp(10px, 16.4vmin, 36px); line-height: 1; letter-spacing: 0.5px; }
+    .meta { font-size: clamp(5px, 5.5vmin, 12px); opacity: 0.85; display: flex; gap: clamp(4px, 3.6vmin, 8px); justify-content: center; margin-top: clamp(2px, 1.8vmin, 4px); margin-bottom: clamp(2px, 1.8vmin, 4px); }
+    .bigger { color: #ffcf33; font-weight: 800; font-size: clamp(9px, 10.9vmin, 24px); }
+    .big { color: #ffcf33; font-weight: 800; font-size: clamp(7px, 7.3vmin, 16px); }
     button.pip {
       background: #ffffff14;
       color: white;
       border: 1px solid #ffffff22;
-      border-radius: 8px;
-      width: 60px;
-      height: 40px;
-      font-size: 28px;
+      border-radius: clamp(4px, 3.6vmin, 8px);
+      width: clamp(21px, 27.3vmin, 60px);
+      height: clamp(12px, 18.2vmin, 40px);
+      font-size: clamp(10px, 12.7vmin, 28px);
       transition: background-color 120ms ease;
       display: inline-flex;
       align-items: center;
@@ -34,9 +34,9 @@ export function pipStyles(): string {
     #pip-toggle .pip-icon { display: none; }
     #pip-toggle.play .icon-play { display: block; }
     #pip-toggle.pause .icon-pause { display: block; }
-    /* Edge에서 타이머 블록이 40px 버튼과 상/하 정렬이 맞도록 보정 */
-    #pip-timer { height: 40px; line-height: 40px; display: flex; align-items: center; }
-    .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
+    /* Edge에서 타이머 블록이 버튼과 상/하 정렬이 맞도록 보정 */
+    #pip-timer { height: clamp(10px, 18.2vmin, 40px); line-height: clamp(14px, 18.2vmin, 40px); display: flex; align-items: center; }
+    .label { font-size: clamp(4px, 5.5vmin, 12px); opacity: 0.7; margin-right: clamp(4px, 3.6vmin, 8px); }
   `;
 }
 
@@ -65,4 +65,3 @@ export function pipMarkup(): string {
     </div>
   `;
 }
-
