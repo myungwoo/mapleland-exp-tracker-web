@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { cropBinaryForegroundBoundingBox, drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox, preprocessExpCanvas } from "@/lib/canvas";
-import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText } from "@/lib/ocr";
+import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox } from "@/lib/canvas";
+import { recognizeExp, recognizeLevelDigitsWithText } from "@/lib/ocr";
 import type { RoiRect } from "@/components/RoiOverlay";
 
 type Options = {
@@ -29,10 +29,10 @@ export function useOnboardingRoiAssist(options: Options) {
 	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document가 undefined) 캔버스를 즉시 생성하면 안 됩니다.
 	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const expProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const expCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	// 2.0 비트맵 글꼴 매칭용 원본 배율 ROI (확대/이진화 전)
+	const expNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
 	const getOrCreateCanvas = (r: React.MutableRefObject<HTMLCanvasElement | null>) => {
 		if (!r.current) r.current = document.createElement("canvas");
@@ -91,18 +91,13 @@ export function useOnboardingRoiAssist(options: Options) {
 				}
 				if (roiExp) {
 					const rect = toVideoSpaceRect(video, roiExp);
-					const canvasExpProc = preprocessExpCanvas(video, rect, {
-						minHeight: 120,
-						outCanvas: getOrCreateCanvas(expProcCanvasRef)
+					// 측정 루프와 동일하게 원본 배율 ROI를 픽셀 글꼴로 읽습니다.
+					// (온보딩에서 ROI가 제대로 잡혔는지 즉시 확인해야 하므로 같은 경로를 써야 합니다)
+					const canvasExpNative = drawRoiCanvas(video, rect, {
+						scale: 1,
+						outCanvas: getOrCreateCanvas(expNativeCanvasRef)
 					});
-					const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
-						foreground: "white",
-						margin: 4,
-						targetHeight: 120,
-						outPad: 6,
-						outCanvas: getOrCreateCanvas(expCropCanvasRef)
-					});
-					const res = await recognizeExpBracketedWithText(canvasExpCrop);
+					const res = recognizeExp(canvasExpNative);
 					setOnboardingExpText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
 					setExpRoiShot(cRaw.toDataURL("image/png"));

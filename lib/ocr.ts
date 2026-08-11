@@ -1,33 +1,22 @@
 import { createWorker, PSM } from "tesseract.js";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import { cropDigitBoundingBox } from "./canvas";
+import { parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
 
-let expWorkerPromise: Promise<TesseractWorker> | null = null;
+/**
+ * OCR 진입점
+ *
+ * - **경험치(EXP)**: 비트맵(픽셀) 글꼴 템플릿 매칭. Tesseract를 쓰지 않습니다.
+ *   메이플랜드 2.0의 EXP 텍스트는 5x7px 픽셀 글꼴로 고정이라, 글리프를 픽셀 단위로 맞춰보는 쪽이
+ *   훨씬 정확하고 훨씬 쌉니다. 자세한 내용은 `lib/pixelOcr.ts` 참고.
+ * - **레벨(LEVEL)**: 오렌지 타일 위 스프라이트 숫자라 픽셀 글꼴이 아니고, 기존 Tesseract 경로를 씁니다.
+ */
+
 let digitsWorkerPromise: Promise<TesseractWorker> | null = null;
-let expWorker: TesseractWorker | null = null;
 let digitsWorker: TesseractWorker | null = null;
 
 export async function initOcr() {
-	await Promise.all([initOcrExp(), initOcrDigits()]);
-}
-
-async function initOcrExp() {
-	if (!expWorkerPromise) {
-		expWorkerPromise = (async () => {
-			// Tesseract v5: 언어가 미리 로드되어 있어 loadLanguage/initialize가 필요 없습니다.
-			const worker: TesseractWorker = await createWorker("eng");
-			await worker.setParameters({
-				tessedit_char_whitelist: "0123456789.%[]",
-				preserve_interword_spaces: "1",
-				tessedit_pageseg_mode: PSM.SINGLE_LINE, // 단일 라인으로 처리
-				// 스케일업 후 저해상도 입력에서는 DPI를 높이는 편이 도움이 됩니다.
-				user_defined_dpi: "500"
-			});
-			expWorker = worker;
-			return worker;
-		})();
-	}
-	return expWorkerPromise;
+	await initOcrDigits();
 }
 
 async function initOcrDigits() {
@@ -61,81 +50,31 @@ async function initOcrDigits() {
  *   호출자는 "샘플링 루프가 idle" 상태일 때 호출하는 것을 권장합니다.
  */
 export async function resetOcrWorkers() {
-	const w1 = expWorker;
-	const w2 = digitsWorker;
+	const w = digitsWorker;
 	// 다음 호출에서 새로 생성되게 먼저 비웁니다.
-	expWorker = null;
 	digitsWorker = null;
-	expWorkerPromise = null;
 	digitsWorkerPromise = null;
-	await Promise.allSettled([
-		w1 ? w1.terminate() : Promise.resolve(),
-		w2 ? w2.terminate() : Promise.resolve()
-	]);
+	await Promise.allSettled([w ? w.terminate() : Promise.resolve()]);
 }
 
-export async function recognizeExpBracketed(
-	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
-): Promise<{ value: number | null; percent: number | null }> {
-	const worker = await initOcrExp();
-	const result = await worker.recognize(source as any);
-	const text = normalizeOcrText(result.data.text);
+export type ExpReadResult = {
+	/** 인식된 원본 문자열. 미인식 글리프는 `?`(숫자 자리) / `_`(그 외)로 표시됩니다. */
+	text: string;
+	value: number | null;
+	percent: number | null;
+};
 
-	// 먼저 [YY.YY%] 형태의 퍼센트를 추출합니다.
-	let percent: number | null = null;
-	const bracketPercent = text.match(/\[([0-9]{1,3}(?:\.[0-9]{1,2})?)%]/);
-	if (bracketPercent) {
-		percent = parseFloat(bracketPercent[1]);
-	} else {
-		// 대체 경로: 문자열 안의 어떤 % 패턴이든 찾습니다.
-		const anyPercent = text.match(/([0-9]{1,3}(?:\.[0-9]{1,2})?)%/);
-		if (anyPercent) percent = parseFloat(anyPercent[1]);
-	}
-
-	// 대괄호 앞의 정수가 있으면 value로 추출합니다.
-	let value: number | null = null;
-	const valueMatch = text.match(/(\d{2,})\s*\[/);
-	if (valueMatch) {
-		const n = parseInt(valueMatch[1], 10);
-		if (!Number.isNaN(n)) value = n;
-	}
-
-	return { value, percent };
-}
-
-export async function recognizeLevelDigits(
-	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
-): Promise<number | null> {
-	const worker = await initOcrDigits();
-	const result = await worker.recognize(source as any);
-	const text = normalizeOcrText(result.data.text);
-	const m = text.match(/^(\d{1,4})$/) || text.match(/(\d{1,4})/);
-	if (!m) return null;
-	const n = parseInt(m[1], 10);
-	return Number.isNaN(n) ? null : n;
-}
-
-export async function recognizeExpBracketedWithText(
-	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
-): Promise<{ text: string; value: number | null; percent: number | null }> {
-	const worker = await initOcrExp();
-	const result = await worker.recognize(source as any);
-	const text = normalizeOcrText(result.data.text);
-	let percent: number | null = null;
-	const bracketPercent = text.match(/\[([0-9]{1,3}(?:\.[0-9]{1,2})?)%]/);
-	if (bracketPercent) {
-		percent = parseFloat(bracketPercent[1]);
-	} else {
-		const anyPercent = text.match(/([0-9]{1,3}(?:\.[0-9]{1,2})?)%/);
-		if (anyPercent) percent = parseFloat(anyPercent[1]);
-	}
-	let value: number | null = null;
-	const valueMatch = text.match(/(\d{2,})\s*\[/);
-	if (valueMatch) {
-		const n = parseInt(valueMatch[1], 10);
-		if (!Number.isNaN(n)) value = n;
-	}
-	return { text, value, percent };
+/**
+ * EXP 영역 인식.
+ *
+ * `nativeRoiCanvas`는 **확대/이진화하지 않은 원본 배율 ROI**여야 합니다.
+ * 값/퍼센트를 확신할 수 없으면 둘 다 null로 돌려줍니다. (틀린 값을 흘리는 것보다 낫습니다)
+ */
+export function recognizeExp(nativeRoiCanvas: HTMLCanvasElement): ExpReadResult {
+	const line = recognizePixelFontLine(nativeRoiCanvas);
+	if (!line) return { text: "", value: null, percent: null };
+	const parsed = parsePixelExpText(line.text);
+	return { text: line.text, value: parsed?.value ?? null, percent: parsed?.percent ?? null };
 }
 
 export async function recognizeLevelDigitsWithText(
@@ -229,19 +168,14 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 }
 
 function normalizeOcrText(input: string): string {
-	// OCR에서 흔히 발생하는 혼동(문자 오인식)과 공백을 정규화합니다.
+	// 레벨 숫자에서 흔히 발생하는 문자 오인식과 공백을 정규화합니다.
 	let s = input.replace(/[ \t\r\n]+/g, "");
 	s = s.replace(/[ＯО]/g, "0"); // 폭이 넓은/다른 형태의 O -> 0
 	s = s.replace(/[oO]/g, "0");
 	s = s.replace(/[lI|]/g, "1");
 	s = s.replace(/Ｓ/g, "5");
 	s = s.replace(/Ｂ/g, "8");
-	s = s.replace(/[％]/g, "%");
-	s = s.replace(/[【\[]/g, "[");
-	s = s.replace(/[】\]]/g, "]");
-	// 관련 문자만 남깁니다.
-	s = s.replace(/[^0-9\.\%\[\]]/g, "");
+	// 숫자만 남깁니다.
+	s = s.replace(/[^0-9]/g, "");
 	return s;
 }
-
-

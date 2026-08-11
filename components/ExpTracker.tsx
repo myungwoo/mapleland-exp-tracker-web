@@ -75,7 +75,8 @@ export default function ExpTracker() {
 		settingsOpen,
 		// 캡처용 hidden video는 "측정/온보딩/측정 준비"에만 재생합니다.
 		// (화면 공유만 켜둔 상태에서의 게임 끊김 리포트 완화 목적)
-		capturePlaybackWanted: isSampling || onboardingOpen || isPreparingSample,
+		// 디버그 미리보기를 켜면 측정 전에도 프레임이 필요합니다. (기본값 off라 평소에는 영향 없음)
+		capturePlaybackWanted: isSampling || onboardingOpen || isPreparingSample || debugEnabled,
 		// 유저 설정 없이 자동 전환:
 		// - 설정 모달(ROI 잡기) 중에는 프리뷰가 부드럽도록 30fps
 		// - 평소에는 게임 영향 최소화를 위해 3fps
@@ -124,7 +125,8 @@ export default function ExpTracker() {
 		roiExp,
 		expTable,
 		debugEnabled,
-		expPercentValidationEnabled
+		expPercentValidationEnabled,
+		samplingActive: isSampling
 	});
 
 	// OCR 작업이 중첩 실행되지 않도록 방지합니다. (OCR이 intervalSec보다 오래 걸릴 때 중요)
@@ -559,6 +561,10 @@ export default function ExpTracker() {
 					expPreviewProc={ocr.expPreviewProc}
 					levelOcrText={ocr.levelOcrText}
 					expOcrText={ocr.expOcrText}
+					parsedLevel={ocr.parsedLevel}
+					parsedExpValue={ocr.parsedExpValue}
+					parsedExpPercent={ocr.parsedExpPercent}
+					expValidation={ocr.expValidation}
 				/>
 			)}
 

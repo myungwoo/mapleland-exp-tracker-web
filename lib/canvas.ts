@@ -1,17 +1,11 @@
 import type { RoiRect } from "@/components/RoiOverlay";
 
 /**
- * 이 파일은 OCR 전처리(ROI 캡처 → 스케일/이진화 → 노이즈 제거 → 타이트 크롭)를 담당합니다.
+ * 이 파일은 ROI 캡처와 레벨(LEVEL) OCR 전처리를 담당합니다.
  *
- * - 레벨(LEVEL): 오렌지 타일 위 흰 글자 → "색 기반 마스킹"이 유리
- * - 경험치(EXP): 한 줄 텍스트(숫자 + [xx.xx%]) → "이진화(Otsu) + UI 보더 제거"가 유리
- *
- * 전처리 방식은 다르지만, 아래 단계들은 공통으로 재사용됩니다:
- * - ROI 캡처/스케일업
- * - 이진화(바이너리 이미지)
- * - 가장자리 보더/밴드 제거(크롭이 보더에 끌려가는 문제 방지)
- * - 타이트 크롭(bbox)
- * - (권장) 폴라리티 정규화: "검정 글자 / 흰 배경"으로 통일
+ * - 레벨(LEVEL): 오렌지 타일 위 흰 글자 → "색 기반 마스킹" 후 Tesseract로 읽습니다.
+ * - 경험치(EXP): 2.0의 비트맵(픽셀) 글꼴이라 전처리 없이 원본 배율 그대로 `lib/pixelOcr.ts` 가 읽습니다.
+ *   (픽셀 글꼴은 확대/이진화하는 순간 글리프가 뭉개져서 오히려 인식이 나빠집니다)
  */
 
 export function toVideoSpaceRect(video: HTMLVideoElement, rect: RoiRect): RoiRect {
@@ -29,9 +23,10 @@ export function toVideoSpaceRect(video: HTMLVideoElement, rect: RoiRect): RoiRec
 export function drawRoiCanvas(
 	video: HTMLVideoElement,
 	roi: RoiRect,
-	options: { binarize?: boolean; invert?: boolean; scale?: number; mode?: "avg" | "otsu"; outCanvas?: HTMLCanvasElement } = {}
+	options: { scale?: number; outCanvas?: HTMLCanvasElement } = {}
 ): HTMLCanvasElement {
-	// ROI를 캔버스로 잘라내고(옵션으로) 이진화까지 수행하는 공통 유틸입니다.
+	// ROI를 캔버스로 잘라내는 공통 유틸입니다.
+	// 픽셀 글꼴 인식은 원본 배율(scale=1)을 쓰고, 디버그 프리뷰만 확대해서 씁니다.
 	const scale = options.scale && options.scale > 0 ? options.scale : 1;
 	const outW = Math.max(1, Math.round(roi.w * scale));
 	const outH = Math.max(1, Math.round(roi.h * scale));
@@ -41,345 +36,7 @@ export function drawRoiCanvas(
 	const ctx = canvas.getContext("2d")!;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
-	if (options.binarize || options.invert) {
-		const img = ctx.getImageData(0, 0, outW, outH);
-		if (options.mode === "otsu") {
-			binarizeOtsuInPlace(img.data, options.invert === true);
-		} else {
-			binarizeInPlace(img.data, options.invert === true);
-		}
-		ctx.putImageData(img, 0, 0);
-	}
 	return canvas;
-}
-
-function binarizeInPlace(data: Uint8ClampedArray, invert = false) {
-	// 간단 평균 기반 이진화(디버그/간이용)
-	let sum = 0;
-	for (let i = 0; i < data.length; i += 4) {
-		const r = data[i], g = data[i + 1], b = data[i + 2];
-		const y = 0.299 * r + 0.587 * g + 0.114 * b;
-		sum += y;
-	}
-	const avg = sum / (data.length / 4);
-	const threshold = avg * 0.9; // 평균보다 약간 낮게
-	for (let i = 0; i < data.length; i += 4) {
-		const r = data[i], g = data[i + 1], b = data[i + 2];
-		const y = 0.299 * r + 0.587 * g + 0.114 * b;
-		let v = y > threshold ? 255 : 0; // 기본값: 전경은 흰색
-		if (invert) v = v === 255 ? 0 : 255; // invert면 흰 배경 위 검정 글자로 반전
-		data[i] = data[i + 1] = data[i + 2] = v;
-		// 알파 유지
-	}
-}
-
-function binarizeOtsuInPlace(data: Uint8ClampedArray, invert = false) {
-	// Otsu 자동 임계값 기반 이진화(권장, 조명/배경 변화에 강함)
-	const hist = new Array<number>(256).fill(0);
-	const gray = new Uint8Array(data.length / 4);
-	for (let i = 0, gi = 0; i < data.length; i += 4, gi++) {
-		const r = data[i], g = data[i + 1], b = data[i + 2];
-		const y = Math.max(0, Math.min(255, Math.round(0.299 * r + 0.587 * g + 0.114 * b)));
-		gray[gi] = y;
-		hist[y]++;
-	}
-	// Otsu 임계값 계산
-	let total = gray.length;
-	let sum = 0;
-	for (let t = 0; t < 256; t++) sum += t * hist[t];
-	let sumB = 0;
-	let wB = 0;
-	let wF = 0;
-	let varMax = 0;
-	let threshold = 127;
-	for (let t = 0; t < 256; t++) {
-		wB += hist[t];
-		if (wB === 0) continue;
-		wF = total - wB;
-		if (wF === 0) break;
-		sumB += t * hist[t];
-		const mB = sumB / wB;
-		const mF = (sum - sumB) / wF;
-		const between = wB * wF * (mB - mF) * (mB - mF);
-		if (between > varMax) {
-			varMax = between;
-			threshold = t;
-		}
-	}
-	// 임계값 적용
-	for (let i = 0, gi = 0; i < data.length; i += 4, gi++) {
-		let v = gray[gi] > threshold ? 255 : 0;
-		if (invert) v = v === 255 ? 0 : 255;
-		data[i] = data[i + 1] = data[i + 2] = v;
-	}
-}
-
-function invertBinaryInPlace(data: Uint8ClampedArray) {
-	// 이미 0/255로 이진화된 이미지를 반전합니다. (255 ↔ 0)
-	for (let i = 0; i < data.length; i += 4) {
-		const v = data[i];
-		const out = v > 128 ? 0 : 255;
-		data[i] = data[i + 1] = data[i + 2] = out;
-		// alpha 유지
-	}
-}
-
-function removeUniformEdgeLinesBinaryInPlace(
-	data: Uint8ClampedArray,
-	w: number,
-	h: number,
-	options: {
-		/** foreground가 흰색(255)인지/검정(0)인지 */
-		foreground: "white" | "black";
-		/** 가장자리에서 검사할 영역 크기(픽셀) */
-		edgeY: number;
-		edgeX: number;
-		/** 한 줄(행/열)이 보더로 판정되기 위한 foreground 비율 */
-		thresholdFrac: number;
-	} = { foreground: "white", edgeY: 16, edgeX: 16, thresholdFrac: 0.97 }
-) {
-	// OCR용 이진 이미지에서 UI 보더(얇은 직선)가 남아있으면 bbox가 보더까지 확장되는 문제가 큽니다.
-	// 그래서 "가장자리 근처에서 foreground 픽셀이 지나치게 많은 행/열"을 보더로 보고 제거합니다.
-	const fg = options.foreground;
-	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
-	const rowCount = new Uint16Array(h);
-	const colCount = new Uint16Array(w);
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			if (isFg(data[i])) {
-				rowCount[y]++;
-				colCount[x]++;
-			}
-		}
-	}
-	const rowThresh = Math.floor(w * options.thresholdFrac);
-	const colThresh = Math.floor(h * options.thresholdFrac);
-	const clearRow = (y: number) => {
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			data[i] = data[i + 1] = data[i + 2] = fg === "white" ? 0 : 255;
-		}
-	};
-	const clearCol = (x: number) => {
-		for (let y = 0; y < h; y++) {
-			const i = (y * w + x) * 4;
-			data[i] = data[i + 1] = data[i + 2] = fg === "white" ? 0 : 255;
-		}
-	};
-
-	const edgeY = Math.max(1, Math.min(h, options.edgeY));
-	const edgeX = Math.max(1, Math.min(w, options.edgeX));
-
-	// 상/하단 행
-	for (let y = 0; y < edgeY; y++) {
-		if (rowCount[y] >= rowThresh) clearRow(y);
-	}
-	for (let y = h - edgeY; y < h; y++) {
-		if (y >= 0 && rowCount[y] >= rowThresh) clearRow(y);
-	}
-	// 좌/우측 열
-	for (let x = 0; x < edgeX; x++) {
-		if (colCount[x] >= colThresh) clearCol(x);
-	}
-	for (let x = w - edgeX; x < w; x++) {
-		if (x >= 0 && colCount[x] >= colThresh) clearCol(x);
-	}
-}
-
-function removeUniformTopBottomBandsBinaryInPlace(
-	data: Uint8ClampedArray,
-	w: number,
-	h: number,
-	options: {
-		foreground: "white" | "black";
-		/** 한 행에서 foreground 픽셀이 이 비율 이상이면 "거의 전부 foreground"로 간주 */
-		uniformRowFrac: number;
-		/** 위/아래에서 검사할 윈도우 높이(픽셀) */
-		windowY: number;
-	} = { foreground: "white", uniformRowFrac: 0.9, windowY: 64 }
-) {
-	// EXP 영역에는 종종 상단/하단 장식(띠)나 경계가 들어오는데,
-	// 이게 글자와 분리되어 있어도 bbox를 늘려 OCR을 흔듭니다.
-	const fg = options.foreground;
-	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
-	const rowThresh = Math.floor(w * options.uniformRowFrac);
-	const rowIsUniform: boolean[] = new Array(h).fill(false);
-	for (let y = 0; y < h; y++) {
-		let cnt = 0;
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			if (isFg(data[i])) cnt++;
-		}
-		rowIsUniform[y] = cnt >= rowThresh;
-	}
-
-	const win = Math.max(1, Math.min(h, options.windowY));
-	let top = 0;
-	for (let y = 0; y < win; y++) {
-		if (rowIsUniform[y]) top = y + 1;
-	}
-	let bottom = h - 1;
-	for (let y = h - 1; y >= Math.max(0, h - win); y--) {
-		if (rowIsUniform[y]) bottom = y - 1;
-	}
-
-	const bg = fg === "white" ? 0 : 255;
-	for (let y = 0; y < top; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			data[i] = data[i + 1] = data[i + 2] = bg;
-		}
-	}
-	for (let y = bottom + 1; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			data[i] = data[i + 1] = data[i + 2] = bg;
-		}
-	}
-}
-
-function removeTopRightIslandsBinaryInPlace(
-	data: Uint8ClampedArray,
-	w: number,
-	h: number,
-	options: {
-		foreground: "white" | "black";
-		/**
-		 * "섬"을 찾기 위해 스캔을 시작할 우측 영역 비율 (0~1).
-		 * 예: 0.35면 전체 폭의 오른쪽 35%만 시작점으로 훑습니다.
-		 */
-		scanRightFrac: number;
-		/**
-		 * "섬"을 찾기 위해 스캔을 시작할 상단 영역 비율 (0~1).
-		 * 예: 0.45면 전체 높이의 위쪽 45%만 시작점으로 훑습니다.
-		 */
-		scanTopFrac: number;
-		/** 컴포넌트(연결요소) 면적이 전체 대비 이 비율 이하일 때만 제거 후보 */
-		maxAreaFrac: number;
-		/** bbox 가로/세로가 전체 대비 이 비율 이하일 때만 제거 후보 */
-		maxWidthFrac: number;
-		maxHeightFrac: number;
-		/**
-		 * (레거시) 우측 끝 판정용 마진(px).
-		 * 현재 기본 판정은 "우측 상단 코너 영역 안에 완전히 들어온 작은 컴포넌트"이며,
-		 * 이 값은 매우 근접한 경우 보조적으로만 사용됩니다.
-		 */
-		rightEdgeMarginPx: number;
-		/** 4-연결 또는 8-연결 */
-		connectivity: 4 | 8;
-	} = {
-		foreground: "white",
-		scanRightFrac: 0.35,
-		scanTopFrac: 0.45,
-		maxAreaFrac: 0.01,
-		maxWidthFrac: 0.28,
-		maxHeightFrac: 0.55,
-		rightEdgeMarginPx: 2,
-		connectivity: 8
-	}
-) {
-	// EXP ROI 우측 상단에 UI 잔상/아이콘/노이즈처럼 작은 "섬"이 생기면
-	// bbox 크롭이 그쪽으로 끌려가 OCR이 흔들릴 수 있습니다.
-	// 이 함수는 "우측 상단 영역에서 시작한 작은 연결요소"만 골라 배경으로 지웁니다.
-	const fg = options.foreground;
-	const isFg = (v: number) => (fg === "white" ? v > 200 : v < 80);
-	const bg = fg === "white" ? 0 : 255;
-
-	const scanX0 = Math.max(0, Math.floor(w * (1 - Math.max(0, Math.min(1, options.scanRightFrac)))));
-	const scanY1 = Math.max(0, Math.floor(h * Math.max(0, Math.min(1, options.scanTopFrac))));
-	if (w <= 1 || h <= 1 || scanX0 >= w || scanY1 <= 0) return;
-
-	const maxArea = Math.max(1, Math.floor(w * h * options.maxAreaFrac));
-	const maxW = Math.max(1, Math.floor(w * options.maxWidthFrac));
-	const maxH = Math.max(1, Math.floor(h * options.maxHeightFrac));
-	const rightMargin = Math.max(0, Math.floor(options.rightEdgeMarginPx));
-
-	const visited = new Uint8Array(w * h);
-	const stack: number[] = [];
-	const pixels: number[] = [];
-
-	const push = (x: number, y: number) => {
-		if (x < 0 || y < 0 || x >= w || y >= h) return;
-		const p = y * w + x;
-		if (visited[p]) return;
-		const i = p * 4;
-		if (!isFg(data[i])) return;
-		visited[p] = 1;
-		stack.push(p);
-	};
-
-	for (let y = 0; y < scanY1; y++) {
-		for (let x = scanX0; x < w; x++) {
-			const p0 = y * w + x;
-			if (visited[p0]) continue;
-			const i0 = p0 * 4;
-			if (!isFg(data[i0])) {
-				// background는 방문 처리만 하고 넘어갑니다. (성능 최적화)
-				visited[p0] = 1;
-				continue;
-			}
-
-			// 이 컴포넌트(연결요소)에 대해 BFS/DFS 수행
-			stack.length = 0;
-			pixels.length = 0;
-			visited[p0] = 1;
-			stack.push(p0);
-
-			let minX = x, maxX = x, minY = y, maxY = y;
-			let area = 0;
-
-			while (stack.length) {
-				const p = stack.pop()!;
-				pixels.push(p);
-				area++;
-				// 조기 중단: 너무 커지면 "섬"이 아니라(예: 실제 텍스트) 제거 대상이 아니라고 판단
-				if (area > maxArea) break;
-				const cy = Math.floor(p / w);
-				const cx = p - cy * w;
-				if (cx < minX) minX = cx;
-				if (cx > maxX) maxX = cx;
-				if (cy < minY) minY = cy;
-				if (cy > maxY) maxY = cy;
-
-				// 이웃 픽셀
-				push(cx - 1, cy);
-				push(cx + 1, cy);
-				push(cx, cy - 1);
-				push(cx, cy + 1);
-				if (options.connectivity === 8) {
-					push(cx - 1, cy - 1);
-					push(cx + 1, cy - 1);
-					push(cx - 1, cy + 1);
-					push(cx + 1, cy + 1);
-				}
-			}
-
-			// 크기 때문에 중단된 경우 제거하지 않습니다. 대신 visited는 유지해 재탐색 비용을 줄입니다.
-			if (area > maxArea) continue;
-
-			const bw = maxX - minX + 1;
-			const bh = maxY - minY + 1;
-
-			// "섬"은 보통 텍스트 라인과 분리되어 코너에만 존재합니다.
-			// 그래서 "코너 영역 안에 완전히 들어온 작은 컴포넌트"를 우선 제거 대상으로 봅니다.
-			// (오른쪽 경계에 딱 붙지 않고 몇 px 떠 있는 케이스를 커버)
-			const isContainedInCorner = minX >= scanX0 && maxY < scanY1;
-			// 경계에 거의 붙은 경우를 좀 더 강하게 허용 (legacy)
-			const isNearRightEdge = maxX >= (w - 1 - rightMargin);
-			const isTopRight = isContainedInCorner || (isNearRightEdge && minX >= scanX0 && minY < scanY1);
-
-			const isSmallEnough = bw <= maxW && bh <= maxH && area <= maxArea;
-
-			if (isTopRight && isSmallEnough) {
-				for (let k = 0; k < pixels.length; k++) {
-					const pp = pixels[k];
-					const ii = pp * 4;
-					data[ii] = data[ii + 1] = data[ii + 2] = bg;
-				}
-			}
-		}
-	}
 }
 
 /**
@@ -486,6 +143,27 @@ export function preprocessLevelCanvas(
 	return canvas;
 }
 
+/**
+ * 캔버스를 최근접 이웃으로 정수배 확대합니다.
+ *
+ * 픽셀(비트맵) 글꼴 디버그 프리뷰용입니다. 원본 배율 ROI는 글자가 5x7px이라
+ * 그대로 보여주면 눈으로 확인할 수 없어서, 픽셀 구조를 그대로 유지한 채 키웁니다.
+ */
+export function upscaleCanvasNearest(
+	source: HTMLCanvasElement,
+	factor: number,
+	outCanvas?: HTMLCanvasElement
+): HTMLCanvasElement {
+	const f = Math.max(1, Math.round(factor));
+	const out = outCanvas ?? document.createElement("canvas");
+	out.width = Math.max(1, source.width * f);
+	out.height = Math.max(1, source.height * f);
+	const ctx = out.getContext("2d")!;
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(source, 0, 0, out.width, out.height);
+	return out;
+}
+
 export function cropDigitBoundingBox(
 	source: HTMLCanvasElement,
 	options: { margin?: number; targetHeight?: number; outPad?: number; outCanvas?: HTMLCanvasElement } = {}
@@ -539,179 +217,3 @@ export function cropDigitBoundingBox(
 	octx.drawImage(source, minX, minY, bw, bh, outPad, outPad, outW, outH);
 	return out;
 }
-
-/**
- * 바이너리(전처리된) 캔버스를 "글자(전경)"의 bounding box로 타이트하게 크롭합니다.
- *
- * 왜 필요한가?
- * - ROI는 넉넉하게 잡는 편이 사용자 UX는 좋은데,
- *   ROI가 넓을수록 주변 UI/잡음이 OCR에 섞여 정확도가 떨어질 수 있습니다.
- * - 특히 EXP는 자리수가 줄어들면(10자리→6자리 등) 숫자 영역이 ROI 내에서 작아져
- *   잡음 비율이 커지기 때문에, "전경만 타이트 크롭"이 효과가 큽니다.
- *
- * 입력 가정:
- * - source는 이미 이진화되어 있음(0 또는 255에 가까움)
- * - foreground는
- *   - EXP 전처리: 흰 글자(255) / 검정 배경(0)
- *   - LEVEL 전처리: 검정 글자(0) / 흰 배경(255)
- *
- * 기본 동작:
- * - 결과는 OCR 안정성을 위해 "검정 글자 / 흰 배경"으로 정규화합니다.
- */
-export function cropBinaryForegroundBoundingBox(
-	source: HTMLCanvasElement,
-	options: {
-		foreground?: "white" | "black";
-		/**
-		 * OCR 성능을 위해 결과를 "검정 글자 / 흰 배경"으로 통일합니다.
-		 * - foreground가 white(흰 글자 / 검정 배경)인 경우 자동 반전합니다.
-		 */
-		normalizeToBlackOnWhite?: boolean;
-		margin?: number;
-		targetHeight?: number;
-		outPad?: number;
-		/** 한 행/열에서 글자(전경)로 간주할 최소 전경 픽셀 수 (잔점(speckle) 노이즈 필터링) */
-		minColPx?: number;
-		minRowPx?: number;
-		outCanvas?: HTMLCanvasElement;
-	} = {}
-): HTMLCanvasElement {
-	const fg = options.foreground ?? "white";
-	const normalize = options.normalizeToBlackOnWhite !== false;
-	const margin = options.margin ?? 2;
-	const targetH = options.targetHeight ?? source.height;
-	const outPad = options.outPad ?? 6;
-	const w = source.width;
-	const h = source.height;
-	const ctx = source.getContext("2d");
-	if (!ctx || w <= 0 || h <= 0) return source;
-
-	const img = ctx.getImageData(0, 0, w, h);
-	const data = img.data;
-	const isForeground = (v: number) => (fg === "white" ? v > 200 : v < 80);
-
-	const minColPx = options.minColPx ?? Math.max(2, Math.floor(h * 0.02));
-	const minRowPx = options.minRowPx ?? Math.max(1, Math.floor(w * 0.01));
-
-	const colCount = new Uint16Array(w);
-	const rowCount = new Uint16Array(h);
-
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = (y * w + x) * 4;
-			const v = data[i]; // 이진화 이후에는 R 채널만으로도 충분합니다.
-			if (isForeground(v)) {
-				colCount[x]++;
-				rowCount[y]++;
-			}
-		}
-	}
-
-	let minX = 0;
-	while (minX < w && colCount[minX] < minColPx) minX++;
-	let maxX = w - 1;
-	while (maxX >= 0 && colCount[maxX] < minColPx) maxX--;
-	let minY = 0;
-	while (minY < h && rowCount[minY] < minRowPx) minY++;
-	let maxY = h - 1;
-	while (maxY >= 0 && rowCount[maxY] < minRowPx) maxY--;
-
-	if (maxX < minX || maxY < minY) return source;
-
-	minX = Math.max(0, minX - margin);
-	minY = Math.max(0, minY - margin);
-	maxX = Math.min(w - 1, maxX + margin);
-	maxY = Math.min(h - 1, maxY + margin);
-
-	const bw = maxX - minX + 1;
-	const bh = maxY - minY + 1;
-	const scale = targetH > 0 ? targetH / Math.max(1, bh) : 1;
-	const outW = Math.max(1, Math.round(bw * scale));
-	const outH = Math.max(1, Math.round(bh * scale));
-
-	const out = options.outCanvas ?? document.createElement("canvas");
-	out.width = outW + outPad * 2;
-	out.height = outH + outPad * 2;
-	const octx = out.getContext("2d")!;
-	octx.imageSmoothingEnabled = false;
-
-	// OCR 가독성을 위해 배경은 흰색으로 채우는 편이 일반적으로 유리합니다.
-	octx.fillStyle = "#ffffff";
-	octx.fillRect(0, 0, out.width, out.height);
-
-	octx.drawImage(source, minX, minY, bw, bh, outPad, outPad, outW, outH);
-
-	// EXP처럼 "흰 글자 / 검정 배경" 입력은 결과를 "검정 글자 / 흰 배경"으로 반전해 OCR 안정성을 높입니다.
-	if (normalize && fg === "white") {
-		const outImg = octx.getImageData(0, 0, out.width, out.height);
-		invertBinaryInPlace(outImg.data);
-		// 알파는 항상 opaque로(브라우저/캔버스 상태 차이를 줄임)
-		for (let i = 0; i < outImg.data.length; i += 4) outImg.data[i + 3] = 255;
-		octx.putImageData(outImg, 0, 0);
-	}
-	return out;
-}
-
-/**
- * EXP 텍스트 전처리 (예: "451519697 [42.59%]")
- * - 저해상도에서도 OCR이 잘 읽도록 최소 높이까지 스케일업
- * - Otsu로 이진화
- * - (옵션) 글자가 아닌 상/하단의 균일한 흰 밴드(장식/보더)를 제거
- *   (프리뷰 일관성을 위해 전경(글자)은 흰색, 배경은 검정색 상태를 유지)
- * - (옵션) bbox 크롭을 흔드는 우측 상단의 작은 "섬" 노이즈 제거
- */
-export function preprocessExpCanvas(
-	video: HTMLVideoElement,
-	roi: RoiRect,
-	options: { scale?: number; minHeight?: number; removeWhiteBands?: boolean; removeTopRightIslands?: boolean; outCanvas?: HTMLCanvasElement } = {}
-): HTMLCanvasElement {
-	const minHeight = Math.max(24, Math.floor(options.minHeight ?? 64));
-	const desiredScale = options.scale && options.scale > 0 ? options.scale : Math.max(2, Math.min(8, Math.ceil(minHeight / Math.max(1, roi.h))));
-	const outW = Math.max(1, Math.round(roi.w * desiredScale));
-	const outH = Math.max(1, Math.round(roi.h * desiredScale));
-	const canvas = options.outCanvas ?? document.createElement("canvas");
-	canvas.width = outW;
-	canvas.height = outH;
-	const ctx = canvas.getContext("2d")!;
-	// 저해상도 확대 시 원래 픽셀 구조를 최대한 보존합니다.
-	ctx.imageSmoothingEnabled = false;
-	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
-	// 강건한 이진화: 전경(밝은 글리프)은 흰색, 배경은 검정색으로 유지합니다.
-	const img = ctx.getImageData(0, 0, outW, outH);
-	binarizeOtsuInPlace(img.data, false /* 반전 */);
-	// (1) 가장자리 보더 제거: 상단 흰 줄 같은 UI 요소가 bbox를 오른쪽 끝까지 끌고 가는 문제를 방지
-	removeUniformEdgeLinesBinaryInPlace(img.data, outW, outH, {
-		foreground: "white",
-		edgeY: Math.max(2, Math.min(48, Math.floor(outH * 0.2))),
-		edgeX: Math.max(2, Math.min(48, Math.floor(outW * 0.15))),
-		thresholdFrac: 0.97
-	});
-
-	// (2) 상/하 밴드 제거(옵션): 텍스트가 아닌 장식 영역을 제거해 OCR을 안정화
-	if (options.removeWhiteBands !== false) {
-		removeUniformTopBottomBandsBinaryInPlace(img.data, outW, outH, {
-			foreground: "white",
-			uniformRowFrac: 0.85,
-			windowY: Math.max(2, Math.min(64, Math.floor(outH * 0.25)))
-		});
-	}
-
-	// (3) 우측 상단 "섬" 제거(옵션): 작은 고립 덩어리가 bbox 크롭을 흔들 수 있어 제거합니다.
-	if (options.removeTopRightIslands !== false) {
-		removeTopRightIslandsBinaryInPlace(img.data, outW, outH, {
-			foreground: "white",
-			scanRightFrac: 0.35,
-			// 상단 코너의 작은 노이즈만 제거하고, 텍스트(특히 % 기호)의 일부를 오탐하지 않도록 top 영역을 더 작게 잡습니다.
-			scanTopFrac: 0.25,
-			maxAreaFrac: 0.01,
-			maxWidthFrac: 0.28,
-			maxHeightFrac: 0.55,
-			rightEdgeMarginPx: Math.max(1, Math.floor(outW * 0.01)),
-			connectivity: 8
-		});
-	}
-	ctx.putImageData(img, 0, 0);
-	return canvas;
-}
-
-

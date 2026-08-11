@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from "react";
-import { cropBinaryForegroundBoundingBox, cropDigitBoundingBox, drawRoiCanvas, preprocessExpCanvas, preprocessLevelCanvas, toVideoSpaceRect } from "@/lib/canvas";
-import { recognizeExpBracketedWithText, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cropDigitBoundingBox, drawRoiCanvas, preprocessLevelCanvas, toVideoSpaceRect, upscaleCanvasNearest } from "@/lib/canvas";
+import { recognizeExp, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
 
@@ -38,6 +38,26 @@ type Options = {
 	 * - false: 레벨/퍼센트가 흔들리는 환경에서 측정이 "아예 시작 못 하는" 문제를 완화
 	 */
 	expPercentValidationEnabled: boolean;
+	/**
+	 * 측정 루프가 돌고 있는지 여부.
+	 *
+	 * 디버그 미리보기는 "측정을 시작하지 않았을 때도" 갱신되어야 ROI 설정을 바로 확인할 수 있습니다.
+	 * 다만 측정 중에는 이미 매 tick OCR이 돌고 있으므로, 중복 실행(레벨 워커 파라미터 경합)을 막기 위해
+     * 이 값이 true면 별도 폴링을 하지 않습니다.
+	 */
+	samplingActive: boolean;
+};
+
+/** 디버그 미리보기에 표시할 EXP%↔값 검증 결과 */
+export type ExpValidationDebug = {
+	/** 검증 옵션이 켜져 있는지 */
+	enabled: boolean;
+	/** pass=정합, fail=불일치, unavailable=판정에 필요한 값이 없음 */
+	status: "pass" | "fail" | "unavailable";
+	/** EXP 테이블 기준으로 계산한 퍼센트 (레벨/EXP 값이 모두 있을 때) */
+	expectedPercent: number | null;
+	/** 해당 레벨에서 100%까지 필요한 EXP */
+	requiredExp: number | null;
 };
 
 /**
@@ -46,7 +66,7 @@ type Options = {
  * - 왜: ExpTracker에 OCR/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
 export function useOcrSampling(options: Options) {
-	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled } = options;
+	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } = options;
 
 	// 장시간 실행 시 워커 내부 메모리 누적/단편화 완화: 일정 샘플마다 워커를 재시작합니다.
 	// (1초 샘플링 기준 30분 주기)
@@ -56,10 +76,11 @@ export function useOcrSampling(options: Options) {
 	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
 	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const expProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const expCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	// 픽셀(비트맵) 글꼴 매칭은 "원본 배율 그대로"의 ROI가 필요합니다. (확대/이진화하면 글리프가 뭉개집니다)
+	const expNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const expPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
 	const getOrCreateCanvas = (r: React.MutableRefObject<HTMLCanvasElement | null>) => {
 		if (!r.current) r.current = document.createElement("canvas");
@@ -84,6 +105,11 @@ export function useOcrSampling(options: Options) {
 	const [expPreviewProc, setExpPreviewProc] = useState<string | null>(null);
 	const [levelOcrText, setLevelOcrText] = useState<string>("");
 	const [expOcrText, setExpOcrText] = useState<string>("");
+	// 이번 tick에서 파싱된 값 (디버그 표시용 — 이상치 필터를 거치기 전 원본)
+	const [parsedLevel, setParsedLevel] = useState<number | null>(null);
+	const [parsedExpValue, setParsedExpValue] = useState<number | null>(null);
+	const [parsedExpPercent, setParsedExpPercent] = useState<number | null>(null);
+	const [expValidation, setExpValidation] = useState<ExpValidationDebug | null>(null);
 	const lastDebugPreviewAtRef = useRef<number>(0);
 
 	const annotateOutlier = useCallback((sample: OcrSample, reason: string): OcrSample => {
@@ -102,6 +128,31 @@ export function useOcrSampling(options: Options) {
 		// 퍼센트 OCR이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
 		return Math.abs(pctFromValue - expPercent) <= 2.5;
 	}, [expTable]);
+
+	/**
+	 * 디버그 미리보기용 검증 결과 설명.
+	 *
+	 * 측정 로직이 실제로 쓰는 판정(`isPercentValueConsistent`)을 그대로 재사용하되,
+	 * "왜 그런 판정이 나왔는지" 보이도록 테이블 기준 퍼센트도 같이 돌려줍니다.
+	 * (인식 자체는 멀쩡한데 레벨을 잘못 읽어서 걸리는 경우가 실제로 흔합니다)
+	 */
+	const describeExpValidation = useCallback(
+		(level: number | null, expValue: number | null, expPercent: number | null): ExpValidationDebug => {
+			if (level == null || expValue == null || expPercent == null) {
+				return { enabled: expPercentValidationEnabled, status: "unavailable", expectedPercent: null, requiredExp: null };
+			}
+			const req = requiredExpForLevel(expTable, level);
+			const expectedPercent = req != null && req > 0 ? (expValue / req) * 100 : null;
+			const ok = isPercentValueConsistent(level, expValue, expPercent);
+			return {
+				enabled: expPercentValidationEnabled,
+				status: ok ? "pass" : "fail",
+				expectedPercent: expectedPercent != null && Number.isFinite(expectedPercent) ? expectedPercent : null,
+				requiredExp: req ?? null
+			};
+		},
+		[expTable, expPercentValidationEnabled, isPercentValueConsistent]
+	);
 
 	const isPlausibleSameLevelDrop = useCallback((level: number, prevValue: number, curValue: number, prevPct: number, curPct: number): boolean => {
 		// 같은 레벨에서 EXP 감소는 정상 케이스가 있습니다. (예: 사망 패널티)
@@ -122,7 +173,7 @@ export function useOcrSampling(options: Options) {
 		return dropPctPoints <= 10.2 && dropFrac <= 0.12;
 	}, [expTable]);
 
-	const readOnce = useCallback(async (): Promise<OcrSample> => {
+	const readOnceUncoordinated = useCallback(async (): Promise<OcrSample> => {
 		const video = captureVideoRef.current;
 		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 		if (video.videoWidth === 0 || video.videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
@@ -144,39 +195,36 @@ export function useOcrSampling(options: Options) {
 			outCanvas: getOrCreateCanvas(levelCropCanvasRef)
 		});
 
-		// 경험치: 괄호 포함 문자열을 OCR 하기 쉽게 전처리
-		const canvasExpProc = preprocessExpCanvas(video, rectExp, {
-			minHeight: 120,
-			outCanvas: getOrCreateCanvas(expProcCanvasRef)
+		// 경험치: 2.0의 비트맵(픽셀) 글꼴이라 확대/이진화 없이 원본 배율 그대로 템플릿 매칭합니다.
+		const canvasExpNative = drawRoiCanvas(video, rectExp, {
+			scale: 1,
+			outCanvas: getOrCreateCanvas(expNativeCanvasRef)
 		});
-		// ROI가 너무 넓어도(자리수 감소 등) 숫자/괄호/퍼센트 영역만 남기도록 타이트 크롭
-		const canvasExpCrop = cropBinaryForegroundBoundingBox(canvasExpProc, {
-			foreground: "white",
-			margin: 4,
-			targetHeight: 120,
-			outPad: 6,
-			outCanvas: getOrCreateCanvas(expCropCanvasRef)
-		});
-
-		const [levelRes, expRes] = await Promise.all([
-			recognizeLevelDigitsWithText(canvasLevelCrop),
-			recognizeExpBracketedWithText(canvasExpCrop)
-		]);
+		const expRes = recognizeExp(canvasExpNative);
+		const levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop);
 
 		if (debugEnabled) {
 			try {
 				// toDataURL은 비용이 크므로(메모리/CPU) 과도한 갱신을 피합니다.
 				const now = Date.now();
-				if (now - lastDebugPreviewAtRef.current >= 1000) {
+				if (now - lastDebugPreviewAtRef.current >= 900) {
 					lastDebugPreviewAtRef.current = now;
 					const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
 					const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
 					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
 					setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 					setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
-					setExpPreviewProc(canvasExpCrop.toDataURL("image/png"));
+					// 매칭에 실제로 쓰인 "원본 배율 ROI"를 픽셀 구조 그대로 확대해서 보여줍니다.
+					setExpPreviewProc(
+						upscaleCanvasNearest(canvasExpNative, 3, getOrCreateCanvas(expPreviewCanvasRef)).toDataURL("image/png")
+					);
 					setLevelOcrText(levelRes.text || "");
 					setExpOcrText(expRes.text || "");
+					// 이번 tick에서 실제로 파싱된 값. (이상치로 걸러진 경우에도 그대로 보여줍니다)
+					setParsedLevel(levelRes.value);
+					setParsedExpValue(expRes.value);
+					setParsedExpPercent(expRes.percent);
+					setExpValidation(describeExpValidation(levelRes.value, expRes.value, expRes.percent));
 				}
 			} catch {
 				// 프리뷰 생성 실패는 치명적이지 않으므로 무시합니다.
@@ -198,7 +246,71 @@ export function useOcrSampling(options: Options) {
 			expValue: expRes.value ?? null,
 			levelWasMissing: levelRes.value == null && (expRes.percent != null || expRes.value != null)
 		};
-	}, [captureVideoRef, roiExp, roiLevel, debugEnabled]);
+	}, [captureVideoRef, roiExp, roiLevel, debugEnabled, describeExpValidation]);
+
+	/**
+	 * ROI 읽기는 항상 하나만 돌게 합니다.
+	 *
+	 * 레벨 OCR은 Tesseract 워커 하나를 공유하면서 `setParameters`로 모드를 바꿔가며 씁니다.
+	 * 그래서 두 개의 읽기가 겹치면 서로의 파라미터를 덮어써 엉뚱한 결과가 나옵니다.
+	 * (디버그 폴링과 측정 루프가 겹칠 수 있는 순간 — 예: 측정 시작 직후 baseline 캡처 — 이 실제로 존재합니다)
+	 *
+	 * - 기본: 진행 중인 읽기가 있으면 그 Promise를 재사용합니다. (같은 프레임을 공유하는 셈)
+	 * - `fresh: true`: 진행 중인 읽기가 끝나기를 기다렸다가 **새로** 읽습니다.
+	 *   baseline은 "재생 재개 후 새 프레임"을 기다린 직후에 잡아야 의미가 있어서, 재사용하면 안 됩니다.
+	 */
+	const readInFlightRef = useRef<Promise<OcrSample> | null>(null);
+	const readOnce = useCallback((opts?: { fresh?: boolean }): Promise<OcrSample> => {
+		const inFlight = readInFlightRef.current;
+		if (inFlight && !opts?.fresh) return inFlight;
+		const run = async () => {
+			if (inFlight) {
+				try {
+					await inFlight;
+				} catch {
+					// 앞선 읽기의 실패는 이번 읽기와 무관합니다.
+				}
+			}
+			return readOnceUncoordinated();
+		};
+		const p = run().finally(() => {
+			if (readInFlightRef.current === p) readInFlightRef.current = null;
+		});
+		readInFlightRef.current = p;
+		return p;
+	}, [readOnceUncoordinated]);
+
+	// 디버그 폴링이 매 렌더마다 재시작되지 않도록 최신 readOnce를 ref로 들고 갑니다.
+	const readOnceRef = useRef(readOnce);
+	useEffect(() => {
+		readOnceRef.current = readOnce;
+	}, [readOnce]);
+
+	/**
+	 * 측정을 시작하지 않은 상태에서도 디버그 미리보기를 갱신합니다.
+	 *
+	 * ROI를 잡자마자 "제대로 읽히는지"를 확인할 수 있어야 하는데,
+	 * 기존에는 측정 루프 안에서만 미리보기를 갱신해서 시작 전에는 아무것도 볼 수 없었습니다.
+	 * 측정 중에는 이미 매 tick 갱신되므로 이 폴링은 돌리지 않습니다. (OCR 중복 실행 방지)
+	 */
+	useEffect(() => {
+		if (!debugEnabled || samplingActive) return;
+		let cancelled = false;
+		const tick = async () => {
+			if (cancelled) return;
+			try {
+				await readOnceRef.current();
+			} catch {
+				// 미리보기 갱신 실패는 무시합니다.
+			}
+		};
+		void tick();
+		const id = window.setInterval(() => { void tick(); }, 1000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(id);
+		};
+	}, [debugEnabled, samplingActive]);
 
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);
@@ -217,7 +329,8 @@ export function useOcrSampling(options: Options) {
 		if (args.resetTotals) {
 			resetTotals();
 		}
-		const raw = await readOnce();
+		// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
+		const raw = await readOnce({ fresh: true });
 		const s: OcrSample = {
 			...raw,
 			levelWasMissing: raw.level == null && (raw.expPercent != null || raw.expValue != null)
@@ -376,7 +489,11 @@ export function useOcrSampling(options: Options) {
 		expPreviewRaw,
 		expPreviewProc,
 		levelOcrText,
-		expOcrText
+		expOcrText,
+		expValidation,
+		parsedLevel,
+		parsedExpValue,
+		parsedExpPercent
 	};
 }
 
