@@ -630,6 +630,7 @@ export default function ExpTracker() {
 							value={paceWindowMin}
 							onChange={e => setPaceWindowMin(parseInt(e.target.value, 10))}
 						>
+							<option value={1}>1분</option>
 							<option value={5}>5분</option>
 							<option value={10}>10분</option>
 							<option value={30}>30분</option>
