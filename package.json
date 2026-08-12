@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "export": "next export",
     "start": "next start",
     "lint": "eslint .",
     "test:pixel-font": "node tools/pixel-font/selftest.mjs"
