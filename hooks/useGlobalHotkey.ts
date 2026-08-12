@@ -24,13 +24,7 @@ type GlobalHotkeyOptions = {
 };
 
 export function useGlobalHotkey(options: GlobalHotkeyOptions) {
-	const {
-		enabled = true,
-		match,
-		onTrigger,
-		ignoreWhenEditable = true,
-		preventDefault = true
-	} = options;
+	const { enabled = true, match, onTrigger, ignoreWhenEditable = true, preventDefault = true } = options;
 
 	/**
 	 * match/onTrigger는 ref로 들고 갑니다.

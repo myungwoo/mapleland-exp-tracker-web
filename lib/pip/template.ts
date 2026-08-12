@@ -1,7 +1,7 @@
 import { fontFaceCss } from "@/lib/fonts";
 
 export function pipStyles(): string {
-  return `
+	return `
     ${fontFaceCss({ absolute: true })}
     :root { color-scheme: dark; }
     html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
@@ -43,7 +43,7 @@ export function pipStyles(): string {
 }
 
 export function pipMarkup(): string {
-  return `
+	return `
     <div class="row" style="gap: 6px;">
       <button id="pip-toggle" class="pip play" aria-label="시작">
         <svg class="pip-icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
@@ -67,4 +67,3 @@ export function pipMarkup(): string {
     </div>
   `;
 }
-

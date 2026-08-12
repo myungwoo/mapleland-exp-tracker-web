@@ -115,7 +115,9 @@ export function useOnboardingRoiAssist(options: Options) {
 		};
 
 		void tick();
-		timer = window.setInterval(() => { void tick(); }, 1000) as unknown as number;
+		timer = window.setInterval(() => {
+			void tick();
+		}, 1000) as unknown as number;
 		return () => {
 			if (timer) window.clearInterval(timer);
 		};
@@ -123,5 +125,3 @@ export function useOnboardingRoiAssist(options: Options) {
 
 	return { levelRoiShot, expRoiShot, onboardingLevelText, onboardingExpText };
 }
-
-

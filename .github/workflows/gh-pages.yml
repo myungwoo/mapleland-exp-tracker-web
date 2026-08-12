@@ -2,7 +2,7 @@ name: Deploy static Next.js to GitHub Pages
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
       # 왜: 검증을 배포와 같은 job에 두면, 하나라도 실패했을 때 절대 배포되지 않습니다.
+      - name: Format check
+        run: npm run format:check
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -54,5 +56,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-

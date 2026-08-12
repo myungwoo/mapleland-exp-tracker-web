@@ -292,7 +292,9 @@ function buildBrightMask(img: RgbaImage): Mask | null {
 	const sat = new Uint8Array(n); // 0~100
 	const hist = new Uint32Array(256);
 	for (let i = 0, p = 0; p < n; p++, i += 4) {
-		const r = data[i], g = data[i + 1], b = data[i + 2];
+		const r = data[i],
+			g = data[i + 1],
+			b = data[i + 2];
 		const mx = Math.max(r, g, b);
 		const mn = Math.min(r, g, b);
 		v[p] = mx;
@@ -354,7 +356,16 @@ function otsuThreshold(hist: Uint32Array, total: number): number {
 	return threshold;
 }
 
-type Component = { x0: number; y0: number; x1: number; y1: number; w: number; h: number; area: number; pixels: Int32Array };
+type Component = {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	w: number;
+	h: number;
+	area: number;
+	pixels: Int32Array;
+};
 
 /** 8-연결 연결요소 라벨링 */
 function findComponents(mask: Mask): Component[] {
@@ -369,7 +380,10 @@ function findComponents(mask: Mask): Component[] {
 		buf.length = 0;
 		visited[p0] = 1;
 		stack.push(p0);
-		let x0 = w, y0 = h, x1 = -1, y1 = -1;
+		let x0 = w,
+			y0 = h,
+			x1 = -1,
+			y1 = -1;
 		while (stack.length) {
 			const p = stack.pop()!;
 			buf.push(p);

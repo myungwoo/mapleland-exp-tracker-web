@@ -10,8 +10,12 @@ export default function TopRightMeta({
 	const year = new Date().getFullYear();
 	return (
 		<div className="flex items-center text-sm text-white/60">
-			<span className="hidden sm:inline">© {year} {brand}</span>
-			<span className="mx-3 select-none" aria-hidden>·</span>
+			<span className="hidden sm:inline">
+				© {year} {brand}
+			</span>
+			<span className="mx-3 select-none" aria-hidden>
+				·
+			</span>
 			<a
 				href={repoUrl}
 				target="_blank"
@@ -20,13 +24,7 @@ export default function TopRightMeta({
 				title="GitHub"
 				className="inline-flex items-center gap-1 hover:text-white"
 			>
-				<svg
-					aria-hidden="true"
-					viewBox="0 0 16 16"
-					width="14"
-					height="14"
-					className="opacity-80"
-				>
+				<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" className="opacity-80">
 					<path
 						fill="currentColor"
 						d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
@@ -42,4 +40,3 @@ export default function TopRightMeta({
 		</div>
 	);
 }
-

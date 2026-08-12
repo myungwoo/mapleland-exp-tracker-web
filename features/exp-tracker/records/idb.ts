@@ -175,5 +175,3 @@ export async function idbSetMeta(key: string, value: any): Promise<void> {
 		db.close();
 	}
 }
-
-

@@ -51,14 +51,18 @@ export default function ShareResultsActions(props: Props) {
 		<div className="flex items-center justify-end gap-2">
 			<button
 				className="btn"
-				onClick={() => { void share.copyText(); }}
+				onClick={() => {
+					void share.copyText();
+				}}
 				disabled={!props.hasStarted}
 			>
 				{share.textButtonLabel}
 			</button>
 			<button
 				className="btn"
-				onClick={() => { void share.copyImage(); }}
+				onClick={() => {
+					void share.copyImage();
+				}}
 				disabled={!props.hasStarted || share.isCopyingImage}
 				aria-busy={share.isCopyingImage}
 			>
@@ -67,5 +71,3 @@ export default function ShareResultsActions(props: Props) {
 		</div>
 	);
 }
-
-

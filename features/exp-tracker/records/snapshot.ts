@@ -67,16 +67,16 @@ function normalizePace(x: unknown): PaceSeriesSnapshot {
 	const historyRaw = (x as any).history;
 	const history = Array.isArray(historyRaw)
 		? historyRaw
-			.map((p: any) => {
-				if (!p || typeof p !== "object") return null;
-				return {
-					ts: num(p.ts, 0),
-					cumExp: num(p.cumExp, 0),
-					cumPct: num(p.cumPct, 0),
-					elapsedAtMs: num(p.elapsedAtMs, 0)
-				};
-			})
-			.filter(Boolean)
+				.map((p: any) => {
+					if (!p || typeof p !== "object") return null;
+					return {
+						ts: num(p.ts, 0),
+						cumExp: num(p.cumExp, 0),
+						cumPct: num(p.cumPct, 0),
+						elapsedAtMs: num(p.elapsedAtMs, 0)
+					};
+				})
+				.filter(Boolean)
 		: [];
 	return { history: history as any };
 }
@@ -134,5 +134,3 @@ export function normalizeSnapshot(input: unknown): ExpTrackerSnapshot {
 		pace: normalizePace((input as any).pace)
 	};
 }
-
-

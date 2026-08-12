@@ -1,0 +1,17 @@
+# 에디터가 Prettier와 같은 규칙을 쓰도록 맞춥니다. (.prettierrc.json과 동기화)
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# YAML은 탭을 쓸 수 없고, 마크다운도 공백이 안전합니다. (JSON은 Prettier가 탭으로 씁니다)
+[*.{yml,yaml,md}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

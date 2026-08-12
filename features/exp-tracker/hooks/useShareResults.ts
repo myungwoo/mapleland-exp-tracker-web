@@ -167,13 +167,19 @@ export function useShareResults(inputs: Inputs): Result {
 			bumpImageCopiedLabel();
 		} catch (e) {
 			const anyErr = e as any;
-			if (anyErr?.code === "DOCUMENT_NOT_FOCUSED" || (e instanceof Error && e.message.includes("Document is not focused"))) {
+			if (
+				anyErr?.code === "DOCUMENT_NOT_FOCUSED" ||
+				(e instanceof Error && e.message.includes("Document is not focused"))
+			) {
 				// 포커스 복귀 시 자동 재시도를 위해 저장합니다.
 				if (blob) pendingImageBlobRef.current = blob;
 				bumpImageNeedFocusLabel();
 				if (!pendingAlertedRef.current) {
 					pendingAlertedRef.current = true;
-					inputs.onNotice("다른 창으로 이동하여 복사에 실패했습니다.\n이 탭으로 돌아오면 자동으로 다시 복사합니다.", "복사를 예약했습니다");
+					inputs.onNotice(
+						"다른 창으로 이동하여 복사에 실패했습니다.\n이 탭으로 돌아오면 자동으로 다시 복사합니다.",
+						"복사를 예약했습니다"
+					);
 				}
 			} else {
 				const msg = e instanceof Error ? e.message : "이미지 복사에 실패했습니다.";
@@ -186,5 +192,3 @@ export function useShareResults(inputs: Inputs): Result {
 
 	return { isCopyingImage, textButtonLabel, imageButtonLabel, copyText, copyImage };
 }
-
-

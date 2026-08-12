@@ -29,16 +29,16 @@ npm run test:pixel-font  # 픽셀 글꼴 인식기 자체 검증 (유일한 자�
 
 ## 디렉터리 구조
 
-| 경로 | 역할 |
-|---|---|
-| `app/` | Next.js App Router. 페이지는 사실상 `ExpTracker` 하나입니다. |
-| `components/` | UI 컴포넌트. `ExpTracker.tsx`가 전체를 조립하는 컨테이너입니다. |
-| `features/exp-tracker/hooks/` | 측정 관련 훅(캡처, OCR 샘플링, 스톱워치, 차트 시리즈, 공유, 외부 WS) |
-| `features/exp-tracker/records/` | 기록 저장(IndexedDB) + 스냅샷 정규화/버전 마이그레이션 |
-| `lib/` | 순수 로직(OCR, 캔버스, EXP 테이블, 포맷, 페이스 계산, PiP) |
-| `hooks/` | 앱 전역 훅(전역 단축키) |
-| `tools/pixel-font/` | 픽셀 글꼴 템플릿 추출·검증 Node 스크립트 |
-| `tools/hotkey-ws/` | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI |
+| 경로                            | 역할                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `app/`                          | Next.js App Router. 페이지는 사실상 `ExpTracker` 하나입니다.         |
+| `components/`                   | UI 컴포넌트. `ExpTracker.tsx`가 전체를 조립하는 컨테이너입니다.      |
+| `features/exp-tracker/hooks/`   | 측정 관련 훅(캡처, OCR 샘플링, 스톱워치, 차트 시리즈, 공유, 외부 WS) |
+| `features/exp-tracker/records/` | 기록 저장(IndexedDB) + 스냅샷 정규화/버전 마이그레이션               |
+| `lib/`                          | 순수 로직(OCR, 캔버스, EXP 테이블, 포맷, 페이스 계산, PiP)           |
+| `hooks/`                        | 앱 전역 훅(전역 단축키)                                              |
+| `tools/pixel-font/`             | 픽셀 글꼴 템플릿 추출·검증 Node 스크립트                             |
+| `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI            |
 
 **원칙**: 측정 로직은 훅으로 분리하고, `ExpTracker`는 조립만 합니다. 계산이 필요한 코드는 React에 의존하지 않는 `lib/`의 순수 함수로 빼세요. (테스트와 재사용이 쉬워집니다)
 

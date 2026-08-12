@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cropDigitBoundingBox, drawRoiCanvas, preprocessLevelCanvas, toVideoSpaceRect, upscaleCanvasNearest } from "@/lib/canvas";
+import {
+	cropDigitBoundingBox,
+	drawRoiCanvas,
+	preprocessLevelCanvas,
+	toVideoSpaceRect,
+	upscaleCanvasNearest
+} from "@/lib/canvas";
 import { recognizeExp, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
@@ -43,7 +49,7 @@ type Options = {
 	 *
 	 * 디버그 미리보기는 "측정을 시작하지 않았을 때도" 갱신되어야 ROI 설정을 바로 확인할 수 있습니다.
 	 * 다만 측정 중에는 이미 매 tick OCR이 돌고 있으므로, 중복 실행(레벨 워커 파라미터 경합)을 막기 위해
-     * 이 값이 true면 별도 폴링을 하지 않습니다.
+	 * 이 값이 true면 별도 폴링을 하지 않습니다.
 	 */
 	samplingActive: boolean;
 };
@@ -66,7 +72,8 @@ export type ExpValidationDebug = {
  * - 왜: ExpTracker에 OCR/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
 export function useOcrSampling(options: Options) {
-	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } = options;
+	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } =
+		options;
 
 	// 장시간 실행 시 워커 내부 메모리 누적/단편화 완화: 일정 샘플마다 워커를 재시작합니다.
 	// (1초 샘플링 기준 30분 주기)
@@ -116,18 +123,21 @@ export function useOcrSampling(options: Options) {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
 	}, []);
 
-	const isPercentValueConsistent = useCallback((level: number, expValue: number, expPercent: number): boolean => {
-		// EXP_TABLE은 "해당 레벨에서 0% -> 100%까지 필요한 EXP"입니다. 이를 사용해 OCR 결과를 상식선에서 검증합니다.
-		const req = requiredExpForLevel(expTable, level);
-		if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
-		// expValue는 [0, req] 범위여야 자연스럽습니다. (약간의 OCR 노이즈/반올림 오차 허용)
-		if (expValue < 0) return false;
-		if (expValue > req * 1.05) return false;
-		const pctFromValue = (expValue / req) * 100;
-		if (!Number.isFinite(pctFromValue)) return false;
-		// 퍼센트 OCR이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
-		return Math.abs(pctFromValue - expPercent) <= 2.5;
-	}, [expTable]);
+	const isPercentValueConsistent = useCallback(
+		(level: number, expValue: number, expPercent: number): boolean => {
+			// EXP_TABLE은 "해당 레벨에서 0% -> 100%까지 필요한 EXP"입니다. 이를 사용해 OCR 결과를 상식선에서 검증합니다.
+			const req = requiredExpForLevel(expTable, level);
+			if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
+			// expValue는 [0, req] 범위여야 자연스럽습니다. (약간의 OCR 노이즈/반올림 오차 허용)
+			if (expValue < 0) return false;
+			if (expValue > req * 1.05) return false;
+			const pctFromValue = (expValue / req) * 100;
+			if (!Number.isFinite(pctFromValue)) return false;
+			// 퍼센트 OCR이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
+			return Math.abs(pctFromValue - expPercent) <= 2.5;
+		},
+		[expTable]
+	);
 
 	/**
 	 * 디버그 미리보기용 검증 결과 설명.
@@ -139,7 +149,12 @@ export function useOcrSampling(options: Options) {
 	const describeExpValidation = useCallback(
 		(level: number | null, expValue: number | null, expPercent: number | null): ExpValidationDebug => {
 			if (level == null || expValue == null || expPercent == null) {
-				return { enabled: expPercentValidationEnabled, status: "unavailable", expectedPercent: null, requiredExp: null };
+				return {
+					enabled: expPercentValidationEnabled,
+					status: "unavailable",
+					expectedPercent: null,
+					requiredExp: null
+				};
 			}
 			const req = requiredExpForLevel(expTable, level);
 			const expectedPercent = req != null && req > 0 ? (expValue / req) * 100 : null;
@@ -154,29 +169,33 @@ export function useOcrSampling(options: Options) {
 		[expTable, expPercentValidationEnabled, isPercentValueConsistent]
 	);
 
-	const isPlausibleSameLevelDrop = useCallback((level: number, prevValue: number, curValue: number, prevPct: number, curPct: number): boolean => {
-		// 같은 레벨에서 EXP 감소는 정상 케이스가 있습니다. (예: 사망 패널티)
-		// 다만 "단일 틱에서 과도한 급락"은 OCR 이상치일 가능성이 높아 차단합니다.
-		const req = requiredExpForLevel(expTable, level);
-		if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
-		// 기본 정합성: 값/퍼센트는 같은 방향으로 움직이는 것이 자연스럽습니다.
-		const dv = curValue - prevValue;
-		const dp = curPct - prevPct;
-		if (dv > 0 || dp > 0) return true; // 증가 방향이면 OK
-		// 감소: 허용하되, 급락 폭에 상한을 둡니다.
-		// 메이플랜드: 사망 시 경험치 감소량은 최대 10%p로 알려져 있습니다.
-		// (OCR/반올림 오차를 고려해 아주 약간의 여유를 둡니다.)
-		const dropPctPoints = Math.abs(dp);
-		const dropFrac = Math.abs(dv) / req;
-		// 퍼센트 기준이 가장 직관적이며, 값 기준은 보조 신호로 사용합니다.
-		// 사망 패널티(최대 10%p) + OCR 소수점 오차를 고려해 약 0.2%p 정도 여유를 둡니다.
-		return dropPctPoints <= 10.2 && dropFrac <= 0.12;
-	}, [expTable]);
+	const isPlausibleSameLevelDrop = useCallback(
+		(level: number, prevValue: number, curValue: number, prevPct: number, curPct: number): boolean => {
+			// 같은 레벨에서 EXP 감소는 정상 케이스가 있습니다. (예: 사망 패널티)
+			// 다만 "단일 틱에서 과도한 급락"은 OCR 이상치일 가능성이 높아 차단합니다.
+			const req = requiredExpForLevel(expTable, level);
+			if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
+			// 기본 정합성: 값/퍼센트는 같은 방향으로 움직이는 것이 자연스럽습니다.
+			const dv = curValue - prevValue;
+			const dp = curPct - prevPct;
+			if (dv > 0 || dp > 0) return true; // 증가 방향이면 OK
+			// 감소: 허용하되, 급락 폭에 상한을 둡니다.
+			// 메이플랜드: 사망 시 경험치 감소량은 최대 10%p로 알려져 있습니다.
+			// (OCR/반올림 오차를 고려해 아주 약간의 여유를 둡니다.)
+			const dropPctPoints = Math.abs(dp);
+			const dropFrac = Math.abs(dv) / req;
+			// 퍼센트 기준이 가장 직관적이며, 값 기준은 보조 신호로 사용합니다.
+			// 사망 패널티(최대 10%p) + OCR 소수점 오차를 고려해 약 0.2%p 정도 여유를 둡니다.
+			return dropPctPoints <= 10.2 && dropFrac <= 0.12;
+		},
+		[expTable]
+	);
 
 	const readOnceUncoordinated = useCallback(async (): Promise<OcrSample> => {
 		const video = captureVideoRef.current;
 		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
-		if (video.videoWidth === 0 || video.videoHeight === 0) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
+		if (video.videoWidth === 0 || video.videoHeight === 0)
+			return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 
 		// ROI는 현재 비디오 픽셀 좌표로 저장됩니다. (여기서는 안전하게 정수화만 수행)
 		const rectLevel = toVideoSpaceRect(video, roiLevel);
@@ -209,8 +228,14 @@ export function useOcrSampling(options: Options) {
 				const now = Date.now();
 				if (now - lastDebugPreviewAtRef.current >= 900) {
 					lastDebugPreviewAtRef.current = now;
-					const canvasLevelRaw = drawRoiCanvas(video, rectLevel, { scale: 4, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
-					const canvasExpRaw = drawRoiCanvas(video, rectExp, { scale: 2, outCanvas: getOrCreateCanvas(expRawCanvasRef) });
+					const canvasLevelRaw = drawRoiCanvas(video, rectLevel, {
+						scale: 4,
+						outCanvas: getOrCreateCanvas(levelRawCanvasRef)
+					});
+					const canvasExpRaw = drawRoiCanvas(video, rectExp, {
+						scale: 2,
+						outCanvas: getOrCreateCanvas(expRawCanvasRef)
+					});
 					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
 					setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 					setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
@@ -260,25 +285,28 @@ export function useOcrSampling(options: Options) {
 	 *   baseline은 "재생 재개 후 새 프레임"을 기다린 직후에 잡아야 의미가 있어서, 재사용하면 안 됩니다.
 	 */
 	const readInFlightRef = useRef<Promise<OcrSample> | null>(null);
-	const readOnce = useCallback((opts?: { fresh?: boolean }): Promise<OcrSample> => {
-		const inFlight = readInFlightRef.current;
-		if (inFlight && !opts?.fresh) return inFlight;
-		const run = async () => {
-			if (inFlight) {
-				try {
-					await inFlight;
-				} catch {
-					// 앞선 읽기의 실패는 이번 읽기와 무관합니다.
+	const readOnce = useCallback(
+		(opts?: { fresh?: boolean }): Promise<OcrSample> => {
+			const inFlight = readInFlightRef.current;
+			if (inFlight && !opts?.fresh) return inFlight;
+			const run = async () => {
+				if (inFlight) {
+					try {
+						await inFlight;
+					} catch {
+						// 앞선 읽기의 실패는 이번 읽기와 무관합니다.
+					}
 				}
-			}
-			return readOnceUncoordinated();
-		};
-		const p = run().finally(() => {
-			if (readInFlightRef.current === p) readInFlightRef.current = null;
-		});
-		readInFlightRef.current = p;
-		return p;
-	}, [readOnceUncoordinated]);
+				return readOnceUncoordinated();
+			};
+			const p = run().finally(() => {
+				if (readInFlightRef.current === p) readInFlightRef.current = null;
+			});
+			readInFlightRef.current = p;
+			return p;
+		},
+		[readOnceUncoordinated]
+	);
 
 	// 디버그 폴링이 매 렌더마다 재시작되지 않도록 최신 readOnce를 ref로 들고 갑니다.
 	const readOnceRef = useRef(readOnce);
@@ -305,7 +333,9 @@ export function useOcrSampling(options: Options) {
 			}
 		};
 		void tick();
-		const id = window.setInterval(() => { void tick(); }, 1000);
+		const id = window.setInterval(() => {
+			void tick();
+		}, 1000);
 		return () => {
 			cancelled = true;
 			window.clearInterval(id);
@@ -323,39 +353,42 @@ export function useOcrSampling(options: Options) {
 		setSampleTick(0);
 	}, []);
 
-	const captureBaseline = useCallback(async (args: { resetTotals: boolean }) => {
-		// 시작/재개 직후 "첫 틱"에서 발생하는 이상치를 차트에 기록하지 않기 위해,
-		// baseline은 누적/히스토리를 증가시키지 않고 prev(lastValidSample)만 갱신합니다.
-		if (args.resetTotals) {
-			resetTotals();
-		}
-		// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
-		const raw = await readOnce({ fresh: true });
-		const s: OcrSample = {
-			...raw,
-			levelWasMissing: raw.level == null && (raw.expPercent != null || raw.expValue != null)
-		};
-		const isStructValid = s.level != null && s.expValue != null && s.expPercent != null;
-		let sample: OcrSample = { ...s, isValid: isStructValid };
-		// baseline은 prev가 없더라도 최소한의 검증(%↔값 일관성)은 통과해야 채택합니다.
-		if (isStructValid && expPercentValidationEnabled) {
-			if (!isPercentValueConsistent(s.level as number, s.expValue as number, s.expPercent as number)) {
-				sample = annotateOutlier(sample, "pct_value_mismatch");
+	const captureBaseline = useCallback(
+		async (args: { resetTotals: boolean }) => {
+			// 시작/재개 직후 "첫 틱"에서 발생하는 이상치를 차트에 기록하지 않기 위해,
+			// baseline은 누적/히스토리를 증가시키지 않고 prev(lastValidSample)만 갱신합니다.
+			if (args.resetTotals) {
+				resetTotals();
 			}
-		}
-		// baseline이 이상치라면 prev를 세팅하지 않습니다. (다음 틱을 첫 틱으로 삼기 위함)
-		if (sample.isValid && !sample.isOutlier) {
-			setCurrentLevel(s.level);
-			setCurrentExpPercent(s.expPercent);
-			setCurrentExpValue(s.expValue ?? null);
-			lastValidSampleRef.current = sample;
-			lastSampleTsRef.current = sample.ts;
-		} else {
-			// 재개 시 baseline이 불안정하면, 일시정지 이전 값과의 "교차 구간 누적"을 막기 위해 prev를 비웁니다.
-			lastValidSampleRef.current = null;
-			lastSampleTsRef.current = null;
-		}
-	}, [annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled]);
+			// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
+			const raw = await readOnce({ fresh: true });
+			const s: OcrSample = {
+				...raw,
+				levelWasMissing: raw.level == null && (raw.expPercent != null || raw.expValue != null)
+			};
+			const isStructValid = s.level != null && s.expValue != null && s.expPercent != null;
+			let sample: OcrSample = { ...s, isValid: isStructValid };
+			// baseline은 prev가 없더라도 최소한의 검증(%↔값 일관성)은 통과해야 채택합니다.
+			if (isStructValid && expPercentValidationEnabled) {
+				if (!isPercentValueConsistent(s.level as number, s.expValue as number, s.expPercent as number)) {
+					sample = annotateOutlier(sample, "pct_value_mismatch");
+				}
+			}
+			// baseline이 이상치라면 prev를 세팅하지 않습니다. (다음 틱을 첫 틱으로 삼기 위함)
+			if (sample.isValid && !sample.isOutlier) {
+				setCurrentLevel(s.level);
+				setCurrentExpPercent(s.expPercent);
+				setCurrentExpValue(s.expValue ?? null);
+				lastValidSampleRef.current = sample;
+				lastSampleTsRef.current = sample.ts;
+			} else {
+				// 재개 시 baseline이 불안정하면, 일시정지 이전 값과의 "교차 구간 누적"을 막기 위해 prev를 비웁니다.
+				lastValidSampleRef.current = null;
+				lastSampleTsRef.current = null;
+			}
+		},
+		[annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled]
+	);
 
 	const sampleOnceAndAccumulate = useCallback(async () => {
 		const raw = await readOnce();
@@ -365,7 +398,7 @@ export function useOcrSampling(options: Options) {
 		const level =
 			raw.level != null
 				? raw.level
-				: (prev?.level != null && (raw.expPercent != null || raw.expValue != null))
+				: prev?.level != null && (raw.expPercent != null || raw.expValue != null)
 					? prev.level
 					: null;
 		const s: OcrSample = {
@@ -384,7 +417,14 @@ export function useOcrSampling(options: Options) {
 				sample = annotateOutlier(sample, "pct_value_mismatch");
 			}
 		}
-		if (isStructValid && !sample.isOutlier && prev && prev.level != null && prev.expValue != null && prev.expPercent != null) {
+		if (
+			isStructValid &&
+			!sample.isOutlier &&
+			prev &&
+			prev.level != null &&
+			prev.expValue != null &&
+			prev.expPercent != null
+		) {
 			// 레벨이 한 번에 크게 튀는 경우는 OCR 이상치로 보는 편이 안전합니다.
 			if (s.level != null && Math.abs(s.level - prev.level) >= 2) {
 				sample = annotateOutlier(sample, "level_jump");
@@ -416,9 +456,9 @@ export function useOcrSampling(options: Options) {
 			if (prev.expPercent != null && s.expPercent != null) {
 				let deltaPct = 0;
 				if (prev.level != null && s.level != null && s.level > prev.level) {
-					deltaPct = (100 - prev.expPercent) + s.expPercent;
+					deltaPct = 100 - prev.expPercent + s.expPercent;
 				} else if (prev.level != null && s.level != null && s.level < prev.level) {
-					deltaPct = -((100 - s.expPercent) + prev.expPercent);
+					deltaPct = -(100 - s.expPercent + prev.expPercent);
 				} else {
 					deltaPct = s.expPercent - prev.expPercent;
 				}
@@ -439,7 +479,14 @@ export function useOcrSampling(options: Options) {
 			lastSampleTsRef.current = sample.ts;
 			setSampleTick((t) => t + 1);
 		}
-	}, [readOnce, expTable, annotateOutlier, isPercentValueConsistent, isPlausibleSameLevelDrop, expPercentValidationEnabled]);
+	}, [
+		readOnce,
+		expTable,
+		annotateOutlier,
+		isPercentValueConsistent,
+		isPlausibleSameLevelDrop,
+		expPercentValidationEnabled
+	]);
 
 	const getSnapshot = useCallback((): OcrSamplingSnapshot => {
 		return {
@@ -450,7 +497,7 @@ export function useOcrSampling(options: Options) {
 			cumExpValue,
 			sampleTick,
 			lastSampleTs: lastSampleTsRef.current,
-			lastValidSample: (lastValidSampleRef.current as OcrSample | null)
+			lastValidSample: lastValidSampleRef.current as OcrSample | null
 		};
 	}, [currentLevel, currentExpPercent, currentExpValue, cumExpPct, cumExpValue, sampleTick]);
 
@@ -496,5 +543,3 @@ export function useOcrSampling(options: Options) {
 		parsedExpPercent
 	};
 }
-
-

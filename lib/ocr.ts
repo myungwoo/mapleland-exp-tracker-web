@@ -159,7 +159,9 @@ async function recognizeLevelDigitsWithTextExclusive(
 	return { text, value };
 }
 
-async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTMLImageElement): Promise<HTMLCanvasElement> {
+async function createCanvasFromSource(
+	src: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+): Promise<HTMLCanvasElement> {
 	if (src instanceof HTMLCanvasElement) return src;
 	const canvas = document.createElement("canvas");
 	let w: number, h: number;
@@ -169,7 +171,8 @@ async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTM
 		w = sized.width;
 		h = sized.height;
 	} else {
-		w = 1; h = 1;
+		w = 1;
+		h = 1;
 	}
 	canvas.width = w;
 	canvas.height = h;
@@ -184,7 +187,11 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 		const { width: w, height: h } = source;
 		const img = ctx.getImageData(0, 0, w, h);
 		const data = img.data;
-		let minX = w, minY = h, maxX = -1, maxY = -1, count = 0;
+		let minX = w,
+			minY = h,
+			maxX = -1,
+			maxY = -1,
+			count = 0;
 		for (let y = 0; y < h; y++) {
 			for (let x = 0; x < w; x++) {
 				const i = (y * w + x) * 4;
@@ -205,7 +212,7 @@ function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 		const ar = bh / Math.max(1, bw);
 		const areaFrac = count / (w * h);
 		// 세로로 길고, 얇고, 면적 비율이 합리적인지(임계값은 다소 느슨하게)
-		const slim = (bw / Math.max(1, bh)) <= 0.28;
+		const slim = bw / Math.max(1, bh) <= 0.28;
 		return ar >= 3 && slim && areaFrac >= 0.003 && areaFrac <= 0.6;
 	} catch {
 		return false;
