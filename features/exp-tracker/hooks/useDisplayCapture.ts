@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Options = {
 	captureVideoRef: React.MutableRefObject<HTMLVideoElement | null>;
@@ -17,6 +17,11 @@ type Options = {
 	 * - 너무 높은 FPS는 화면 캡처 자체가 게임에 영향을 줄 수 있습니다.
 	 */
 	captureFps: number;
+	/**
+	 * 사용자가 브라우저 UI("공유 중지")나 창 종료로 캡처를 끝냈을 때 호출됩니다.
+	 * - 스트림 정리는 이 훅이 이미 끝낸 뒤에 호출하므로, 측정 중단/안내 같은 후속 처리만 하면 됩니다.
+	 */
+	onStreamEnded?: () => void;
 };
 
 /**
@@ -99,13 +104,36 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 }
 
 /**
+ * 사용자가 "창 선택" 피커를 그냥 닫은 경우인지 판별합니다.
+ *
+ * 왜: 취소는 오류가 아닙니다. 그런데 취소도 예외로 올라오기 때문에,
+ * 구분하지 않으면 (1) 취소했는데 "권한이 필요합니다" 경고가 뜨고,
+ * (2) 제약 완화 재시도 로직이 피커를 한 번 더 띄웁니다.
+ *
+ * 브라우저별로 취소를 NotAllowedError 또는 AbortError로 알립니다.
+ * 단, OS/정책 차원의 차단(예: Chrome "Permission denied by system")은 안내가 필요하므로 취소로 보지 않습니다.
+ */
+function isCaptureCancelledByUser(err: unknown): boolean {
+	if (!(err instanceof Error)) return false;
+	if (err.name !== "NotAllowedError" && err.name !== "AbortError") return false;
+	if (/system|policy/i.test(err.message)) return false;
+	return true;
+}
+
+/**
  * 화면/창 캡처 스트림을 선택하고, 필요한 비디오 엘리먼트에 연결하는 훅입니다.
  *
  * - 왜: ExpTracker에 스트림/비디오 attach 관련 useEffect가 흩어져 있어, 읽기 어려워지고 수정 시 사이드이펙트가 커집니다.
  */
 export function useDisplayCapture(options: Options) {
-	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps } = options;
+	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps, onStreamEnded } = options;
 	const [stream, setStream] = useState<MediaStream | null>(null);
+
+	// 리스너를 매 렌더 재등록하지 않으려고 콜백은 ref로 들고 갑니다.
+	const onStreamEndedRef = useRef(onStreamEnded);
+	useEffect(() => {
+		onStreamEndedRef.current = onStreamEnded;
+	}, [onStreamEnded]);
 
 	const safePause = useCallback((video: HTMLVideoElement | null) => {
 		if (!video) return;
@@ -183,7 +211,9 @@ export function useDisplayCapture(options: Options) {
 			let s: MediaStream;
 			try {
 				s = await navigator.mediaDevices.getDisplayMedia(constraintsWithFps);
-			} catch {
+			} catch (err) {
+				// 사용자가 취소한 경우에 재시도하면 피커가 두 번 뜨므로, 취소는 그대로 올려보냅니다.
+				if (isCaptureCancelledByUser(err)) throw err;
 				s = await navigator.mediaDevices.getDisplayMedia({
 					video: {
 						displaySurface: "window"
@@ -200,8 +230,10 @@ export function useDisplayCapture(options: Options) {
 			attachStream(previewVideoRef.current, settingsOpen ? s : null);
 			if (settingsOpen) void ensurePlaying(previewVideoRef.current);
 		} catch (err) {
+			// 취소는 정상적인 사용자 선택이므로 조용히 넘어갑니다. (설정 모달은 열린 채로 유지)
+			if (isCaptureCancelledByUser(err)) return;
 			console.error(err);
-			alert("화면/창 캡처 권한이 필요합니다.");
+			alert("화면/창 캡처를 시작할 수 없습니다.\n브라우저와 OS의 화면 기록 권한을 확인해 주세요.");
 		}
 	}, [attachStream, captureFps, captureVideoRef, ensurePlaying, previewVideoRef, settingsOpen, applyTrackFps]);
 
@@ -215,6 +247,46 @@ export function useDisplayCapture(options: Options) {
 		attachStream(captureVideoRef.current, null);
 		attachStream(previewVideoRef.current, null);
 	}, [stream, safePause, attachStream, captureVideoRef, previewVideoRef]);
+
+	/**
+	 * 캡처가 "우리 코드 밖에서" 끝나는 경우를 감지합니다.
+	 *
+	 * 왜: 사용자가 브라우저 하단의 "공유 중지"를 누르거나 캡처 대상 창을 닫으면 트랙이 ended가 되는데,
+	 * 이때 stream state를 그대로 두면 앱은 여전히 "캡처 중"이라고 판단합니다.
+	 * 그러면 정지된 마지막 프레임을 계속 OCR해서 증가량 0으로 누적되고,
+	 * 사용자는 측정이 잘 되고 있다고 오해합니다. (측정 시작 버튼도 계속 활성)
+	 */
+	useEffect(() => {
+		if (!stream) return;
+		const tracks = stream.getTracks();
+		let handled = false;
+		const handleEnded = () => {
+			if (handled) return;
+			handled = true;
+			// 남은 트랙까지 확실히 정리하고 비디오를 떼어냅니다.
+			try {
+				tracks.forEach((t) => t.stop());
+			} catch {
+				// ignore
+			}
+			safePause(captureVideoRef.current);
+			safePause(previewVideoRef.current);
+			attachStream(captureVideoRef.current, null);
+			attachStream(previewVideoRef.current, null);
+			setStream(null);
+			onStreamEndedRef.current?.();
+		};
+		tracks.forEach((t) => t.addEventListener("ended", handleEnded));
+		stream.addEventListener("removetrack", handleEnded);
+		// 경합 방어: 리스너를 붙이기 전에 이미 끝난 스트림이라면 즉시 처리합니다.
+		if (tracks.length === 0 || tracks.every((t) => t.readyState === "ended")) {
+			handleEnded();
+		}
+		return () => {
+			tracks.forEach((t) => t.removeEventListener("ended", handleEnded));
+			stream.removeEventListener("removetrack", handleEnded);
+		};
+	}, [stream, attachStream, safePause, captureVideoRef, previewVideoRef]);
 
 	// 스트림 변경 시 비디오에 재연결 (특히 settings 모달에서 ROI를 잡을 때 중요)
 	useEffect(() => {

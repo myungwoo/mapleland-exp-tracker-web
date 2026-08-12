@@ -1,6 +1,6 @@
 import { createWorker, PSM } from "tesseract.js";
 import type { Worker as TesseractWorker } from "tesseract.js";
-import { cropDigitBoundingBox } from "./canvas";
+import { cropDigitBoundingBox, get2dContext } from "./canvas";
 import { parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
 
 /**
@@ -14,6 +14,28 @@ import { parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
 
 let digitsWorkerPromise: Promise<TesseractWorker> | null = null;
 let digitsWorker: TesseractWorker | null = null;
+
+/**
+ * 레벨 OCR 직렬화 큐
+ *
+ * 왜: 레벨 인식은 Tesseract 워커 **하나**를 공유하면서 `setParameters`로 모드(SINGLE_WORD/SINGLE_CHAR)와
+ * DPI를 바꿔가며 씁니다. 두 개의 인식이 겹치면 서로의 파라미터를 덮어써서 엉뚱한 결과가 나옵니다.
+ *
+ * 호출 지점이 여러 개(측정 루프 / 디버그 폴링 / 온보딩 미리보기)라서 호출자마다 조정하게 두면
+ * 새 호출 지점이 생길 때마다 같은 버그가 재발합니다. 그래서 워커를 소유한 이 모듈에서 직렬화합니다.
+ */
+let workerQueue: Promise<unknown> = Promise.resolve();
+
+function runOnWorkerExclusively<T>(task: () => Promise<T>): Promise<T> {
+	// 앞선 작업의 성공/실패와 무관하게 순서대로 실행합니다.
+	const result = workerQueue.then(task, task);
+	// 큐 자체는 rejection을 삼켜서, 한 번 실패했다고 이후 작업이 막히지 않게 합니다.
+	workerQueue = result.then(
+		() => undefined,
+		() => undefined
+	);
+	return result;
+}
 
 export async function initOcr() {
 	await initOcrDigits();
@@ -45,16 +67,17 @@ async function initOcrDigits() {
  * 장시간 실행 시(수시간) tesseract.js 워커의 내부 메모리 누적/단편화를 완화하기 위해,
  * 워커를 종료하고 다음 OCR 호출에서 새로 생성되게 합니다.
  *
- * 주의:
- * - OCR 작업이 진행 중인 순간에 호출하면 인식이 실패할 수 있으니,
- *   호출자는 "샘플링 루프가 idle" 상태일 때 호출하는 것을 권장합니다.
+ * 진행 중인 인식이 있으면 끝난 뒤에 재시작하도록 같은 큐에서 실행합니다.
+ * (워커를 인식 도중에 terminate하면 그 샘플이 그냥 실패합니다)
  */
 export async function resetOcrWorkers() {
-	const w = digitsWorker;
-	// 다음 호출에서 새로 생성되게 먼저 비웁니다.
-	digitsWorker = null;
-	digitsWorkerPromise = null;
-	await Promise.allSettled([w ? w.terminate() : Promise.resolve()]);
+	await runOnWorkerExclusively(async () => {
+		const w = digitsWorker;
+		// 다음 호출에서 새로 생성되게 먼저 비웁니다.
+		digitsWorker = null;
+		digitsWorkerPromise = null;
+		await Promise.allSettled([w ? w.terminate() : Promise.resolve()]);
+	});
 }
 
 export type ExpReadResult = {
@@ -77,7 +100,18 @@ export function recognizeExp(nativeRoiCanvas: HTMLCanvasElement): ExpReadResult 
 	return { text: line.text, value: parsed?.value ?? null, percent: parsed?.percent ?? null };
 }
 
-export async function recognizeLevelDigitsWithText(
+/**
+ * 레벨(LEVEL) 영역 인식.
+ *
+ * 호출이 겹쳐도 안전합니다. 내부적으로 워커 큐에 넣어 하나씩 실행합니다.
+ */
+export function recognizeLevelDigitsWithText(
+	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+): Promise<{ text: string; value: number | null }> {
+	return runOnWorkerExclusively(() => recognizeLevelDigitsWithTextExclusive(source));
+}
+
+async function recognizeLevelDigitsWithTextExclusive(
 	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
 ): Promise<{ text: string; value: number | null }> {
 	const worker = await initOcrDigits();
@@ -127,15 +161,14 @@ async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTM
 	}
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = get2dContext(canvas);
 	ctx.drawImage(src as any, 0, 0);
 	return canvas;
 }
 
 function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 	try {
-		const ctx = source.getContext("2d");
-		if (!ctx) return false;
+		const ctx = get2dContext(source);
 		const { width: w, height: h } = source;
 		const img = ctx.getImageData(0, 0, w, h);
 		const data = img.data;
