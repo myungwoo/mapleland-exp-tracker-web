@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import RoiOverlay, { RoiRect } from "./RoiOverlay";
+import RoiOverlay, { isRoiRectOrNull, RoiRect } from "./RoiOverlay";
 import { initOcr } from "@/lib/ocr";
 import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
-import { usePersistentState } from "@/lib/persist";
+import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
 import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
@@ -31,6 +31,11 @@ import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
 
 type IntervalSec = 1 | 5 | 10;
 
+// 저장된 설정 검증기: UI에서 고를 수 있는 값만 복원합니다.
+// (모듈 스코프에 두는 이유 — 렌더마다 새 함수가 만들어지지 않게 하려고)
+const INTERVAL_SEC_VALIDATOR = oneOf<IntervalSec>([1, 5, 10]);
+const PACE_WINDOW_MIN_VALIDATOR = oneOf([1, 5, 10, 30, 60]);
+
 export default function ExpTracker() {
 	// OCR 샘플링에 사용하는 숨김(항상 마운트) 비디오
 	const captureVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -38,15 +43,15 @@ export default function ExpTracker() {
 	const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 	// 캡처 스트림은 별도 훅에서 관리합니다.
 
-	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec);
-	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
-	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
-	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60);
-	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true);
+	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec, INTERVAL_SEC_VALIDATOR);
+	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null, isRoiRectOrNull);
+	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null, isRoiRectOrNull);
+	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60, PACE_WINDOW_MIN_VALIDATOR);
+	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true, isBooleanValue);
 	// 차트의 인터랙티브 x축 범위(경과 ms). null이면 전체 범위.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
-	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
-	const [chartShowGrid, setChartShowGrid] = usePersistentState<boolean>("chartShowGrid", true);
+	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true, isBooleanValue);
+	const [chartShowGrid, setChartShowGrid] = usePersistentState<boolean>("chartShowGrid", true, isBooleanValue);
 	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // 측정 중
@@ -66,7 +71,7 @@ export default function ExpTracker() {
 	const summaryCaptureRef = useRef<HTMLDivElement | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
 	// Onboarding
-	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false);
+	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false, isBooleanValue);
 	const [onboardingOpen, setOnboardingOpen] = useState(false);
 	const [onboardingStep, setOnboardingStep] = useState<number>(0);
 	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
