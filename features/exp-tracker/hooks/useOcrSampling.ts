@@ -220,7 +220,7 @@ export function useOcrSampling(options: Options) {
 			outCanvas: getOrCreateCanvas(expNativeCanvasRef)
 		});
 		const expRes = recognizeExp(canvasExpNative);
-		const levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop);
+		const levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
 
 		if (debugEnabled) {
 			try {

@@ -27,8 +27,15 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      # 왜: 검증을 배포와 같은 job에 두면, 하나라도 실패했을 때 절대 배포되지 않습니다.
       - name: Format check
         run: npm run format:check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Pixel font self-test
+        run: npm run test:pixel-font
       - name: Build
         env:
           GITHUB_PAGES: "true"

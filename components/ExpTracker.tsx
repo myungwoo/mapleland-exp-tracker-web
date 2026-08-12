@@ -7,6 +7,7 @@ import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
+import type { NoticeHandler } from "@/lib/notice";
 import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
@@ -90,8 +91,13 @@ export default function ExpTracker() {
 	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
 	const [roiSelectionMode, setRoiSelectionMode] = useState<null | "level" | "exp">(null);
 
-	// 브라우저 UI("공유 중지")나 창 종료로 캡처가 끊겼음을 사용자에게 알리기 위한 상태
-	const [captureEndedNotice, setCaptureEndedNotice] = useState(false);
+	// 앱 내부 안내 모달. 네이티브 alert 대신 사용합니다.
+	// (alert은 메인 스레드를 블로킹해서 측정 타이머/샘플링에도 영향을 줍니다)
+	// 캡처 중단 안내도 이 모달을 씁니다.
+	const [notice, setNotice] = useState<{ title?: string; message: string } | null>(null);
+	const showNotice = useCallback<NoticeHandler>((message, title) => {
+		setNotice({ message, title });
+	}, []);
 
 	// 화면/창 캡처 스트림 관리 (시작/중지 + 비디오 연결)
 	const { stream, startCapture, stopCapture, ensureCapturePlaying } = useDisplayCapture({
@@ -110,8 +116,12 @@ export default function ExpTracker() {
 		// (그대로 두면 정지된 마지막 프레임을 계속 읽어 "측정되는 것처럼" 보입니다)
 		onStreamEnded: () => {
 			if (isSamplingRef.current) void pauseSamplingRef.current();
-			setCaptureEndedNotice(true);
-		}
+			showNotice(
+				"화면/창 공유가 끊겨서 측정을 일시정지했습니다.\n\n계속 측정하려면 설정에서 게임 창을 다시 선택해 주세요.\n(경과 시간과 누적 경험치는 그대로 유지됩니다)",
+				"화면 공유가 중지되었습니다"
+			);
+		},
+		onNotice: showNotice
 	});
 	const hasStream = !!stream;
 	// PiP 이벤트 핸들러에서 오래된 클로저(stale closure)를 피하기 위한 ref들
@@ -134,7 +144,8 @@ export default function ExpTracker() {
 			// 메인 UI와 동일: 타이머를 한 번도 시작하지 않았으면 초기화 불가
 			if (!hasStartedRef.current) return;
 			resetSamplingRef.current();
-		}
+		},
+		onNotice: showNotice
 	});
 	const [pipSupported, setPipSupported] = useState(false);
 	useEffect(() => {
@@ -266,7 +277,7 @@ export default function ExpTracker() {
 		if (!stream) return;
 		if (!captureVideoRef.current) return;
 		if (!roiLevel || !roiExp) {
-			alert("먼저 레벨/경험치 영역(ROI)을 설정해 주세요.");
+			showNotice("먼저 설정에서 레벨/경험치 영역(ROI)을 지정해 주세요.", "측정을 시작할 수 없습니다");
 			return;
 		}
 		// 시작/재개 직후 baseline(기준점)을 prev로 기록합니다.
@@ -290,7 +301,7 @@ export default function ExpTracker() {
 
 		// 샘플링 인터벌은 아래 effect가 소유합니다. (isSampling/intervalSec 변화에 따라 재시작)
 		setIsSampling(true);
-	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, ocr, ensureCapturePlaying]);
+	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, ocr, ensureCapturePlaying, showNotice]);
 
 	// 샘플링 인터벌의 생명주기를 한곳에서 관리합니다.
 	// - 왜: 측정 중 "측정 주기"를 바꿔도 즉시 반영되어야 하고, 인터벌 clear 누락도 막을 수 있습니다.
@@ -655,6 +666,7 @@ export default function ExpTracker() {
 					couponPaceValue={couponPace.val}
 					couponPacePct={couponPace.pct}
 					getSummaryEl={() => summaryCaptureRef.current}
+					onNotice={showNotice}
 				/>
 			</div>
 
@@ -834,6 +846,12 @@ export default function ExpTracker() {
 			</Modal>
 			{/* OCR 샘플링용 숨김 비디오(항상 마운트) */}
 			<video ref={captureVideoRef} className="hidden" muted playsInline />
+			<AlertDialog
+				open={!!notice}
+				title={notice?.title ?? "알림"}
+				message={notice?.message ?? ""}
+				onClose={() => setNotice(null)}
+			/>
 			<OnboardingOverlay
 				open={onboardingOpen}
 				step={onboardingStep}
@@ -890,14 +908,6 @@ export default function ExpTracker() {
 				onClose={() => {
 					setOnboardingOpen(false);
 				}}
-			/>
-			<AlertDialog
-				open={captureEndedNotice}
-				title="화면 공유가 중지되었습니다"
-				message={
-					"화면/창 공유가 끊겨서 측정을 일시정지했습니다.\n\n계속 측정하려면 설정에서 게임 창을 다시 선택해 주세요.\n(경과 시간과 누적 경험치는 그대로 유지됩니다)"
-				}
-				onClose={() => setCaptureEndedNotice(false)}
 			/>
 		</div>
 	);

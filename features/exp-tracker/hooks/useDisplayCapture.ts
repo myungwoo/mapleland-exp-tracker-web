@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { NoticeHandler } from "@/lib/notice";
 
 type Options = {
 	captureVideoRef: React.MutableRefObject<HTMLVideoElement | null>;
@@ -22,6 +23,11 @@ type Options = {
 	 * - 스트림 정리는 이 훅이 이미 끝낸 뒤에 호출하므로, 측정 중단/안내 같은 후속 처리만 하면 됩니다.
 	 */
 	onStreamEnded?: () => void;
+	/**
+	 * 사용자에게 보여줄 안내 메시지를 전달합니다. (네이티브 alert 대체)
+	 * - 훅은 UI를 직접 렌더링할 수 없으므로 호출자에게 위임합니다.
+	 */
+	onNotice?: NoticeHandler;
 };
 
 /**
@@ -129,14 +135,19 @@ function isCaptureCancelledByUser(err: unknown): boolean {
  * - 왜: ExpTracker에 스트림/비디오 attach 관련 useEffect가 흩어져 있어, 읽기 어려워지고 수정 시 사이드이펙트가 커집니다.
  */
 export function useDisplayCapture(options: Options) {
-	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps, onStreamEnded } = options;
+	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps, onStreamEnded, onNotice } =
+		options;
 	const [stream, setStream] = useState<MediaStream | null>(null);
 
-	// 리스너를 매 렌더 재등록하지 않으려고 콜백은 ref로 들고 갑니다.
+	// 콜백을 ref로 들고 갑니다.
+	// - 리스너를 매 렌더 재등록하지 않기 위해 (onStreamEnded)
+	// - startCapture의 identity가 흔들리지 않게 하기 위해 (onNotice)
 	const onStreamEndedRef = useRef(onStreamEnded);
+	const onNoticeRef = useRef(onNotice);
 	useEffect(() => {
 		onStreamEndedRef.current = onStreamEnded;
-	}, [onStreamEnded]);
+		onNoticeRef.current = onNotice;
+	}, [onStreamEnded, onNotice]);
 
 	const safePause = useCallback((video: HTMLVideoElement | null) => {
 		if (!video) return;
@@ -240,7 +251,10 @@ export function useDisplayCapture(options: Options) {
 			// 취소는 정상적인 사용자 선택이므로 조용히 넘어갑니다. (설정 모달은 열린 채로 유지)
 			if (isCaptureCancelledByUser(err)) return;
 			console.error(err);
-			alert("화면/창 캡처를 시작할 수 없습니다.\n브라우저와 OS의 화면 기록 권한을 확인해 주세요.");
+			onNoticeRef.current?.(
+				"화면/창 캡처를 시작할 수 없습니다.\n브라우저와 OS의 화면 기록 권한을 확인해 주세요.",
+				"캡처를 시작할 수 없습니다"
+			);
 		}
 	}, [attachStream, captureFps, captureVideoRef, ensurePlaying, previewVideoRef, settingsOpen, applyTrackFps]);
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatElapsed, formatNumber } from "@/lib/format";
 import { copyPngBlobToClipboard, elementToPngBlob } from "@/lib/domToPng";
+import type { NoticeHandler } from "@/lib/notice";
 
 type Inputs = {
 	hasStarted: boolean;
@@ -18,6 +19,8 @@ type Inputs = {
 	couponPaceValue: number;
 	couponPacePct: number;
 	getSummaryEl: () => HTMLElement | null;
+	/** 안내 메시지를 앱 UI로 띄우기 위한 콜백 (네이티브 alert 대체) */
+	onNotice: NoticeHandler;
 };
 
 type Result = {
@@ -95,7 +98,7 @@ export function useShareResults(inputs: Inputs): Result {
 
 	const copyText = useCallback(async () => {
 		if (!inputs.hasStarted) {
-			alert("먼저 측정을 시작해 주세요.");
+			inputs.onNotice("먼저 측정을 시작해 주세요.");
 			return;
 		}
 		const elapsed = formatElapsed(inputs.elapsedMs);
@@ -139,18 +142,18 @@ export function useShareResults(inputs: Inputs): Result {
 			if (!ok) throw new Error("copy failed");
 			bumpTextCopiedLabel();
 		} catch {
-			alert("텍스트 복사에 실패했습니다. (브라우저 권한을 확인해 주세요)");
+			inputs.onNotice("텍스트 복사에 실패했습니다. (브라우저 권한을 확인해 주세요)", "복사 실패");
 		}
 	}, [inputs, bumpTextCopiedLabel]);
 
 	const copyImage = useCallback(async () => {
 		if (!inputs.hasStarted) {
-			alert("먼저 측정을 시작해 주세요.");
+			inputs.onNotice("먼저 측정을 시작해 주세요.");
 			return;
 		}
 		const el = inputs.getSummaryEl();
 		if (!el) {
-			alert("요약 영역을 찾지 못했습니다.");
+			inputs.onNotice("요약 영역을 찾지 못했습니다.", "복사 실패");
 			return;
 		}
 		if (isCopyingImage) return;
@@ -173,11 +176,14 @@ export function useShareResults(inputs: Inputs): Result {
 				bumpImageNeedFocusLabel();
 				if (!pendingAlertedRef.current) {
 					pendingAlertedRef.current = true;
-					alert("다른 창으로 이동하여 복사에 실패했습니다.\n이 탭으로 돌아오면 자동으로 다시 복사합니다.");
+					inputs.onNotice(
+						"다른 창으로 이동하여 복사에 실패했습니다.\n이 탭으로 돌아오면 자동으로 다시 복사합니다.",
+						"복사를 예약했습니다"
+					);
 				}
 			} else {
 				const msg = e instanceof Error ? e.message : "이미지 복사에 실패했습니다.";
-				alert(msg);
+				inputs.onNotice(msg, "복사 실패");
 			}
 		} finally {
 			setIsCopyingImage(false);

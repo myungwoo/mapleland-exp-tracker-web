@@ -20,12 +20,14 @@ export function useDocumentPip(callbacks: PipCallbacks) {
 		if (!controllerRef.current) {
 			controllerRef.current = new PipController({
 				onToggle: () => cbRef.current.onToggle(),
-				onReset: () => cbRef.current.onReset()
+				onReset: () => cbRef.current.onReset(),
+				onNotice: (message, title) => cbRef.current.onNotice?.(message, title)
 			});
 		} else {
 			controllerRef.current.setCallbacks({
 				onToggle: () => cbRef.current.onToggle(),
-				onReset: () => cbRef.current.onReset()
+				onReset: () => cbRef.current.onReset(),
+				onNotice: (message, title) => cbRef.current.onNotice?.(message, title)
 			});
 		}
 		return controllerRef.current;

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useShareResults } from "@/features/exp-tracker/hooks/useShareResults";
 import { primeDomToPngFonts } from "@/lib/domToPng";
+import type { NoticeHandler } from "@/lib/notice";
 
 type Props = {
 	hasStarted: boolean;
@@ -17,6 +18,7 @@ type Props = {
 	couponPaceValue: number;
 	couponPacePct: number;
 	getSummaryEl: () => HTMLElement | null;
+	onNotice: NoticeHandler;
 };
 
 export default function ShareResultsActions(props: Props) {
@@ -41,7 +43,8 @@ export default function ShareResultsActions(props: Props) {
 		couponAdjustedElapsedMs: props.couponAdjustedElapsedMs,
 		couponPaceValue: props.couponPaceValue,
 		couponPacePct: props.couponPacePct,
-		getSummaryEl: props.getSummaryEl
+		getSummaryEl: props.getSummaryEl,
+		onNotice: props.onNotice
 	});
 
 	return (
