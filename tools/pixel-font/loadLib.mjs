@@ -17,12 +17,29 @@ function transpileToTemp(names) {
 	const out = mkdtempSync(join(tmpdir(), "pixelfont-"));
 	for (const name of names) {
 		const src = readFileSync(join(libDir, `${name}.ts`), "utf8");
-		const js = ts.transpileModule(src, {
+		let js = ts.transpileModule(src, {
 			compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext }
 		}).outputText;
-		writeFileSync(join(out, `${name}.mjs`), js.replace(/from ['"]\.\/pixelFont['"]/g, 'from "./pixelFont.mjs"'));
+		// 같이 옮겨온 모듈끼리의 상대 import에 확장자를 붙여줍니다. (Node ESM은 확장자를 요구합니다)
+		for (const other of names) {
+			js = js
+				.replaceAll(`from "./${other}"`, `from "./${other}.mjs"`)
+				.replaceAll(`from './${other}'`, `from "./${other}.mjs"`);
+		}
+		writeFileSync(join(out, `${name}.mjs`), js);
 	}
 	return out;
+}
+
+/**
+ * `lib/` 의 모듈들을 Node에서 그대로 import합니다.
+ *
+ * @param names 함께 옮길 모듈 이름들 (상대 import로 서로 참조해도 됩니다)
+ * @param entry import해서 돌려줄 모듈 이름
+ */
+export async function loadLibModules(names, entry) {
+	const out = transpileToTemp(names);
+	return import(pathToFileURL(join(out, `${entry}.mjs`)).href);
 }
 
 export async function loadPixelOcr() {

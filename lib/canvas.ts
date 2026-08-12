@@ -1,4 +1,5 @@
 import type { RoiRect } from "@/components/RoiOverlay";
+import { computeLevelRoiFingerprint, isLevelGlyphPixel, type LevelRoiFingerprint } from "./levelRoiFingerprint";
 
 /**
  * 이 파일은 ROI 캡처와 레벨(LEVEL) OCR 전처리를 담당합니다.
@@ -93,18 +94,12 @@ export function preprocessLevelCanvas(
 	const mask = new Uint8Array(w * h);
 
 	// 1) 색 기반 마스크: "밝고(밝기 높음) 채도 낮은(거의 흰색)" 픽셀만 전경으로 간주
+	//    판정 규칙은 `lib/levelRoiFingerprint.ts`가 소유합니다.
+	//    왜: 레벨 ROI 변화 감지 지문이 **이 전처리와 완전히 같은 마스크**를 봐야
+	//    "지문이 같으면 인식 결과도 같다"가 성립합니다. 규칙이 두 곳에 적혀 있으면
+	//    한쪽만 고쳐졌을 때 캐시가 조용히 틀린 값을 서빙하게 됩니다.
 	for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-		const r = data[i],
-			g = data[i + 1],
-			b = data[i + 2];
-		const maxc = Math.max(r, g, b);
-		const minc = Math.min(r, g, b);
-		const mean = (r + g + b) / 3;
-		const chroma = maxc - minc;
-		// 임계값(레벨 타일용):
-		// - mean(밝기)을 높이고, chroma(색차)를 낮춰 "진짜 흰 글자"만 더 타이트하게 잡습니다.
-		// - 목표: 배경/테두리의 미세 픽셀들이 전경으로 섞이는 것을 줄여 1px 스펙클을 방지
-		if (chroma <= 80 && mean >= 130) {
+		if (isLevelGlyphPixel(data[i], data[i + 1], data[i + 2])) {
 			mask[p] = 1;
 		}
 	}
@@ -164,6 +159,24 @@ export function preprocessLevelCanvas(
 	}
 	ctx.putImageData(img, 0, 0);
 	return canvas;
+}
+
+/**
+ * 레벨 ROI(원본 배율 캔버스)의 변화 감지 지문을 읽습니다.
+ *
+ * 확대/이진화 이전의 **원본 배율** ROI를 넘겨야 합니다. 전처리(4배 확대 + 팽창 + 스펙클 제거)는
+ * 최근접 확대라서 원본 마스크가 그대로 결정하므로, 지문은 원본 배율에서 잡는 것이 가장 쌉니다.
+ * (전처리 캔버스에서 잡으면 아끼려던 전처리를 이미 다 해버린 뒤가 됩니다)
+ */
+export function readLevelRoiFingerprint(nativeRoiCanvas: HTMLCanvasElement): LevelRoiFingerprint | null {
+	const ctx = get2dContext(nativeRoiCanvas);
+	try {
+		const img = ctx.getImageData(0, 0, nativeRoiCanvas.width, nativeRoiCanvas.height);
+		return computeLevelRoiFingerprint(img);
+	} catch {
+		// 지문을 못 만들면 캐시를 쓰지 않고 매번 인식합니다. (안전한 쪽으로 실패)
+		return null;
+	}
 }
 
 /**

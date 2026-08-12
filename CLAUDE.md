@@ -13,10 +13,12 @@ npm run dev              # 개발 서버 (http://localhost:3000)
 npm run build            # 정적 export → out/  (next.config.js의 output: "export")
 npm run lint             # ESLint
 npx tsc --noEmit         # 타입 검사
-npm run test:pixel-font  # 픽셀 글꼴 인식기 자체 검증 (유일한 자동 테스트)
+npm test                 # 자동 테스트 전체 (아래 둘)
+npm run test:pixel-font  # 픽셀 글꼴 인식기 자체 검증
+npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 규칙 검증
 ```
 
-변경 후에는 **최소한 타입 검사와 lint**를, 인식 로직을 건드렸다면 `test:pixel-font`까지 돌려 주세요.
+변경 후에는 **최소한 타입 검사와 lint**를, 인식 로직을 건드렸다면 `npm test`까지 돌려 주세요.
 
 ## 코드 스타일
 
@@ -64,13 +66,28 @@ npm run test:pixel-font  # 픽셀 글꼴 인식기 자체 검증 (유일한 자�
 
 OCR이 측정 주기보다 오래 걸릴 수 있어서, 동시에 여러 샘플이 쌓이지 않도록 in-flight Promise로 막습니다. 인터벌 콜백에 **렌더 시점의 함수를 그대로 넘기면 stale closure**가 되어 "측정 중 설정 변경이 반영되지 않는" 버그가 생깁니다. 최신 함수를 ref로 참조하세요.
 
-### 5. 상태 저장 위치
+### 5. 레벨은 매 샘플 인식하지 않습니다 (변화 감지 + 판독 재사용)
+
+레벨은 몇 시간에 한 번 바뀌는데 인식은 매 샘플 돌아가므로, ROI가 그대로면 앞 판독을 재사용합니다. 관련 코드는 `lib/levelRoiFingerprint.ts`(지문)와 `lib/levelReadCache.ts`(재사용 규칙)입니다.
+
+이 최적화의 실제 위험은 **레벨이 바뀐 걸 놓치거나, 잘못 읽은 값이 고착되는 것**입니다. 아래 네 가지가 그걸 막고 있으니 함부로 제거하지 마세요.
+
+- **지문은 원본 픽셀이 아니라 "전경 마스크"에서 뽑습니다.** 캡처는 영상 인코딩 경로를 타서 픽셀값에 노이즈가 섞이므로, 원본 픽셀을 해시하면 매 프레임 지문이 달라져 변화 감지가 무의미해집니다. (실측: 채널당 ±15 노이즈에서도 마스크는 1픽셀도 안 바뀝니다)
+- **지문의 전경 판정은 `preprocessLevelCanvas`와 반드시 같은 규칙이어야 합니다.** 그래서 규칙(`isLevelGlyphPixel`)을 한 곳에만 두고 양쪽이 import합니다. 두 곳에 적으면 한쪽만 고쳐졌을 때 캐시가 조용히 틀린 값을 서빙합니다.
+- **성공한 판독만, 그것도 같은 ROI에서 두 번 연속 같은 값이 나왔을 때만** 재사용 대상이 됩니다. "같은 화면인데 판독이 흔들리는" 경우 첫 판독이 고착되지 않게 하려는 것입니다.
+- **지문이 같아도 1분에 한 번은 실제로 다시 인식합니다.**
+
+**이 캐시가 막아주지 못하는 것**: 인식기가 특정 화면을 _일관되게_ 잘못 읽는 경우(예: 193을 항상 183으로)는 못 막습니다. 두 번 읽어도 같은 값이라 확인을 통과합니다. (tesseract는 같은 입력에 8/8 동일한 결과를 내는 결정적 인식기입니다) 다만 캐시가 상황을 **악화시키지도 않습니다** — 캐시가 없어도 매 샘플 같은 픽셀에서 같은 틀린 값이 나옵니다. 일관된 오인식은 캐시가 아니라 인식기 문제이고, 해결책은 레벨도 픽셀 템플릿 매칭으로 바꾸는 것입니다. (§1 참고)
+
+디버그 프리뷰가 갱신되는 틱에서는 재사용하지 않고 항상 다시 인식합니다. (프리뷰에 캐시된 값을 보여주면 ROI를 조정해도 화면이 그대로여서 설정을 확인할 수 없습니다)
+
+### 6. 상태 저장 위치
 
 - `localStorage`: 설정 (`intervalSec`, `roiLevel`, `roiExp`, `paceWindowMin`, `expPercentValidationEnabled`, `chartShowAxisLabels`, `chartShowGrid`, `onboardingDone`) — `lib/persist.ts`의 `usePersistentState`
 - `IndexedDB`: 측정 기록 (`features/exp-tracker/records/`) — 예전에는 localStorage였고 마이그레이션 코드가 남아 있습니다.
 - 기록 스냅샷은 **버전이 있고 하위 호환을 지킵니다.** 포맷을 바꾸면 `records/snapshot.ts`의 `normalizeSnapshot`에 마이그레이션을 추가하세요. 사용자가 내보낸 JSON 파일이 있으므로 옛 버전을 깨면 안 됩니다.
 
-### 6. 서버가 없습니다
+### 7. 서버가 없습니다
 
 `output: "export"` 정적 빌드이고 GitHub Pages 서브패스로 배포됩니다. 그래서:
 
