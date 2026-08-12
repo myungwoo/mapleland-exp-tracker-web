@@ -7,9 +7,11 @@ import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
+import type { NoticeHandler } from "@/lib/notice";
 import { usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
+import AlertDialog from "@/components/AlertDialog";
 import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
@@ -72,6 +74,13 @@ export default function ExpTracker() {
 	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
 	const [roiSelectionMode, setRoiSelectionMode] = useState<null | "level" | "exp">(null);
 
+	// 앱 내부 안내 모달. 네이티브 alert 대신 사용합니다.
+	// (alert은 메인 스레드를 블로킹해서 측정 타이머/샘플링에도 영향을 줍니다)
+	const [notice, setNotice] = useState<{ title?: string; message: string } | null>(null);
+	const showNotice = useCallback<NoticeHandler>((message, title) => {
+		setNotice({ message, title });
+	}, []);
+
 	// 화면/창 캡처 스트림 관리 (시작/중지 + 비디오 연결)
 	const { stream, startCapture, stopCapture, ensureCapturePlaying } = useDisplayCapture({
 		captureVideoRef,
@@ -84,7 +93,8 @@ export default function ExpTracker() {
 		// 유저 설정 없이 자동 전환:
 		// - 설정 모달(ROI 잡기) 중에는 프리뷰가 부드럽도록 30fps
 		// - 평소에는 게임 영향 최소화를 위해 3fps
-		captureFps: settingsOpen ? 30 : 3
+		captureFps: settingsOpen ? 30 : 3,
+		onNotice: showNotice
 	});
 	const hasStream = !!stream;
 	// PiP 이벤트 핸들러에서 오래된 클로저(stale closure)를 피하기 위한 ref들
@@ -102,7 +112,8 @@ export default function ExpTracker() {
 			// 메인 UI와 동일: 타이머를 한 번도 시작하지 않았으면 초기화 불가
 			if (!hasStartedRef.current) return;
 			resetSamplingRef.current();
-		}
+		},
+		onNotice: showNotice
 	});
 	const [pipSupported, setPipSupported] = useState(false);
 	useEffect(() => {
@@ -212,7 +223,7 @@ export default function ExpTracker() {
 		if (!stream) return;
 		if (!captureVideoRef.current) return;
 		if (!roiLevel || !roiExp) {
-			alert("먼저 레벨/경험치 영역(ROI)을 설정해 주세요.");
+			showNotice("먼저 설정에서 레벨/경험치 영역(ROI)을 지정해 주세요.", "측정을 시작할 수 없습니다");
 			return;
 		}
 		// 시작/재개 직후 baseline(기준점)을 prev로 기록합니다.
@@ -244,7 +255,7 @@ export default function ExpTracker() {
 		sampler.start(intervalSec * 1000, runner);
 
 		setIsSampling(true);
-	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying, runSampleOnce]);
+	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying, runSampleOnce, showNotice]);
 
 	const pauseSampling = useCallback(async () => {
 		// 상태를 고정하기 위해 타이머를 먼저 멈춥니다.
@@ -579,6 +590,7 @@ export default function ExpTracker() {
 					couponPaceValue={couponPace.val}
 					couponPacePct={couponPace.pct}
 					getSummaryEl={() => summaryCaptureRef.current}
+					onNotice={showNotice}
 				/>
 			</div>
 
@@ -746,6 +758,12 @@ export default function ExpTracker() {
 			</Modal>
 			{/* OCR 샘플링용 숨김 비디오(항상 마운트) */}
 			<video ref={captureVideoRef} className="hidden" muted playsInline />
+			<AlertDialog
+				open={!!notice}
+				title={notice?.title ?? "알림"}
+				message={notice?.message ?? ""}
+				onClose={() => setNotice(null)}
+			/>
 			<OnboardingOverlay
 				open={onboardingOpen}
 				step={onboardingStep}

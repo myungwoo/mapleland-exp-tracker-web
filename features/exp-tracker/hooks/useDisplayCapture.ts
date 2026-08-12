@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { NoticeHandler } from "@/lib/notice";
 
 type Options = {
 	captureVideoRef: React.MutableRefObject<HTMLVideoElement | null>;
@@ -17,6 +18,11 @@ type Options = {
 	 * - 너무 높은 FPS는 화면 캡처 자체가 게임에 영향을 줄 수 있습니다.
 	 */
 	captureFps: number;
+	/**
+	 * 사용자에게 보여줄 안내 메시지를 전달합니다. (네이티브 alert 대체)
+	 * - 훅은 UI를 직접 렌더링할 수 없으므로 호출자에게 위임합니다.
+	 */
+	onNotice?: NoticeHandler;
 };
 
 /**
@@ -104,8 +110,14 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
  * - 왜: ExpTracker에 스트림/비디오 attach 관련 useEffect가 흩어져 있어, 읽기 어려워지고 수정 시 사이드이펙트가 커집니다.
  */
 export function useDisplayCapture(options: Options) {
-	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps } = options;
+	const { captureVideoRef, previewVideoRef, settingsOpen, capturePlaybackWanted, captureFps, onNotice } = options;
 	const [stream, setStream] = useState<MediaStream | null>(null);
+
+	// 콜백이 매 렌더 새로 만들어져도 startCapture의 identity가 흔들리지 않도록 ref로 들고 갑니다.
+	const onNoticeRef = useRef(onNotice);
+	useEffect(() => {
+		onNoticeRef.current = onNotice;
+	}, [onNotice]);
 
 	const safePause = useCallback((video: HTMLVideoElement | null) => {
 		if (!video) return;
@@ -201,7 +213,7 @@ export function useDisplayCapture(options: Options) {
 			if (settingsOpen) void ensurePlaying(previewVideoRef.current);
 		} catch (err) {
 			console.error(err);
-			alert("화면/창 캡처 권한이 필요합니다.");
+			onNoticeRef.current?.("화면/창 캡처를 시작할 수 없습니다.\n브라우저와 OS의 화면 기록 권한을 확인해 주세요.", "캡처를 시작할 수 없습니다");
 		}
 	}, [attachStream, captureFps, captureVideoRef, ensurePlaying, previewVideoRef, settingsOpen, applyTrackFps]);
 

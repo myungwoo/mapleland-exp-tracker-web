@@ -24,7 +24,10 @@ export class PipController {
     // @ts-ignore experimental
     const dpi: any = (window as any).documentPictureInPicture;
     if (!dpi || typeof dpi.requestWindow !== "function") {
-      alert("이 브라우저에서는 문서 PiP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.");
+      this.callbacks.onNotice?.(
+        "이 브라우저에서는 문서 PiP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.",
+        "PiP를 사용할 수 없습니다"
+      );
       return;
     }
     // 기존 창이 있으면 먼저 닫습니다.
