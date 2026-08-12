@@ -3,9 +3,16 @@ import {
 	cropDigitBoundingBox,
 	drawRoiCanvas,
 	preprocessLevelCanvas,
+	readLevelRoiFingerprint,
 	toVideoSpaceRect,
 	upscaleCanvasNearest
 } from "@/lib/canvas";
+import {
+	applyLevelRead,
+	emptyLevelReadCache,
+	getReusableLevelRead,
+	type LevelReadCacheState
+} from "@/lib/levelReadCache";
 import { recognizeExp, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
@@ -84,6 +91,8 @@ export function useOcrSampling(options: Options) {
 	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	// 레벨 변화 감지용 "원본 배율" ROI. 확대 전이라 전처리 캔버스의 1/16 크기입니다.
+	const levelNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	// 픽셀(비트맵) 글꼴 매칭은 "원본 배율 그대로"의 ROI가 필요합니다. (확대/이진화하면 글리프가 뭉개집니다)
 	const expNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -118,6 +127,12 @@ export function useOcrSampling(options: Options) {
 	const [parsedExpPercent, setParsedExpPercent] = useState<number | null>(null);
 	const [expValidation, setExpValidation] = useState<ExpValidationDebug | null>(null);
 	const lastDebugPreviewAtRef = useRef<number>(0);
+
+	// 레벨 판독 재사용 상태. 규칙과 근거는 `lib/levelReadCache.ts` 에 있습니다.
+	const levelCacheRef = useRef<LevelReadCacheState>(emptyLevelReadCache());
+	const clearLevelCache = useCallback(() => {
+		levelCacheRef.current = emptyLevelReadCache();
+	}, []);
 
 	const annotateOutlier = useCallback((sample: OcrSample, reason: string): OcrSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
@@ -201,18 +216,26 @@ export function useOcrSampling(options: Options) {
 		const rectLevel = toVideoSpaceRect(video, roiLevel);
 		const rectExp = toVideoSpaceRect(video, roiExp);
 
-		// 레벨: 색 기반 전처리 → 숫자 bbox로 타이트 크롭
-		const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, {
-			scale: 4,
-			pad: 0,
-			outCanvas: getOrCreateCanvas(levelProcCanvasRef)
+		// 레벨: 먼저 원본 배율로 읽어 "변화 감지 지문"을 만듭니다.
+		// 레벨은 몇 시간에 한 번 바뀌는데 매 샘플 인식을 돌리는 것은 낭비이므로,
+		// ROI가 그대로면(=지문이 같으면) 확인된 앞 판독을 재사용합니다.
+		const canvasLevelNative = drawRoiCanvas(video, rectLevel, {
+			scale: 1,
+			outCanvas: getOrCreateCanvas(levelNativeCanvasRef)
 		});
-		const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
-			margin: 3,
-			targetHeight: 72,
-			outPad: 6,
-			outCanvas: getOrCreateCanvas(levelCropCanvasRef)
-		});
+		const levelFp = readLevelRoiFingerprint(canvasLevelNative);
+
+		const nowForDecisions = Date.now();
+		// 디버그 프리뷰를 갱신할 차례인지 먼저 정합니다.
+		// 왜 여기서 정하는가: 프리뷰가 갱신되는 틱에서는 캐시를 쓰지 않고 반드시 다시 인식합니다.
+		// 프리뷰는 "지금 무엇을 어떻게 읽고 있는지" 확인하는 화면이라, 캐시된 값을 보여주면
+		// ROI를 조정해도 화면이 그대로여서 사용자가 판단할 수 없습니다.
+		// (toDataURL은 비용이 크므로 갱신 주기 자체는 그대로 제한합니다)
+		const wantDebugPreview = debugEnabled && nowForDecisions - lastDebugPreviewAtRef.current >= 900;
+
+		const reusableLevel = wantDebugPreview
+			? null
+			: getReusableLevelRead(levelCacheRef.current, levelFp, nowForDecisions);
 
 		// 경험치: 2.0의 비트맵(픽셀) 글꼴이라 확대/이진화 없이 원본 배율 그대로 템플릿 매칭합니다.
 		const canvasExpNative = drawRoiCanvas(video, rectExp, {
@@ -220,14 +243,34 @@ export function useOcrSampling(options: Options) {
 			outCanvas: getOrCreateCanvas(expNativeCanvasRef)
 		});
 		const expRes = recognizeExp(canvasExpNative);
-		const levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
+
+		let levelRes: { text: string; value: number | null };
+		// 캐시를 재사용하면 전처리/크롭 캔버스를 만들지 않으므로 프리뷰에 쓸 캔버스가 없습니다.
+		// (위에서 프리뷰 갱신 틱은 항상 다시 인식하도록 해두었기 때문에 문제되지 않습니다)
+		let canvasLevelCrop: HTMLCanvasElement | null = null;
+		if (reusableLevel) {
+			levelRes = { text: reusableLevel.text, value: reusableLevel.value };
+		} else {
+			// 레벨: 색 기반 전처리 → 숫자 bbox로 타이트 크롭
+			const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, {
+				scale: 4,
+				pad: 0,
+				outCanvas: getOrCreateCanvas(levelProcCanvasRef)
+			});
+			canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
+				margin: 3,
+				targetHeight: 72,
+				outPad: 6,
+				outCanvas: getOrCreateCanvas(levelCropCanvasRef)
+			});
+			levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
+			levelCacheRef.current = applyLevelRead(levelCacheRef.current, levelFp, levelRes, Date.now());
+		}
 
 		if (debugEnabled) {
 			try {
-				// toDataURL은 비용이 크므로(메모리/CPU) 과도한 갱신을 피합니다.
-				const now = Date.now();
-				if (now - lastDebugPreviewAtRef.current >= 900) {
-					lastDebugPreviewAtRef.current = now;
+				if (wantDebugPreview) {
+					lastDebugPreviewAtRef.current = nowForDecisions;
 					const canvasLevelRaw = drawRoiCanvas(video, rectLevel, {
 						scale: 4,
 						outCanvas: getOrCreateCanvas(levelRawCanvasRef)
@@ -237,7 +280,9 @@ export function useOcrSampling(options: Options) {
 						outCanvas: getOrCreateCanvas(expRawCanvasRef)
 					});
 					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
-					setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
+					// 프리뷰 갱신 틱에서는 항상 다시 인식하므로 여기서 크롭 캔버스는 반드시 존재합니다.
+					// (타입 차원에서는 nullable이라 방어만 해 둡니다)
+					if (canvasLevelCrop) setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
 					setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
 					// 매칭에 실제로 쓰인 "원본 배율 ROI"를 픽셀 구조 그대로 확대해서 보여줍니다.
 					setExpPreviewProc(
@@ -351,7 +396,9 @@ export function useOcrSampling(options: Options) {
 		lastValidSampleRef.current = null;
 		lastSampleTsRef.current = null;
 		setSampleTick(0);
-	}, []);
+		// 새 측정은 레벨도 처음부터 다시 읽습니다. (앞 측정의 판독을 물려받지 않도록)
+		clearLevelCache();
+	}, [clearLevelCache]);
 
 	const captureBaseline = useCallback(
 		async (args: { resetTotals: boolean }) => {
@@ -501,16 +548,21 @@ export function useOcrSampling(options: Options) {
 		};
 	}, [currentLevel, currentExpPercent, currentExpValue, cumExpPct, cumExpValue, sampleTick]);
 
-	const applySnapshot = useCallback((snap: OcrSamplingSnapshot) => {
-		setCurrentLevel(snap.currentLevel ?? null);
-		setCurrentExpPercent(snap.currentExpPercent ?? null);
-		setCurrentExpValue(snap.currentExpValue ?? null);
-		setCumExpPct(Number.isFinite(snap.cumExpPct) ? snap.cumExpPct : 0);
-		setCumExpValue(Number.isFinite(snap.cumExpValue) ? snap.cumExpValue : 0);
-		lastSampleTsRef.current = snap.lastSampleTs ?? null;
-		lastValidSampleRef.current = (snap.lastValidSample as OcrSample | null) ?? null;
-		setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
-	}, []);
+	const applySnapshot = useCallback(
+		(snap: OcrSamplingSnapshot) => {
+			setCurrentLevel(snap.currentLevel ?? null);
+			setCurrentExpPercent(snap.currentExpPercent ?? null);
+			setCurrentExpValue(snap.currentExpValue ?? null);
+			setCumExpPct(Number.isFinite(snap.cumExpPct) ? snap.cumExpPct : 0);
+			setCumExpValue(Number.isFinite(snap.cumExpValue) ? snap.cumExpValue : 0);
+			lastSampleTsRef.current = snap.lastSampleTs ?? null;
+			lastValidSampleRef.current = (snap.lastValidSample as OcrSample | null) ?? null;
+			setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
+			// 기록을 불러온 직후에는 화면이 어떤 상태인지 알 수 없으므로 레벨을 다시 읽습니다.
+			clearLevelCache();
+		},
+		[clearLevelCache]
+	);
 
 	return {
 		// 상태

@@ -33,8 +33,8 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Pixel font self-test
-        run: npm run test:pixel-font
+      - name: Self-tests (픽셀 글꼴 / 레벨 ROI 지문)
+        run: npm test
       - name: Build (static export)
         env:
           # 실제 배포와 같은 조건(basePath 포함)으로 빌드해서, 배포 직전에야 드러나는 문제를 미리 잡습니다.
