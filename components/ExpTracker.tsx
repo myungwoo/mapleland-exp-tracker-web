@@ -150,6 +150,13 @@ export default function ExpTracker() {
 		return p;
 	}, [ocr]);
 
+	// 왜: 샘플링 인터벌 콜백이 "시작 시점의 runSampleOnce"를 붙잡고 있으면,
+	// 측정 중에 바꾼 ROI / EXP% 검증 / 디버그 미리보기 설정이 재시작 전까지 반영되지 않습니다.
+	// (특히 디버그 미리보기는 측정 중 폴링이 꺼지므로, 켜도 영원히 갱신되지 않았습니다)
+	// 항상 최신 함수를 호출하도록 ref로 우회합니다.
+	const runSampleOnceRef = useRef(runSampleOnce);
+	useEffect(() => { runSampleOnceRef.current = runSampleOnce; }, [runSampleOnce]);
+
 	// 첫 진입 시: 설정을 열고 "게임 창 선택" 또는 온보딩을 유도합니다.
 	useEffect(() => {
 		if (autoInitDoneRef.current) return;
@@ -234,17 +241,22 @@ export default function ExpTracker() {
 		// 타이머 시작
 		stopwatch.start();
 
-		// 왜: setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어,
-		// 명시적으로 Promise를 소거(void)하고 실패는 조용히 무시합니다.
-		const runner = () => {
-			void runSampleOnce();
-		};
-
-		// 샘플링 인터벌 시작
-		sampler.start(intervalSec * 1000, runner);
-
+		// 샘플링 인터벌은 아래 effect가 소유합니다. (isSampling/intervalSec 변화에 따라 재시작)
 		setIsSampling(true);
-	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying, runSampleOnce]);
+	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, ocr, ensureCapturePlaying]);
+
+	// 샘플링 인터벌의 생명주기를 한곳에서 관리합니다.
+	// - 왜: 측정 중 "측정 주기"를 바꿔도 즉시 반영되어야 하고, 인터벌 clear 누락도 막을 수 있습니다.
+	// - setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어 void로 소거합니다.
+	useEffect(() => {
+		if (!isSampling) return;
+		sampler.start(intervalSec * 1000, () => {
+			void runSampleOnceRef.current();
+		});
+		return () => {
+			sampler.stop();
+		};
+	}, [isSampling, intervalSec, sampler]);
 
 	const pauseSampling = useCallback(async () => {
 		// 상태를 고정하기 위해 타이머를 먼저 멈춥니다.
