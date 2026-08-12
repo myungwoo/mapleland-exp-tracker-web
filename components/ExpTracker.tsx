@@ -10,6 +10,7 @@ import { paceForDuration } from "@/lib/pace";
 import { usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
+import AlertDialog from "@/components/AlertDialog";
 import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
@@ -72,6 +73,9 @@ export default function ExpTracker() {
 	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
 	const [roiSelectionMode, setRoiSelectionMode] = useState<null | "level" | "exp">(null);
 
+	// 브라우저 UI("공유 중지")나 창 종료로 캡처가 끊겼음을 사용자에게 알리기 위한 상태
+	const [captureEndedNotice, setCaptureEndedNotice] = useState(false);
+
 	// 화면/창 캡처 스트림 관리 (시작/중지 + 비디오 연결)
 	const { stream, startCapture, stopCapture, ensureCapturePlaying } = useDisplayCapture({
 		captureVideoRef,
@@ -84,7 +88,13 @@ export default function ExpTracker() {
 		// 유저 설정 없이 자동 전환:
 		// - 설정 모달(ROI 잡기) 중에는 프리뷰가 부드럽도록 30fps
 		// - 평소에는 게임 영향 최소화를 위해 3fps
-		captureFps: settingsOpen ? 30 : 3
+		captureFps: settingsOpen ? 30 : 3,
+		// 캡처가 우리 코드 밖에서 끊기면 측정을 자동으로 멈추고 알립니다.
+		// (그대로 두면 정지된 마지막 프레임을 계속 읽어 "측정되는 것처럼" 보입니다)
+		onStreamEnded: () => {
+			if (isSamplingRef.current) void pauseSamplingRef.current();
+			setCaptureEndedNotice(true);
+		}
 	});
 	const hasStream = !!stream;
 	// PiP 이벤트 핸들러에서 오래된 클로저(stale closure)를 피하기 위한 ref들
@@ -802,6 +812,12 @@ export default function ExpTracker() {
 				onClose={() => {
 					setOnboardingOpen(false);
 				}}
+			/>
+			<AlertDialog
+				open={captureEndedNotice}
+				title="화면 공유가 중지되었습니다"
+				message={"화면/창 공유가 끊겨서 측정을 일시정지했습니다.\n\n계속 측정하려면 설정에서 게임 창을 다시 선택해 주세요.\n(경과 시간과 누적 경험치는 그대로 유지됩니다)"}
+				onClose={() => setCaptureEndedNotice(false)}
 			/>
 		</div>
 	);
