@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import RoiOverlay, { RoiRect } from "./RoiOverlay";
+import RoiOverlay, { isRoiRectOrNull, RoiRect } from "./RoiOverlay";
 import { initOcr } from "@/lib/ocr";
 import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
 import type { NoticeHandler } from "@/lib/notice";
-import { usePersistentState } from "@/lib/persist";
+import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
 import AlertDialog from "@/components/AlertDialog";
@@ -33,6 +33,11 @@ import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
 
 type IntervalSec = 1 | 5 | 10;
 
+// 저장된 설정 검증기: UI에서 고를 수 있는 값만 복원합니다.
+// (모듈 스코프에 두는 이유 — 렌더마다 새 함수가 만들어지지 않게 하려고)
+const INTERVAL_SEC_VALIDATOR = oneOf<IntervalSec>([1, 5, 10]);
+const PACE_WINDOW_MIN_VALIDATOR = oneOf([1, 5, 10, 30, 60]);
+
 export default function ExpTracker() {
 	// OCR 샘플링에 사용하는 숨김(항상 마운트) 비디오
 	const captureVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -40,15 +45,15 @@ export default function ExpTracker() {
 	const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 	// 캡처 스트림은 별도 훅에서 관리합니다.
 
-	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec);
-	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
-	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
-	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60);
-	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true);
+	const [intervalSec, setIntervalSec] = usePersistentState<IntervalSec>("intervalSec", 1 as IntervalSec, INTERVAL_SEC_VALIDATOR);
+	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null, isRoiRectOrNull);
+	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null, isRoiRectOrNull);
+	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60, PACE_WINDOW_MIN_VALIDATOR);
+	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true, isBooleanValue);
 	// 차트의 인터랙티브 x축 범위(경과 ms). null이면 전체 범위.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
-	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
-	const [chartShowGrid, setChartShowGrid] = usePersistentState<boolean>("chartShowGrid", true);
+	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true, isBooleanValue);
+	const [chartShowGrid, setChartShowGrid] = usePersistentState<boolean>("chartShowGrid", true, isBooleanValue);
 	const expTable = EXP_TABLE;
 
 	const [isSampling, setIsSampling] = useState(false); // 측정 중
@@ -68,7 +73,7 @@ export default function ExpTracker() {
 	const summaryCaptureRef = useRef<HTMLDivElement | null>(null);
 	const autoInitDoneRef = useRef<boolean>(false);
 	// Onboarding
-	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false);
+	const [onboardingDone, setOnboardingDone] = usePersistentState<boolean>("onboardingDone", false, isBooleanValue);
 	const [onboardingOpen, setOnboardingOpen] = useState(false);
 	const [onboardingStep, setOnboardingStep] = useState<number>(0);
 	const [onboardingPausedForRoi, setOnboardingPausedForRoi] = useState<null | "level" | "exp">(null);
@@ -76,6 +81,7 @@ export default function ExpTracker() {
 
 	// 앱 내부 안내 모달. 네이티브 alert 대신 사용합니다.
 	// (alert은 메인 스레드를 블로킹해서 측정 타이머/샘플링에도 영향을 줍니다)
+	// 캡처 중단 안내도 이 모달을 씁니다.
 	const [notice, setNotice] = useState<{ title?: string; message: string } | null>(null);
 	const showNotice = useCallback<NoticeHandler>((message, title) => {
 		setNotice({ message, title });
@@ -94,6 +100,15 @@ export default function ExpTracker() {
 		// - 설정 모달(ROI 잡기) 중에는 프리뷰가 부드럽도록 30fps
 		// - 평소에는 게임 영향 최소화를 위해 3fps
 		captureFps: settingsOpen ? 30 : 3,
+		// 캡처가 우리 코드 밖에서 끊기면 측정을 자동으로 멈추고 알립니다.
+		// (그대로 두면 정지된 마지막 프레임을 계속 읽어 "측정되는 것처럼" 보입니다)
+		onStreamEnded: () => {
+			if (isSamplingRef.current) void pauseSamplingRef.current();
+			showNotice(
+				"화면/창 공유가 끊겨서 측정을 일시정지했습니다.\n\n계속 측정하려면 설정에서 게임 창을 다시 선택해 주세요.\n(경과 시간과 누적 경험치는 그대로 유지됩니다)",
+				"화면 공유가 중지되었습니다"
+			);
+		},
 		onNotice: showNotice
 	});
 	const hasStream = !!stream;
@@ -160,6 +175,13 @@ export default function ExpTracker() {
 		sampleInFlightRef.current = p;
 		return p;
 	}, [ocr]);
+
+	// 왜: 샘플링 인터벌 콜백이 "시작 시점의 runSampleOnce"를 붙잡고 있으면,
+	// 측정 중에 바꾼 ROI / EXP% 검증 / 디버그 미리보기 설정이 재시작 전까지 반영되지 않습니다.
+	// (특히 디버그 미리보기는 측정 중 폴링이 꺼지므로, 켜도 영원히 갱신되지 않았습니다)
+	// 항상 최신 함수를 호출하도록 ref로 우회합니다.
+	const runSampleOnceRef = useRef(runSampleOnce);
+	useEffect(() => { runSampleOnceRef.current = runSampleOnce; }, [runSampleOnce]);
 
 	// 첫 진입 시: 설정을 열고 "게임 창 선택" 또는 온보딩을 유도합니다.
 	useEffect(() => {
@@ -245,17 +267,22 @@ export default function ExpTracker() {
 		// 타이머 시작
 		stopwatch.start();
 
-		// 왜: setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어,
-		// 명시적으로 Promise를 소거(void)하고 실패는 조용히 무시합니다.
-		const runner = () => {
-			void runSampleOnce();
-		};
-
-		// 샘플링 인터벌 시작
-		sampler.start(intervalSec * 1000, runner);
-
+		// 샘플링 인터벌은 아래 effect가 소유합니다. (isSampling/intervalSec 변화에 따라 재시작)
 		setIsSampling(true);
-	}, [stream, intervalSec, roiLevel, roiExp, hasStarted, stopwatch, sampler, ocr, ensureCapturePlaying, runSampleOnce, showNotice]);
+	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, ocr, ensureCapturePlaying, showNotice]);
+
+	// 샘플링 인터벌의 생명주기를 한곳에서 관리합니다.
+	// - 왜: 측정 중 "측정 주기"를 바꿔도 즉시 반영되어야 하고, 인터벌 clear 누락도 막을 수 있습니다.
+	// - setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어 void로 소거합니다.
+	useEffect(() => {
+		if (!isSampling) return;
+		sampler.start(intervalSec * 1000, () => {
+			void runSampleOnceRef.current();
+		});
+		return () => {
+			sampler.stop();
+		};
+	}, [isSampling, intervalSec, sampler]);
 
 	const pauseSampling = useCallback(async () => {
 		// 상태를 고정하기 위해 타이머를 먼저 멈춥니다.
@@ -646,7 +673,11 @@ export default function ExpTracker() {
 					ocr.applySnapshot(snap.ocr);
 					// 제약/UX: 로드 시 자동 실행하지 않기 위해 항상 "일시정지"로 복원합니다.
 					stopwatch.applySnapshot({ ...snap.stopwatch, isRunning: false });
-					pace.applySnapshot(nextHasStarted ? snap.pace : { history: [] });
+					// handledTick으로 복원된 sampleTick을 함께 넘겨, 복원 직후 중복 포인트가 append되지 않게 합니다.
+					pace.applySnapshot(
+						nextHasStarted ? snap.pace : { history: [] },
+						nextHasStarted ? snap.ocr.sampleTick : 0
+					);
 				}}
 			/>
 

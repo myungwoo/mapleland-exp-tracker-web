@@ -206,7 +206,7 @@ npm run dev
 ```
 
 - Node.js 18+ 권장
-- 정적 배포: `npm run build && npm run export`
+- 정적 배포: `npm run build` (next.config.js의 `output: "export"` 설정으로 `out/`에 정적 파일이 생성됩니다)
 
 ### 비트맵(픽셀) 글꼴 인식기 다루기
 

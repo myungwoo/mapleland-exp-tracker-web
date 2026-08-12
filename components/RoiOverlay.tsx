@@ -5,6 +5,22 @@ import { cn } from "@/lib/cn";
 
 export type RoiRect = { x: number; y: number; w: number; h: number };
 
+/**
+ * 저장소에서 복원한 값이 ROI 사각형(또는 미설정)인지 검증합니다.
+ *
+ * 왜: ROI는 localStorage에 남는 값이라 손상되거나 예전 형식일 수 있습니다.
+ * 검증 없이 쓰면 NaN 좌표가 캔버스/OCR까지 흘러가 "인식이 안 되는" 형태로만 드러납니다.
+ */
+export function isRoiRectOrNull(parsed: unknown): parsed is RoiRect | null {
+	if (parsed === null) return true;
+	if (!parsed || typeof parsed !== "object") return false;
+	const r = parsed as Record<string, unknown>;
+	const isFiniteNumber = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+	if (![r.x, r.y, r.w, r.h].every(isFiniteNumber)) return false;
+	// 폭/높이가 0 이하인 ROI는 읽을 수 없습니다.
+	return (r.w as number) > 0 && (r.h as number) > 0;
+}
+
 type Props = {
 	videoRef: MutableRefObject<HTMLVideoElement | null>;
 	levelRect: RoiRect | null;
