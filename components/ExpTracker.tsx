@@ -634,7 +634,11 @@ export default function ExpTracker() {
 					ocr.applySnapshot(snap.ocr);
 					// 제약/UX: 로드 시 자동 실행하지 않기 위해 항상 "일시정지"로 복원합니다.
 					stopwatch.applySnapshot({ ...snap.stopwatch, isRunning: false });
-					pace.applySnapshot(nextHasStarted ? snap.pace : { history: [] });
+					// handledTick으로 복원된 sampleTick을 함께 넘겨, 복원 직후 중복 포인트가 append되지 않게 합니다.
+					pace.applySnapshot(
+						nextHasStarted ? snap.pace : { history: [] },
+						nextHasStarted ? snap.ocr.sampleTick : 0
+					);
 				}}
 			/>
 
