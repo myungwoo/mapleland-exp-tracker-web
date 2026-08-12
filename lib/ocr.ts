@@ -100,24 +100,36 @@ export function recognizeExp(nativeRoiCanvas: HTMLCanvasElement): ExpReadResult 
 	return { text: line.text, value: parsed?.value ?? null, percent: parsed?.percent ?? null };
 }
 
+export type RecognizeLevelOptions = {
+	/**
+	 * 호출자가 이미 `cropDigitBoundingBox`로 숫자 bbox 크롭 + 리스케일을 끝낸 캔버스를 넘기는 경우 true.
+	 *
+	 * 왜: 그런 캔버스를 여기서 또 크롭하면 (1) 매 샘플 새 캔버스를 할당하고,
+	 * (2) 이미 리스케일된 이미지를 최근접 보간으로 한 번 더 확대해 화질만 떨어집니다.
+	 */
+	alreadyCropped?: boolean;
+};
+
 /**
  * 레벨(LEVEL) 영역 인식.
  *
  * 호출이 겹쳐도 안전합니다. 내부적으로 워커 큐에 넣어 하나씩 실행합니다.
  */
 export function recognizeLevelDigitsWithText(
-	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement,
+	options: RecognizeLevelOptions = {}
 ): Promise<{ text: string; value: number | null }> {
-	return runOnWorkerExclusively(() => recognizeLevelDigitsWithTextExclusive(source));
+	return runOnWorkerExclusively(() => recognizeLevelDigitsWithTextExclusive(source, options));
 }
 
 async function recognizeLevelDigitsWithTextExclusive(
-	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement
+	source: HTMLCanvasElement | ImageBitmap | HTMLImageElement,
+	options: RecognizeLevelOptions
 ): Promise<{ text: string; value: number | null }> {
 	const worker = await initOcrDigits();
 	// 신호를 최대화하기 위해 가능한 한 타이트하게 크롭된 숫자를 대상으로 처리합니다.
 	const canvas = source instanceof HTMLCanvasElement ? source : await createCanvasFromSource(source);
-	const cropped = cropDigitBoundingBox(canvas, { margin: 2, targetHeight: 72 });
+	const cropped = options.alreadyCropped ? canvas : cropDigitBoundingBox(canvas, { margin: 2, targetHeight: 72 });
 	// 1차 시도: SINGLE_WORD + 높은 DPI
 	await worker.setParameters({
 		tessedit_pageseg_mode: PSM.SINGLE_WORD,
