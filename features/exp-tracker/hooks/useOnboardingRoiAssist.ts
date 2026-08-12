@@ -84,7 +84,7 @@ export function useOnboardingRoiAssist(options: Options) {
 						outPad: 6,
 						outCanvas: getOrCreateCanvas(levelCropCanvasRef)
 					});
-					const res = await recognizeLevelDigitsWithText(canvasLevelCrop);
+					const res = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
 					setOnboardingLevelText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
 					setLevelRoiShot(cRaw.toDataURL("image/png"));
