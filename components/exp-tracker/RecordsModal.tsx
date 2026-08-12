@@ -337,13 +337,11 @@ export default function RecordsModal(props: Props) {
 													{formatDateTime(r.createdAt)}
 													{" · "}
 													경과 {formatElapsed(elapsedMs)}
-													{couponCount > 0
-														? ` · 쿠폰 ${couponCount}개 (보정 ${formatElapsed(couponAdjustedElapsedMs(elapsedMs, couponCount))})`
-														: ""}
+													{couponCount > 0 ? ` · 경쿠 ${couponCount}개` : ""}
 													{" · "}
 													누적 {formatNumber(cumExpValue)}
 													{" · "}
-													{couponCount > 0 ? "페이스(쿠폰 보정)" : "페이스"}{" "}
+													페이스{" "}
 													{pace == null ? "-" : `${formatNumber(pace)} / ${props.paceWindowMin}분`}
 												</>
 											);
