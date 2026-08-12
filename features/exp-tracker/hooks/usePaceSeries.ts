@@ -110,10 +110,17 @@ export function usePaceSeries(options: Options) {
 		return { history };
 	}, [history]);
 
-	const applySnapshot = useCallback((snap: PaceSeriesSnapshot) => {
+	/**
+	 * 기록에서 히스토리를 복원합니다.
+	 *
+	 * `handledTick`에는 **같이 복원되는 OCR 스냅샷의 sampleTick**을 넘겨야 합니다.
+	 * 왜: 이 값을 0으로 두면 "복원된 sampleTick(예: 500) != handledTick(0)"이 되어,
+	 * 아래 append effect가 한 번 더 돌아 마지막 포인트와 사실상 같은 점이 차트에 중복 추가됩니다.
+	 */
+	const applySnapshot = useCallback((snap: PaceSeriesSnapshot, handledTick = 0) => {
 		const next = Array.isArray(snap.history) ? snap.history : [];
 		setHistory(next);
-		handledTickRef.current = 0;
+		handledTickRef.current = Number.isFinite(handledTick) ? handledTick : 0;
 	}, []);
 
 	return { history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot };

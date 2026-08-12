@@ -1,3 +1,4 @@
+import { formatElapsed } from "../format";
 import { pipMarkup, pipStyles } from "./template";
 import type { PipCallbacks, PipState } from "./types";
 
@@ -163,7 +164,7 @@ export class PipController {
 		}
 		// 타이머
 		const timer = qs("pip-timer");
-		if (timer) timer.textContent = this.formatElapsed(state.elapsedMs);
+		if (timer) timer.textContent = formatElapsed(state.elapsedMs);
 		// 다음 시간 라벨/시간
 		const nextLabel = qs("pip-next-label");
 		if (nextLabel)
@@ -187,13 +188,5 @@ export class PipController {
 			if (cur && !cur.closed) cur.close();
 		} catch {}
 		this.pipWindow = null;
-	}
-
-	private formatElapsed(ms: number): string {
-		const totalSec = Math.max(0, Math.floor(ms / 1000));
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 	}
 }

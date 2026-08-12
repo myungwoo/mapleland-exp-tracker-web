@@ -69,6 +69,25 @@ function filterTicksByPixelGap(ticksAsc: number[], scaleY: (v: number) => number
 	return uniqSorted(kept, eps);
 }
 
+/**
+ * ts 오름차순 배열에서 `targetTs`에 가장 가까운 점의 인덱스를 찾습니다.
+ *
+ * 왜 이진 탐색인가: 히스토리는 최대 12,000점까지 쌓이는데, 선형 탐색이면 mousemove 이벤트마다
+ * 12,000번을 훑습니다. x축이 단조 증가(경과 시간)라서 이진 탐색으로 같은 결과를 얻을 수 있습니다.
+ */
+function findNearestIndexByTs(series: Point[], targetTs: number): number {
+	let lo = 0;
+	let hi = series.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (series[mid].ts < targetTs) lo = mid + 1;
+		else hi = mid;
+	}
+	// lo = targetTs 이상인 첫 인덱스. 바로 앞 점과 비교해 더 가까운 쪽을 고릅니다.
+	const prev = Math.max(0, lo - 1);
+	return Math.abs(series[prev].ts - targetTs) <= Math.abs(series[lo].ts - targetTs) ? prev : lo;
+}
+
 function niceTicks(min: number, max: number, approxCount: number): number[] {
 	if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
 	if (approxCount <= 0) return [];
@@ -270,16 +289,9 @@ export default function PaceChart(props: Props) {
 			setBrush((b) => (b ? { ...b, endX: x } : null));
 		}
 		// x 기준으로 가장 가까운 점 찾기
-		let bestIdx = 0;
-		let bestDist = Infinity;
-		for (let i = 0; i < series.length; i++) {
-			const px = xScale(series[i].ts);
-			const dist = Math.abs(px - x);
-			if (dist < bestDist) {
-				bestDist = dist;
-				bestIdx = i;
-			}
-		}
+		// xScale은 ts에 대해 단조 증가하므로, 픽셀 좌표를 ts로 되돌린 뒤 이진 탐색해도 결과가 같습니다.
+		const targetTs = plotW > 0 ? minTs + ((x - margin.left) / plotW) * (maxTs - minTs) : minTs;
+		const bestIdx = findNearestIndexByTs(series, targetTs);
 		const px = xScale(series[bestIdx].ts);
 		const py = yScale(series[bestIdx].value);
 		setHover({ x: px, y: py, idx: bestIdx });

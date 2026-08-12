@@ -1,6 +1,8 @@
+import { fontFaceCss } from "@/lib/fonts";
+
 export function pipStyles(): string {
 	return `
-    @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
+    ${fontFaceCss({ absolute: true })}
     :root { color-scheme: dark; }
     html, body { margin: 0; padding: 0; background: rgba(10,10,10,0.92); color: #f7f7f7; font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
     /* 세로 공간이 남을 때 콘텐츠를 세로 중앙 정렬 */

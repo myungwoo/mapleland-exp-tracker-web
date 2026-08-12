@@ -1,7 +1,5 @@
-/* Pretendard 폰트 (CDN) */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
-/* D2Coding 폰트 (CDN) */
-@import url("https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.min.css");
+/* 폰트는 자체 호스팅합니다. @font-face 선언은 lib/fonts.ts가 만들고 app/layout.tsx가 주입합니다.
+   (CSS의 url()은 GitHub Pages basePath를 반영하지 못해서, JS에서 assetPath로 URL을 만들어야 합니다) */
 
 @tailwind base;
 @tailwind components;

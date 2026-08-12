@@ -107,7 +107,6 @@ export default function RecordsModal(props: Props) {
 				// 무시
 			}
 		})();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 		return () => {
 			cancelled = true;
 		};
