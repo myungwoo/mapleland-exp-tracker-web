@@ -99,6 +99,23 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 }
 
 /**
+ * 사용자가 "창 선택" 피커를 그냥 닫은 경우인지 판별합니다.
+ *
+ * 왜: 취소는 오류가 아닙니다. 그런데 취소도 예외로 올라오기 때문에,
+ * 구분하지 않으면 (1) 취소했는데 "권한이 필요합니다" 경고가 뜨고,
+ * (2) 제약 완화 재시도 로직이 피커를 한 번 더 띄웁니다.
+ *
+ * 브라우저별로 취소를 NotAllowedError 또는 AbortError로 알립니다.
+ * 단, OS/정책 차원의 차단(예: Chrome "Permission denied by system")은 안내가 필요하므로 취소로 보지 않습니다.
+ */
+function isCaptureCancelledByUser(err: unknown): boolean {
+	if (!(err instanceof Error)) return false;
+	if (err.name !== "NotAllowedError" && err.name !== "AbortError") return false;
+	if (/system|policy/i.test(err.message)) return false;
+	return true;
+}
+
+/**
  * 화면/창 캡처 스트림을 선택하고, 필요한 비디오 엘리먼트에 연결하는 훅입니다.
  *
  * - 왜: ExpTracker에 스트림/비디오 attach 관련 useEffect가 흩어져 있어, 읽기 어려워지고 수정 시 사이드이펙트가 커집니다.
@@ -183,7 +200,9 @@ export function useDisplayCapture(options: Options) {
 			let s: MediaStream;
 			try {
 				s = await navigator.mediaDevices.getDisplayMedia(constraintsWithFps);
-			} catch {
+			} catch (err) {
+				// 사용자가 취소한 경우에 재시도하면 피커가 두 번 뜨므로, 취소는 그대로 올려보냅니다.
+				if (isCaptureCancelledByUser(err)) throw err;
 				s = await navigator.mediaDevices.getDisplayMedia({
 					video: {
 						displaySurface: "window"
@@ -200,8 +219,10 @@ export function useDisplayCapture(options: Options) {
 			attachStream(previewVideoRef.current, settingsOpen ? s : null);
 			if (settingsOpen) void ensurePlaying(previewVideoRef.current);
 		} catch (err) {
+			// 취소는 정상적인 사용자 선택이므로 조용히 넘어갑니다. (설정 모달은 열린 채로 유지)
+			if (isCaptureCancelledByUser(err)) return;
 			console.error(err);
-			alert("화면/창 캡처 권한이 필요합니다.");
+			alert("화면/창 캡처를 시작할 수 없습니다.\n브라우저와 OS의 화면 기록 권한을 확인해 주세요.");
 		}
 	}, [attachStream, captureFps, captureVideoRef, ensurePlaying, previewVideoRef, settingsOpen, applyTrackFps]);
 
