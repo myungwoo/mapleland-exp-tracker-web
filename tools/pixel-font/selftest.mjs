@@ -23,7 +23,7 @@ const WHITE = [255, 255, 255];
 const GREEN = [153, 204, 51];
 
 /** advance(글리프 폭 + 여백)는 실제 글꼴 값에 맞춥니다. */
-const ADVANCE = { default: 6, "1": 6, "[": 4, "]": 4, ".": 4, "%": 8 };
+const ADVANCE = { default: 6, 1: 6, "[": 4, "]": 4, ".": 4, "%": 8 };
 
 function renderLine(text, scale, { pad = 4, withBar = false, withPanel = false } = {}) {
 	const glyphs = new Map(PIXEL_FONT_GLYPHS.map((g) => [g.char, g]));

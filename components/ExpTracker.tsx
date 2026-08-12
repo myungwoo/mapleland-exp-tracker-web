@@ -42,7 +42,10 @@ export default function ExpTracker() {
 	const [roiLevel, setRoiLevel] = usePersistentState<RoiRect | null>("roiLevel", null);
 	const [roiExp, setRoiExp] = usePersistentState<RoiRect | null>("roiExp", null);
 	const [paceWindowMin, setPaceWindowMin] = usePersistentState<number>("paceWindowMin", 60);
-	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>("expPercentValidationEnabled", true);
+	const [expPercentValidationEnabled, setExpPercentValidationEnabled] = usePersistentState<boolean>(
+		"expPercentValidationEnabled",
+		true
+	);
 	// 차트의 인터랙티브 x축 범위(경과 ms). null이면 전체 범위.
 	const [chartRangeMs, setChartRangeMs] = useState<[number, number] | null>(null);
 	const [chartShowAxisLabels, setChartShowAxisLabels] = usePersistentState<boolean>("chartShowAxisLabels", true);
@@ -88,7 +91,12 @@ export default function ExpTracker() {
 	});
 	const hasStream = !!stream;
 	// PiP 이벤트 핸들러에서 오래된 클로저(stale closure)를 피하기 위한 ref들
-	const { open: pipOpen, update: pipUpdate, close: pipClose, isOpen: pipIsOpen } = useDocumentPip({
+	const {
+		open: pipOpen,
+		update: pipUpdate,
+		close: pipClose,
+		isOpen: pipIsOpen
+	} = useDocumentPip({
 		onToggle: () => {
 			if (isSamplingRef.current) {
 				pauseSamplingRef.current();
@@ -113,11 +121,17 @@ export default function ExpTracker() {
 		"이 브라우저에서는 문서 PiP(Document Picture-in-Picture) 기능을 지원하지 않습니다. 이 기능을 사용하려면 최신 버전의 Chrome 또는 Edge 브라우저를 이용해 주세요.";
 	// PiP 이벤트 핸들러에서 오래된 클로저(stale closure)를 피하기 위한 sampling 상태(ref)
 	const isSamplingRef = useRef<boolean>(false);
-	useEffect(() => { isSamplingRef.current = isSampling; }, [isSampling]);
+	useEffect(() => {
+		isSamplingRef.current = isSampling;
+	}, [isSampling]);
 	const hasStartedRef = useRef<boolean>(false);
-	useEffect(() => { hasStartedRef.current = hasStarted; }, [hasStarted]);
+	useEffect(() => {
+		hasStartedRef.current = hasStarted;
+	}, [hasStarted]);
 	const hasStreamRef = useRef<boolean>(false);
-	useEffect(() => { hasStreamRef.current = hasStream; }, [hasStream]);
+	useEffect(() => {
+		hasStreamRef.current = hasStream;
+	}, [hasStream]);
 
 	useEffect(() => {
 		initOcr(); // 워커를 지연 로딩으로 예열
@@ -139,7 +153,8 @@ export default function ExpTracker() {
 	const runSampleOnce = useCallback(async () => {
 		// 이미 샘플링이 실행 중이면 같은 Promise를 재사용합니다. (예: pause 시 완료를 기다릴 수 있음)
 		if (sampleInFlightRef.current) return sampleInFlightRef.current;
-		const p = ocr.sampleOnceAndAccumulate()
+		const p = ocr
+			.sampleOnceAndAccumulate()
 			.catch(() => {
 				// OCR 실패는 흔할 수 있으므로 사용자 경험을 위해 조용히 무시합니다.
 			})
@@ -184,28 +199,34 @@ export default function ExpTracker() {
 	});
 
 	// 새 ROI가 설정되면(선택 완료) 선택 모드를 정리합니다.
-	const handleChangeLevel = useCallback((r: RoiRect | null) => {
-		setRoiLevel(r);
-		if (r && roiSelectionMode === "level") {
-			setActiveRoi(null);
-			setRoiSelectionMode(null);
-			if (onboardingPausedForRoi === "level") {
-				setOnboardingPausedForRoi(null);
-				setOnboardingOpen(true);
+	const handleChangeLevel = useCallback(
+		(r: RoiRect | null) => {
+			setRoiLevel(r);
+			if (r && roiSelectionMode === "level") {
+				setActiveRoi(null);
+				setRoiSelectionMode(null);
+				if (onboardingPausedForRoi === "level") {
+					setOnboardingPausedForRoi(null);
+					setOnboardingOpen(true);
+				}
 			}
-		}
-	}, [setRoiLevel, roiSelectionMode, onboardingPausedForRoi]);
-	const handleChangeExp = useCallback((r: RoiRect | null) => {
-		setRoiExp(r);
-		if (r && roiSelectionMode === "exp") {
-			setActiveRoi(null);
-			setRoiSelectionMode(null);
-			if (onboardingPausedForRoi === "exp") {
-				setOnboardingPausedForRoi(null);
-				setOnboardingOpen(true);
+		},
+		[setRoiLevel, roiSelectionMode, onboardingPausedForRoi]
+	);
+	const handleChangeExp = useCallback(
+		(r: RoiRect | null) => {
+			setRoiExp(r);
+			if (r && roiSelectionMode === "exp") {
+				setActiveRoi(null);
+				setRoiSelectionMode(null);
+				if (onboardingPausedForRoi === "exp") {
+					setOnboardingPausedForRoi(null);
+					setOnboardingOpen(true);
+				}
 			}
-		}
-	}, [setRoiExp, roiSelectionMode, onboardingPausedForRoi]);
+		},
+		[setRoiExp, roiSelectionMode, onboardingPausedForRoi]
+	);
 
 	const startOrResume = useCallback(async () => {
 		// 툴바 비활성 상태와 동일: 활성 캡처 스트림이 없으면 시작 불가
@@ -269,11 +290,17 @@ export default function ExpTracker() {
 
 	// PiP 핸들러에서 stale closure를 피하기 위해 최신 함수 ref를 유지합니다.
 	const startOrResumeRef = useRef(startOrResume);
-	useEffect(() => { startOrResumeRef.current = startOrResume; }, [startOrResume]);
+	useEffect(() => {
+		startOrResumeRef.current = startOrResume;
+	}, [startOrResume]);
 	const pauseSamplingRef = useRef(pauseSampling);
-	useEffect(() => { pauseSamplingRef.current = pauseSampling; }, [pauseSampling]);
+	useEffect(() => {
+		pauseSamplingRef.current = pauseSampling;
+	}, [pauseSampling]);
 	const resetSamplingRef = useRef(resetSampling);
-	useEffect(() => { resetSamplingRef.current = resetSampling; }, [resetSampling]);
+	useEffect(() => {
+		resetSamplingRef.current = resetSampling;
+	}, [resetSampling]);
 
 	// 외부(로컬) WebSocket 메시지로 측정 제어 (고급 사용자용, UI 비노출)
 	// - 기본값: 비활성 (성능 영향 없음)
@@ -326,7 +353,6 @@ export default function ExpTracker() {
 		url: externalWsConfig.url,
 		onEvent: onExternalWsEvent
 	});
-
 
 	const stats = useMemo(() => {
 		if (!hasStarted) return null;
@@ -478,7 +504,17 @@ export default function ExpTracker() {
 			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`
 		};
 		pipUpdate(state);
-	}, [isSampling, elapsedMs, stats, ocr.cumExpValue, ocr.cumExpPct, paceAtWindow.val, paceAtWindow.pct, paceWindowMin, pipUpdate]);
+	}, [
+		isSampling,
+		elapsedMs,
+		stats,
+		ocr.cumExpValue,
+		ocr.cumExpPct,
+		paceAtWindow.val,
+		paceAtWindow.pct,
+		paceWindowMin,
+		pipUpdate
+	]);
 
 	// 관련 값이 바뀔 때마다 PiP 내용을 동기화합니다.
 	useEffect(() => {
@@ -492,11 +528,7 @@ export default function ExpTracker() {
 
 	// P: PiP 열기 (입력 폼 포커스 시에는 무시)
 	useGlobalHotkey({
-		match: (e) =>
-			(e.code === "KeyP" || e.key === "p" || e.key === "P") &&
-			!e.metaKey &&
-			!e.ctrlKey &&
-			!e.altKey,
+		match: (e) => (e.code === "KeyP" || e.key === "p" || e.key === "P") && !e.metaKey && !e.ctrlKey && !e.altKey,
 		onTrigger: () => {
 			if (!pipSupported) return;
 			if (pipIsOpen()) return;
@@ -531,10 +563,16 @@ export default function ExpTracker() {
 				pipUnsupportedTooltip={pipUnsupportedTooltip}
 				onOpenSettings={() => setSettingsOpen(true)}
 				onOpenRecords={() => setRecordsOpen(true)}
-				onStart={() => { void startOrResume(); }}
-				onPause={() => { void pauseSampling(); }}
+				onStart={() => {
+					void startOrResume();
+				}}
+				onPause={() => {
+					void pauseSampling();
+				}}
 				onReset={resetSampling}
-				onOpenPip={() => { void openPip(); }}
+				onOpenPip={() => {
+					void openPip();
+				}}
 			/>
 
 			<TrackerSummary
@@ -638,18 +676,27 @@ export default function ExpTracker() {
 				}}
 			/>
 
-			<Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="설정" disableEscClose={activeRoi !== null || onboardingOpen}>
+			<Modal
+				open={settingsOpen}
+				onClose={() => setSettingsOpen(false)}
+				title="설정"
+				disableEscClose={activeRoi !== null || onboardingOpen}
+			>
 				<div className="flex items-center gap-2">
-					<button className="btn btn-primary" onClick={startCapture}>게임 창 선택</button>
+					<button className="btn btn-primary" onClick={startCapture}>
+						게임 창 선택
+					</button>
 					{stream ? (
-						<button className="btn" onClick={stopCapture}>공유 중지</button>
+						<button className="btn" onClick={stopCapture}>
+							공유 중지
+						</button>
 					) : null}
 					<div className="ml-auto flex items-center gap-2">
 						<label className="text-sm text-white/70">측정 주기</label>
 						<select
 							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
 							value={intervalSec}
-							onChange={e => setIntervalSec(parseInt(e.target.value, 10) as IntervalSec)}
+							onChange={(e) => setIntervalSec(parseInt(e.target.value, 10) as IntervalSec)}
 						>
 							<option value={1}>1초</option>
 							<option value={5}>5초</option>
@@ -659,7 +706,7 @@ export default function ExpTracker() {
 						<select
 							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
 							value={paceWindowMin}
-							onChange={e => setPaceWindowMin(parseInt(e.target.value, 10))}
+							onChange={(e) => setPaceWindowMin(parseInt(e.target.value, 10))}
 						>
 							<option value={1}>1분</option>
 							<option value={5}>5분</option>
@@ -721,7 +768,7 @@ export default function ExpTracker() {
 						경험치 ROI 설정
 					</button>
 					<label className="ml-auto flex items-center gap-2 text-sm">
-						<input type="checkbox" checked={debugEnabled} onChange={e => setDebugEnabled(e.target.checked)} />
+						<input type="checkbox" checked={debugEnabled} onChange={(e) => setDebugEnabled(e.target.checked)} />
 						디버그 미리보기
 					</label>
 				</div>
@@ -737,8 +784,10 @@ export default function ExpTracker() {
 						<div>
 							<div className="text-white/90">EXP% 검증 활성화</div>
 							<div className="text-white/60 text-xs">
-								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 OCR 결과를 검증해 이상치를 걸러냅니다.<br />
-								꺼짐: 레벨/퍼센트 오인식 때문에 측정이 막히는 경우를 완화하지만, 누적/페이스가 더 부정확해질 수 있습니다.
+								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 OCR 결과를 검증해 이상치를 걸러냅니다.
+								<br />
+								꺼짐: 레벨/퍼센트 오인식 때문에 측정이 막히는 경우를 완화하지만, 누적/페이스가 더 부정확해질 수
+								있습니다.
 							</div>
 						</div>
 					</label>
@@ -806,5 +855,3 @@ export default function ExpTracker() {
 		</div>
 	);
 }
-
-

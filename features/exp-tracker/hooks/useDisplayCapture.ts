@@ -45,7 +45,9 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 		const finish = (ok: boolean) => {
 			if (done) return;
 			done = true;
-			try { if (rafId) cancelAnimationFrame(rafId); } catch {}
+			try {
+				if (rafId) cancelAnimationFrame(rafId);
+			} catch {}
 			try {
 				const cancel = (anyVideo as any).cancelVideoFrameCallback as undefined | ((id: number) => void);
 				if (cancel && vfcId != null) cancel.call(video, vfcId);
@@ -57,7 +59,8 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 		const tid = window.setTimeout(() => finish(false), Math.max(0, timeoutMs));
 
 		// 최우선: requestVideoFrameCallback (크롬/엣지 등)
-		const rvfc = (anyVideo as any).requestVideoFrameCallback as undefined | ((cb: (now: number, meta: any) => void) => number);
+		const rvfc = (anyVideo as any).requestVideoFrameCallback as
+			undefined | ((cb: (now: number, meta: any) => void) => number);
 		if (rvfc) {
 			try {
 				vfcId = rvfc.call(video, (_now: number, meta: any) => {
@@ -109,13 +112,17 @@ export function useDisplayCapture(options: Options) {
 
 	const safePause = useCallback((video: HTMLVideoElement | null) => {
 		if (!video) return;
-		try { video.pause(); } catch {}
+		try {
+			video.pause();
+		} catch {}
 	}, []);
 
 	const ensurePlaying = useCallback(async (video: HTMLVideoElement | null) => {
 		if (!video) return;
 		// play()는 사용자 제스처 정책으로 실패할 수 있으니 조용히 무시합니다.
-		try { await video.play(); } catch {}
+		try {
+			await video.play();
+		} catch {}
 	}, []);
 
 	const attachStream = useCallback((video: HTMLVideoElement | null, s: MediaStream | null) => {
@@ -267,5 +274,3 @@ export function useDisplayCapture(options: Options) {
 
 	return { stream, startCapture, stopCapture, setStream, ensureCapturePlaying };
 }
-
-

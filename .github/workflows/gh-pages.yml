@@ -2,7 +2,7 @@ name: Deploy static Next.js to GitHub Pages
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +27,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Format check
+        run: npm run format:check
       - name: Build
         env:
           GITHUB_PAGES: "true"
@@ -47,5 +49,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-

@@ -9,7 +9,15 @@ import { couponAdjustedElapsedMs, normalizeCouponCount } from "@/lib/expCoupon";
 import { formatElapsed, formatNumber } from "@/lib/format";
 import { paceForDuration } from "@/lib/pace";
 import type { ExpTrackerSnapshot, RecordItem } from "@/features/exp-tracker/records/types";
-import { deleteRecord, deleteRecords, exportArchiveJson, exportRecordJson, importFromJsonText, listRecords, saveNewRecord } from "@/features/exp-tracker/records/store";
+import {
+	deleteRecord,
+	deleteRecords,
+	exportArchiveJson,
+	exportRecordJson,
+	importFromJsonText,
+	listRecords,
+	saveNewRecord
+} from "@/features/exp-tracker/records/store";
 
 type Props = {
 	open: boolean;
@@ -44,7 +52,12 @@ function formatDateTime(ts: number) {
  * - 경험치 쿠폰(1개=15분)을 사용한 기록은 "보정된 사냥 시간" 기준으로 환산합니다.
  *   (요약 카드의 "실제 사냥터 효율"과 같은 값)
  */
-function paceForWindowMin(cumExpValue: number, elapsedMs: number, couponCount: number, paceWindowMin: number): number | null {
+function paceForWindowMin(
+	cumExpValue: number,
+	elapsedMs: number,
+	couponCount: number,
+	paceWindowMin: number
+): number | null {
 	const ms = Math.max(0, elapsedMs);
 	if (ms < 1000) return null;
 	const { val } = paceForDuration({
@@ -65,11 +78,13 @@ export default function RecordsModal(props: Props) {
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const confirmActionRef = useRef<null | (() => void)>(null);
-	const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; danger?: boolean }>({
-		open: false,
-		title: "확인",
-		message: ""
-	});
+	const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; danger?: boolean }>(
+		{
+			open: false,
+			title: "확인",
+			message: ""
+		}
+	);
 	const [alertState, setAlertState] = useState<{ open: boolean; title: string; message: string }>({
 		open: false,
 		title: "알림",
@@ -89,27 +104,29 @@ export default function RecordsModal(props: Props) {
 				const next = await listRecords();
 				if (!cancelled) setRecords(next);
 			} catch {
-					// 무시
+				// 무시
 			}
 		})();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [props.open]);
 
 	const totalCount = records.length;
 	const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
 	const visibleRecords = useMemo(() => {
 		if (!normalizedSearch) return records;
-		return records.filter(r => (r.name ?? "").toLowerCase().includes(normalizedSearch));
+		return records.filter((r) => (r.name ?? "").toLowerCase().includes(normalizedSearch));
 	}, [records, normalizedSearch]);
 	const visibleCount = visibleRecords.length;
 	const selectedCount = selectedIds.size;
-	const allSelected = visibleCount > 0 && visibleRecords.every(r => selectedIds.has(r.id));
+	const allSelected = visibleCount > 0 && visibleRecords.every((r) => selectedIds.has(r.id));
 
 	const selectedRecords = useMemo(() => {
 		if (selectedIds.size === 0) return [];
 		const s = selectedIds;
-		return records.filter(r => s.has(r.id));
+		return records.filter((r) => s.has(r.id));
 	}, [records, selectedIds]);
 
 	const openAlert = (message: string, title = "알림") => {
@@ -135,321 +152,315 @@ export default function RecordsModal(props: Props) {
 
 	return (
 		<>
-		<Modal
-			open={props.open}
-			onClose={props.onClose}
-			title="기록"
-			variant="panel"
-			className="max-w-4xl"
-		>
-			<div className="space-y-3">
-				<div className="flex flex-col md:flex-row gap-2 md:items-center">
-					<input
-						className="flex-1 bg-white/10 text-white rounded px-3 py-2 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-						placeholder={defaultName}
-						value={name}
-						onChange={(e) => setName(e.target.value)}
-					/>
-					<button
-						className={cn("btn btn-primary", busy && "opacity-70 cursor-not-allowed")}
-						disabled={!!busy || !props.canSave}
-						onClick={() => {
-							if (!props.canSave) {
-										openAlert("측정을 일시정지한 상태에서만 기록을 저장할 수 있습니다.");
-								return;
-							}
-							void (async () => {
+			<Modal open={props.open} onClose={props.onClose} title="기록" variant="panel" className="max-w-4xl">
+				<div className="space-y-3">
+					<div className="flex flex-col md:flex-row gap-2 md:items-center">
+						<input
+							className="flex-1 bg-white/10 text-white rounded px-3 py-2 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
+							placeholder={defaultName}
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+						/>
+						<button
+							className={cn("btn btn-primary", busy && "opacity-70 cursor-not-allowed")}
+							disabled={!!busy || !props.canSave}
+							onClick={() => {
+								if (!props.canSave) {
+									openAlert("측정을 일시정지한 상태에서만 기록을 저장할 수 있습니다.");
+									return;
+								}
+								void (async () => {
+									try {
+										setBusy("save");
+										const snap = props.getSnapshot();
+										await saveNewRecord(name || defaultName, snap);
+										setName("");
+										await refresh();
+									} catch (e: any) {
+										openAlert(e?.message ?? "저장에 실패했습니다.");
+									} finally {
+										setBusy(null);
+									}
+								})();
+							}}
+						>
+							현재 상태 저장
+						</button>
+						<button
+							className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
+							disabled={!!busy}
+							onClick={() => fileInputRef.current?.click()}
+						>
+							파일에서 불러오기
+						</button>
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept="application/json,.json"
+							className="hidden"
+							onChange={(e) => {
+								const file = e.target.files?.[0];
+								if (!file) return;
+								const reader = new FileReader();
+								reader.onload = () => {
+									void (async () => {
+										try {
+											setBusy("import");
+											const text = String(reader.result ?? "");
+											const res = await importFromJsonText(text);
+											await refresh();
+											openAlert(`불러오기 완료: ${res.imported}개`);
+										} catch (err: any) {
+											openAlert(err?.message ?? "불러오기에 실패했습니다.");
+										} finally {
+											setBusy(null);
+											// 같은 파일을 다시 가져올 수 있도록 value를 초기화합니다.
+											if (fileInputRef.current) fileInputRef.current.value = "";
+										}
+									})();
+								};
+								reader.readAsText(file);
+							}}
+						/>
+					</div>
+
+					<div className="flex flex-col md:flex-row md:items-center gap-2">
+						<div className="flex-1 text-sm text-white/60">
+							총 {totalCount}개{normalizedSearch ? ` (검색 결과 ${visibleCount}개)` : ""} · 이전 기록을 불러오거나,
+							기록을 파일로 내보내기/불러오기 할 수 있습니다.
+						</div>
+						<div className="flex items-center gap-2">
+							<input
+								className="w-full md:w-64 bg-white/10 text-white rounded px-3 py-2 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
+								placeholder="기록 검색…"
+								value={search}
+								onChange={(e) => setSearch(e.target.value)}
+							/>
+							{search ? (
+								<button className="btn" onClick={() => setSearch("")}>
+									초기화
+								</button>
+							) : null}
+						</div>
+					</div>
+					<div className="text-xs text-white/50">
+						기록 저장/불러오기는 <span className="text-white/70">측정 일시정지 상태</span>에서만 가능합니다.
+					</div>
+
+					<div className="flex items-center gap-2 border border-white/10 rounded px-3 py-2 bg-white/5">
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={allSelected}
+								disabled={visibleCount === 0}
+								onChange={() => {
+									if (visibleCount === 0) return;
+									setSelectedIds((prev) => {
+										const next = new Set(prev);
+										if (visibleRecords.every((r) => next.has(r.id))) {
+											for (const r of visibleRecords) next.delete(r.id);
+											return next;
+										}
+										for (const r of visibleRecords) next.add(r.id);
+										return next;
+									});
+								}}
+							/>
+							전체 선택{normalizedSearch ? " (검색 결과)" : ""}
+						</label>
+						<div className="ml-auto text-sm text-white/70">
+							선택 {selectedCount}개 · 표시 {visibleCount}/{totalCount}
+						</div>
+						<button
+							className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
+							disabled={!!busy || selectedCount === 0}
+							onClick={() => {
 								try {
-									setBusy("save");
-									const snap = props.getSnapshot();
-									await saveNewRecord(name || defaultName, snap);
-									setName("");
-									await refresh();
-								} catch (e: any) {
-									openAlert(e?.message ?? "저장에 실패했습니다.");
+									setBusy("export-selected");
+									const json = exportArchiveJson(selectedRecords);
+									downloadTextFile(`mapleland-exp-tracker-selected-${Date.now()}.json`, json);
 								} finally {
 									setBusy(null);
 								}
-							})();
-						}}
-					>
-						현재 상태 저장
-					</button>
-					<button
-						className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
-						disabled={!!busy}
-						onClick={() => fileInputRef.current?.click()}
-					>
-						파일에서 불러오기
-					</button>
-					<input
-						ref={fileInputRef}
-						type="file"
-						accept="application/json,.json"
-						className="hidden"
-						onChange={(e) => {
-							const file = e.target.files?.[0];
-							if (!file) return;
-							const reader = new FileReader();
-							reader.onload = () => {
-								void (async () => {
-									try {
-										setBusy("import");
-										const text = String(reader.result ?? "");
-										const res = await importFromJsonText(text);
-										await refresh();
-										openAlert(`불러오기 완료: ${res.imported}개`);
-									} catch (err: any) {
-										openAlert(err?.message ?? "불러오기에 실패했습니다.");
-									} finally {
-										setBusy(null);
-										// 같은 파일을 다시 가져올 수 있도록 value를 초기화합니다.
-										if (fileInputRef.current) fileInputRef.current.value = "";
-									}
-								})();
-							};
-							reader.readAsText(file);
-						}}
-					/>
-				</div>
-
-				<div className="flex flex-col md:flex-row md:items-center gap-2">
-					<div className="flex-1 text-sm text-white/60">
-						총 {totalCount}개{normalizedSearch ? ` (검색 결과 ${visibleCount}개)` : ""} · 이전 기록을 불러오거나, 기록을 파일로 내보내기/불러오기 할 수 있습니다.
-					</div>
-					<div className="flex items-center gap-2">
-						<input
-							className="w-full md:w-64 bg-white/10 text-white rounded px-3 py-2 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-							placeholder="기록 검색…"
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-						/>
-						{search ? (
-							<button className="btn" onClick={() => setSearch("")}>
-								초기화
-							</button>
-						) : null}
-					</div>
-				</div>
-				<div className="text-xs text-white/50">
-					기록 저장/불러오기는 <span className="text-white/70">측정 일시정지 상태</span>에서만 가능합니다.
-				</div>
-
-				<div className="flex items-center gap-2 border border-white/10 rounded px-3 py-2 bg-white/5">
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={allSelected}
-							disabled={visibleCount === 0}
-							onChange={() => {
-								if (visibleCount === 0) return;
-								setSelectedIds(prev => {
-									const next = new Set(prev);
-									if (visibleRecords.every(r => next.has(r.id))) {
-										for (const r of visibleRecords) next.delete(r.id);
-										return next;
-									}
-									for (const r of visibleRecords) next.add(r.id);
-									return next;
-								});
 							}}
-						/>
-						전체 선택{normalizedSearch ? " (검색 결과)" : ""}
-					</label>
-					<div className="ml-auto text-sm text-white/70">
-						선택 {selectedCount}개 · 표시 {visibleCount}/{totalCount}
-					</div>
-					<button
-						className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
-						disabled={!!busy || selectedCount === 0}
-						onClick={() => {
-							try {
-								setBusy("export-selected");
-								const json = exportArchiveJson(selectedRecords);
-								downloadTextFile(`mapleland-exp-tracker-selected-${Date.now()}.json`, json);
-							} finally {
-								setBusy(null);
-							}
-						}}
-					>
-						선택 내보내기
-					</button>
-					<button
-						className={cn("btn btn-danger", busy && "opacity-70 cursor-not-allowed")}
-						disabled={!!busy || selectedCount === 0}
-						onClick={() => {
-							openConfirm({
-								title: "선택 삭제",
-								message: `선택한 기록 ${selectedCount}개를 삭제할까요?\n\n삭제한 기록은 되돌릴 수 없습니다.`,
-								danger: true,
-								onConfirm: () => {
-									void (async () => {
-										try {
-											setBusy("delete-selected");
-											await deleteRecords(Array.from(selectedIds));
-											setSelectedIds(new Set());
-											await refresh();
-										} finally {
-											setBusy(null);
-										}
-									})();
-								}
-							});
-						}}
-					>
-						선택 삭제
-					</button>
-				</div>
-
-				<div className="divide-y divide-white/10 border border-white/10 rounded overflow-hidden">
-					{records.length === 0 ? (
-						<div className="p-4 text-sm text-white/60">저장된 기록이 없습니다. “현재 상태 저장”으로 기록을 만들어보세요.</div>
-					) : visibleRecords.length === 0 ? (
-						<div className="p-4 text-sm text-white/60">검색 결과가 없습니다.</div>
-					) : (
-						visibleRecords.map((r) => (
-							<div key={r.id} className="p-3 flex flex-col md:flex-row md:items-center gap-3">
-								<label className="flex items-center gap-2 text-sm">
-									<input
-										type="checkbox"
-										checked={selectedIds.has(r.id)}
-										onChange={() => {
-											setSelectedIds(prev => {
-												const next = new Set(prev);
-												if (next.has(r.id)) next.delete(r.id);
-												else next.add(r.id);
-												return next;
-											});
-										}}
-									/>
-								</label>
-								<div className="flex-1 min-w-0">
-									<div className="font-medium truncate">{r.name}</div>
-									<div className="text-xs text-white/60">
-										{(() => {
-											const elapsedMs = Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number);
-											const cumExpValue = Number((r.snapshot.ocr?.cumExpValue ?? 0) as number);
-											// 경험치 쿠폰을 쓴 기록이면 보정된 사냥 시간 기준 페이스를 보여줍니다.
-											const couponCount = normalizeCouponCount(r.snapshot.runtime?.expCouponCount);
-											const pace = paceForWindowMin(cumExpValue, elapsedMs, couponCount, props.paceWindowMin);
-											return (
-												<>
-													{formatDateTime(r.createdAt)}
-													{" · "}
-													경과 {formatElapsed(elapsedMs)}
-													{couponCount > 0 ? ` · 경쿠 ${couponCount}개` : ""}
-													{" · "}
-													누적 {formatNumber(cumExpValue)}
-													{" · "}
-													페이스{" "}
-													{pace == null ? "-" : `${formatNumber(pace)} / ${props.paceWindowMin}분`}
-												</>
-											);
-										})()}
-									</div>
-								</div>
-								<div className="flex items-center gap-2">
-									<button
-										className={cn("btn btn-primary", busy && "opacity-70 cursor-not-allowed")}
-										disabled={!!busy || !props.canLoad}
-										onClick={() => {
-											if (!props.canLoad) {
-													openAlert("측정을 일시정지한 상태에서만 기록을 불러올 수 있습니다.");
-												return;
-											}
-											openConfirm({
-												title: "기록 불러오기",
-												message: `이 기록을 불러올까요?\n\n"${r.name}"`,
-												onConfirm: () => {
-													try {
-														setBusy("load");
-														props.applySnapshot(r.snapshot);
-														props.onClose();
-													} finally {
-														setBusy(null);
-													}
-												}
-											});
-										}}
-									>
-										불러오기
-									</button>
-									<button
-										className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
-										disabled={!!busy}
-										onClick={() => {
+						>
+							선택 내보내기
+						</button>
+						<button
+							className={cn("btn btn-danger", busy && "opacity-70 cursor-not-allowed")}
+							disabled={!!busy || selectedCount === 0}
+							onClick={() => {
+								openConfirm({
+									title: "선택 삭제",
+									message: `선택한 기록 ${selectedCount}개를 삭제할까요?\n\n삭제한 기록은 되돌릴 수 없습니다.`,
+									danger: true,
+									onConfirm: () => {
+										void (async () => {
 											try {
-												setBusy("export-one");
-												const json = exportRecordJson(r);
-												downloadTextFile(`mapleland-exp-tracker-record-${r.id}.json`, json);
+												setBusy("delete-selected");
+												await deleteRecords(Array.from(selectedIds));
+												setSelectedIds(new Set());
+												await refresh();
 											} finally {
 												setBusy(null);
 											}
-										}}
-									>
-										내보내기
-									</button>
-									<button
-										className={cn("btn btn-danger", busy && "opacity-70 cursor-not-allowed")}
-										disabled={!!busy}
-										onClick={() => {
-											openConfirm({
-												title: "삭제",
-												message: `삭제할까요?\n\n"${r.name}"\n\n삭제한 기록은 되돌릴 수 없습니다.`,
-												danger: true,
-												onConfirm: () => {
-													void (async () => {
+										})();
+									}
+								});
+							}}
+						>
+							선택 삭제
+						</button>
+					</div>
+
+					<div className="divide-y divide-white/10 border border-white/10 rounded overflow-hidden">
+						{records.length === 0 ? (
+							<div className="p-4 text-sm text-white/60">
+								저장된 기록이 없습니다. “현재 상태 저장”으로 기록을 만들어보세요.
+							</div>
+						) : visibleRecords.length === 0 ? (
+							<div className="p-4 text-sm text-white/60">검색 결과가 없습니다.</div>
+						) : (
+							visibleRecords.map((r) => (
+								<div key={r.id} className="p-3 flex flex-col md:flex-row md:items-center gap-3">
+									<label className="flex items-center gap-2 text-sm">
+										<input
+											type="checkbox"
+											checked={selectedIds.has(r.id)}
+											onChange={() => {
+												setSelectedIds((prev) => {
+													const next = new Set(prev);
+													if (next.has(r.id)) next.delete(r.id);
+													else next.add(r.id);
+													return next;
+												});
+											}}
+										/>
+									</label>
+									<div className="flex-1 min-w-0">
+										<div className="font-medium truncate">{r.name}</div>
+										<div className="text-xs text-white/60">
+											{(() => {
+												const elapsedMs = Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number);
+												const cumExpValue = Number((r.snapshot.ocr?.cumExpValue ?? 0) as number);
+												// 경험치 쿠폰을 쓴 기록이면 보정된 사냥 시간 기준 페이스를 보여줍니다.
+												const couponCount = normalizeCouponCount(r.snapshot.runtime?.expCouponCount);
+												const pace = paceForWindowMin(cumExpValue, elapsedMs, couponCount, props.paceWindowMin);
+												return (
+													<>
+														{formatDateTime(r.createdAt)}
+														{" · "}
+														경과 {formatElapsed(elapsedMs)}
+														{couponCount > 0 ? ` · 경쿠 ${couponCount}개` : ""}
+														{" · "}
+														누적 {formatNumber(cumExpValue)}
+														{" · "}
+														페이스 {pace == null ? "-" : `${formatNumber(pace)} / ${props.paceWindowMin}분`}
+													</>
+												);
+											})()}
+										</div>
+									</div>
+									<div className="flex items-center gap-2">
+										<button
+											className={cn("btn btn-primary", busy && "opacity-70 cursor-not-allowed")}
+											disabled={!!busy || !props.canLoad}
+											onClick={() => {
+												if (!props.canLoad) {
+													openAlert("측정을 일시정지한 상태에서만 기록을 불러올 수 있습니다.");
+													return;
+												}
+												openConfirm({
+													title: "기록 불러오기",
+													message: `이 기록을 불러올까요?\n\n"${r.name}"`,
+													onConfirm: () => {
 														try {
-															setBusy("delete");
-															await deleteRecord(r.id);
-															setSelectedIds(prev => {
-																const next = new Set(prev);
-																next.delete(r.id);
-																return next;
-															});
-															await refresh();
+															setBusy("load");
+															props.applySnapshot(r.snapshot);
+															props.onClose();
 														} finally {
 															setBusy(null);
 														}
-													})();
+													}
+												});
+											}}
+										>
+											불러오기
+										</button>
+										<button
+											className={cn("btn", busy && "opacity-70 cursor-not-allowed")}
+											disabled={!!busy}
+											onClick={() => {
+												try {
+													setBusy("export-one");
+													const json = exportRecordJson(r);
+													downloadTextFile(`mapleland-exp-tracker-record-${r.id}.json`, json);
+												} finally {
+													setBusy(null);
 												}
-											});
-										}}
-									>
-										삭제
-									</button>
+											}}
+										>
+											내보내기
+										</button>
+										<button
+											className={cn("btn btn-danger", busy && "opacity-70 cursor-not-allowed")}
+											disabled={!!busy}
+											onClick={() => {
+												openConfirm({
+													title: "삭제",
+													message: `삭제할까요?\n\n"${r.name}"\n\n삭제한 기록은 되돌릴 수 없습니다.`,
+													danger: true,
+													onConfirm: () => {
+														void (async () => {
+															try {
+																setBusy("delete");
+																await deleteRecord(r.id);
+																setSelectedIds((prev) => {
+																	const next = new Set(prev);
+																	next.delete(r.id);
+																	return next;
+																});
+																await refresh();
+															} finally {
+																setBusy(null);
+															}
+														})();
+													}
+												});
+											}}
+										>
+											삭제
+										</button>
+									</div>
 								</div>
-							</div>
-						))
-					)}
+							))
+						)}
+					</div>
 				</div>
-			</div>
-		</Modal>
+			</Modal>
 
-		<AlertDialog
-			open={alertState.open}
-			title={alertState.title}
-			message={alertState.message}
-			onClose={() => setAlertState((s) => ({ ...s, open: false }))}
-		/>
-		<ConfirmDialog
-			open={confirmState.open}
-			title={confirmState.title}
-			message={confirmState.message}
-			danger={confirmState.danger}
-			onCancel={() => {
-				confirmActionRef.current = null;
-				setConfirmState((s) => ({ ...s, open: false }));
-			}}
-			onConfirm={() => {
-				const fn = confirmActionRef.current;
-				confirmActionRef.current = null;
-				setConfirmState((s) => ({ ...s, open: false }));
-				fn?.();
-			}}
-		/>
+			<AlertDialog
+				open={alertState.open}
+				title={alertState.title}
+				message={alertState.message}
+				onClose={() => setAlertState((s) => ({ ...s, open: false }))}
+			/>
+			<ConfirmDialog
+				open={confirmState.open}
+				title={confirmState.title}
+				message={confirmState.message}
+				danger={confirmState.danger}
+				onCancel={() => {
+					confirmActionRef.current = null;
+					setConfirmState((s) => ({ ...s, open: false }));
+				}}
+				onConfirm={() => {
+					const fn = confirmActionRef.current;
+					confirmActionRef.current = null;
+					setConfirmState((s) => ({ ...s, open: false }));
+					fn?.();
+				}}
+			/>
 		</>
 	);
 }
-
-

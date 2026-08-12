@@ -48,20 +48,22 @@ export default function Modal(props: Props) {
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center">
 			<div className="absolute inset-0 bg-black/60" onClick={onClose} />
-			<div className={cn("relative z-10 card p-0 overflow-hidden flex flex-col min-h-0", containerClass, props.className)}>
+			<div
+				className={cn("relative z-10 card p-0 overflow-hidden flex flex-col min-h-0", containerClass, props.className)}
+			>
 				<div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
 					<h3 className="text-lg font-semibold">{props.title}</h3>
-					{showCloseButton ? <button className="btn" onClick={onClose}>닫기</button> : <div />}
+					{showCloseButton ? (
+						<button className="btn" onClick={onClose}>
+							닫기
+						</button>
+					) : (
+						<div />
+					)}
 				</div>
-				<div className={cn("flex-1 overflow-auto p-4 space-y-3 min-h-0", props.bodyClassName)}>
-					{props.children}
-				</div>
-				{props.footer ? (
-					<div className="px-4 py-3 border-t border-white/10">{props.footer}</div>
-				) : null}
+				<div className={cn("flex-1 overflow-auto p-4 space-y-3 min-h-0", props.bodyClassName)}>{props.children}</div>
+				{props.footer ? <div className="px-4 py-3 border-t border-white/10">{props.footer}</div> : null}
 			</div>
 		</div>
 	);
 }
-
-

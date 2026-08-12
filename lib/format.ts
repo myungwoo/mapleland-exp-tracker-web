@@ -3,7 +3,7 @@ export function formatElapsed(ms: number): string {
 	const h = Math.floor(totalSec / 3600);
 	const m = Math.floor((totalSec % 3600) / 60);
 	const s = totalSec % 60;
-	return [h, m, s].map(v => String(v).padStart(2, "0")).join(":");
+	return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 }
 
 export function formatNumber(n: number): string {
@@ -41,5 +41,3 @@ export function formatNumberCompact(n: number): string {
 	if (abs >= 1e4) return formatCompactUnit(abs / 1e4, "만");
 	return formatNumber(abs);
 }
-
-

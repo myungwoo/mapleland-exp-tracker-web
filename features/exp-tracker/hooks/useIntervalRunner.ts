@@ -15,14 +15,15 @@ export function useIntervalRunner() {
 		}
 	}, []);
 
-	const start = useCallback((intervalMs: number, run: () => void) => {
-		stop();
-		idRef.current = window.setInterval(run, intervalMs) as unknown as number;
-	}, [stop]);
+	const start = useCallback(
+		(intervalMs: number, run: () => void) => {
+			stop();
+			idRef.current = window.setInterval(run, intervalMs) as unknown as number;
+		},
+		[stop]
+	);
 
 	useEffect(() => stop, [stop]);
 
 	return { start, stop };
 }
-
-

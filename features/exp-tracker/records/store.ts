@@ -1,10 +1,15 @@
-import type {
-	RecordItem,
-	RecordsExportArchiveV1,
-	RecordsExportRecordV1
-} from "@/features/exp-tracker/records/types";
+import type { RecordItem, RecordsExportArchiveV1, RecordsExportRecordV1 } from "@/features/exp-tracker/records/types";
 import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
-import { idbDeleteRecord, idbDeleteRecords, idbGetAllRecordIds, idbListRecords, idbPutRecord, idbPutRecords, idbGetMeta, idbSetMeta } from "@/features/exp-tracker/records/idb";
+import {
+	idbDeleteRecord,
+	idbDeleteRecords,
+	idbGetAllRecordIds,
+	idbListRecords,
+	idbPutRecord,
+	idbPutRecords,
+	idbGetMeta,
+	idbSetMeta
+} from "@/features/exp-tracker/records/idb";
 
 const STORAGE_KEY = "mlExpTracker.records.v1";
 const META_MIGRATED_KEY = "migratedFromLocalStorageV1";
@@ -45,7 +50,9 @@ async function migrateFromLocalStorageIfNeeded(): Promise<void> {
 		const raw = window.localStorage.getItem(STORAGE_KEY);
 		if (!raw) {
 			// 마이그레이션할 게 없으면 플래그만 세팅해서 이후 체크 비용을 줄입니다.
-			try { await idbSetMeta(META_MIGRATED_KEY, true); } catch {}
+			try {
+				await idbSetMeta(META_MIGRATED_KEY, true);
+			} catch {}
 			return;
 		}
 		const parsed = safeParseJson<any>(raw);
@@ -70,8 +77,12 @@ async function migrateFromLocalStorageIfNeeded(): Promise<void> {
 			await idbPutRecords(migrated);
 		}
 		// localStorage는 더 이상 기록 저장소로 사용하지 않습니다.
-		try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
-		try { await idbSetMeta(META_MIGRATED_KEY, true); } catch {}
+		try {
+			window.localStorage.removeItem(STORAGE_KEY);
+		} catch {}
+		try {
+			await idbSetMeta(META_MIGRATED_KEY, true);
+		} catch {}
 	})();
 	return migrationPromise;
 }
@@ -197,5 +208,3 @@ export async function importFromJsonText(rawJson: string): Promise<{ imported: n
 
 	throw new Error("지원하지 않는 파일 형식입니다.");
 }
-
-

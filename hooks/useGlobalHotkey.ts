@@ -24,13 +24,7 @@ type GlobalHotkeyOptions = {
 };
 
 export function useGlobalHotkey(options: GlobalHotkeyOptions) {
-	const {
-		enabled = true,
-		match,
-		onTrigger,
-		ignoreWhenEditable = true,
-		preventDefault = true
-	} = options;
+	const { enabled = true, match, onTrigger, ignoreWhenEditable = true, preventDefault = true } = options;
 
 	useEffect(() => {
 		if (!enabled) return;
@@ -47,5 +41,3 @@ export function useGlobalHotkey(options: GlobalHotkeyOptions) {
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [enabled, match, onTrigger, ignoreWhenEditable, preventDefault]);
 }
-
-

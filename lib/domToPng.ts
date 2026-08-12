@@ -26,11 +26,9 @@ async function getCachedFontEmbedCss(node: HTMLElement): Promise<string> {
 		cachedFontEmbedCssPromise = getFontEmbedCSS(node, {
 			cacheBust: false,
 			// woff2만 선호(여러 포맷을 임베드하는 것 대비 큰 속도 이점)
-			...((
-				{
-					preferredFontFormat: "woff2"
-				} as any
-			))
+			...({
+				preferredFontFormat: "woff2"
+			} as any)
 		}).catch(() => "");
 	}
 	return await cachedFontEmbedCssPromise;
@@ -103,11 +101,9 @@ export async function elementToPngBlob(el: HTMLElement, opts?: Options): Promise
 			// 래스터 타깃이 선택된 pixelRatio와 일치하도록 보장합니다. (텍스트 선명도 개선)
 			canvasWidth: Math.ceil((w + guard) * pixelRatio),
 			canvasHeight: Math.ceil((h + guard) * pixelRatio),
-			...((
-				{
-					preferredFontFormat: "woff2"
-				} as any
-			)),
+			...({
+				preferredFontFormat: "woff2"
+			} as any),
 			fontEmbedCSS
 		});
 		if (!blob) throw new Error("PNG 생성에 실패했습니다.");
@@ -142,5 +138,3 @@ export async function copyElementAsPngToClipboard(el: HTMLElement, opts?: { scal
 	await copyPngBlobToClipboard(blob);
 	return blob;
 }
-
-

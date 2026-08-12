@@ -60,8 +60,12 @@ export default function TrackerSummary(props: Props) {
 					<div className="font-mono text-xl">{formatElapsed(props.elapsedMs)}</div>
 				</div>
 				<div>
-					<div className="opacity-70 text-sm">{props.stats ? `${props.stats.nextHours}시간 되는 시각` : "다음 시간 되는 시각"}</div>
-					<div className="font-mono text-xl" suppressHydrationWarning>{props.stats ? props.stats.nextAt.toLocaleTimeString() : "-"}</div>
+					<div className="opacity-70 text-sm">
+						{props.stats ? `${props.stats.nextHours}시간 되는 시각` : "다음 시간 되는 시각"}
+					</div>
+					<div className="font-mono text-xl" suppressHydrationWarning>
+						{props.stats ? props.stats.nextAt.toLocaleTimeString() : "-"}
+					</div>
 				</div>
 				<div>
 					<div className="opacity-70 text-sm">현재까지 획득한 경험치</div>
@@ -98,22 +102,33 @@ export default function TrackerSummary(props: Props) {
 								: "누적 경험치"}
 					</h3>
 					<div className="flex items-center gap-2">
-						<div className="text-xs text-white/60 hidden md:block">측정 주기 {props.intervalSec}초 · 가변 간격 대응</div>
+						<div className="text-xs text-white/60 hidden md:block">
+							측정 주기 {props.intervalSec}초 · 가변 간격 대응
+						</div>
 						<div className="inline-flex flex-nowrap whitespace-nowrap rounded overflow-hidden border border-white/10">
 							<button
-								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "pace" ? "bg-white/15" : "bg-white/5")}
+								className={cn(
+									"px-2 py-1 text-xs whitespace-nowrap leading-none",
+									props.chartMode === "pace" ? "bg-white/15" : "bg-white/5"
+								)}
 								onClick={() => props.onChartModeChange("pace")}
 							>
 								페이스
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "paceRecent" ? "bg-white/15" : "bg-white/5")}
+								className={cn(
+									"px-2 py-1 text-xs whitespace-nowrap leading-none",
+									props.chartMode === "paceRecent" ? "bg-white/15" : "bg-white/5"
+								)}
 								onClick={() => props.onChartModeChange("paceRecent")}
 							>
 								최근 30초
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartMode === "cumulative" ? "bg-white/15" : "bg-white/5")}
+								className={cn(
+									"px-2 py-1 text-xs whitespace-nowrap leading-none",
+									props.chartMode === "cumulative" ? "bg-white/15" : "bg-white/5"
+								)}
 								onClick={() => props.onChartModeChange("cumulative")}
 							>
 								누적
@@ -121,14 +136,20 @@ export default function TrackerSummary(props: Props) {
 						</div>
 						<div className="inline-flex flex-nowrap whitespace-nowrap rounded overflow-hidden border border-white/10">
 							<button
-								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartShowAxisLabels ? "bg-white/15" : "bg-white/5")}
+								className={cn(
+									"px-2 py-1 text-xs whitespace-nowrap leading-none",
+									props.chartShowAxisLabels ? "bg-white/15" : "bg-white/5"
+								)}
 								onClick={() => props.onChartShowAxisLabelsChange(!props.chartShowAxisLabels)}
 								title="축 라벨 표시"
 							>
 								축
 							</button>
 							<button
-								className={cn("px-2 py-1 text-xs whitespace-nowrap leading-none", props.chartShowGrid ? "bg-white/15" : "bg-white/5")}
+								className={cn(
+									"px-2 py-1 text-xs whitespace-nowrap leading-none",
+									props.chartShowGrid ? "bg-white/15" : "bg-white/5"
+								)}
 								onClick={() => props.onChartShowGridChange(!props.chartShowGrid)}
 								title="그리드 표시"
 							>
@@ -195,5 +216,3 @@ export default function TrackerSummary(props: Props) {
 		</div>
 	);
 }
-
-

@@ -17,15 +17,7 @@ type Props = {
 };
 
 export default function RoiOverlay(props: Props) {
-	const {
-		videoRef,
-		levelRect,
-		expRect,
-		onChangeLevel,
-		onChangeExp,
-		active,
-		onCancelSelection
-	} = props;
+	const { videoRef, levelRect, expRect, onChangeLevel, onChangeExp, active, onCancelSelection } = props;
 
 	const overlayRef = useRef<HTMLDivElement | null>(null);
 	const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -42,61 +34,73 @@ export default function RoiOverlay(props: Props) {
 		return null;
 	}, [active, dragRect, levelRect, expRect]);
 
-	const toVideoSpace = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
-		const video = videoRef.current;
-		const overlay = overlayRef.current;
-		if (!video || !overlay) return null;
-		if (video.videoWidth === 0 || video.videoHeight === 0) return null;
-		const container = overlay.getBoundingClientRect();
-		if (container.width <= 0 || container.height <= 0) return null;
-		const videoAR = video.videoWidth / video.videoHeight;
-		const containerAR = container.width / container.height;
-		let displayW: number, displayH: number, offX = 0, offY = 0;
-		if (videoAR > containerAR) {
-			// 왜: 비디오가 가로를 꽉 채우는 경우 상/하에 레터박스가 생깁니다.
-			displayW = container.width;
-			displayH = container.width / videoAR;
-			offY = (container.height - displayH) / 2;
-		} else {
-			// 왜: 비디오가 세로를 꽉 채우는 경우 좌/우에 레터박스가 생깁니다.
-			displayH = container.height;
-			displayW = container.height * videoAR;
-			offX = (container.width - displayW) / 2;
-		}
-		const relX = clientX - container.left;
-		const relY = clientY - container.top;
-		// 왜: 레터박스 영역(검은 여백)에서 드래그하면 ROI가 비디오 영역을 벗어나므로 무시합니다.
-		if (relX < offX || relY < offY || relX > offX + displayW || relY > offY + displayH) return null;
-		const scaleX = video.videoWidth / displayW;
-		const scaleY = video.videoHeight / displayH;
-		return {
-			x: Math.round((relX - offX) * scaleX),
-			y: Math.round((relY - offY) * scaleY)
-		};
-	}, [videoRef]);
+	const toVideoSpace = useCallback(
+		(clientX: number, clientY: number): { x: number; y: number } | null => {
+			const video = videoRef.current;
+			const overlay = overlayRef.current;
+			if (!video || !overlay) return null;
+			if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+			const container = overlay.getBoundingClientRect();
+			if (container.width <= 0 || container.height <= 0) return null;
+			const videoAR = video.videoWidth / video.videoHeight;
+			const containerAR = container.width / container.height;
+			let displayW: number,
+				displayH: number,
+				offX = 0,
+				offY = 0;
+			if (videoAR > containerAR) {
+				// 왜: 비디오가 가로를 꽉 채우는 경우 상/하에 레터박스가 생깁니다.
+				displayW = container.width;
+				displayH = container.width / videoAR;
+				offY = (container.height - displayH) / 2;
+			} else {
+				// 왜: 비디오가 세로를 꽉 채우는 경우 좌/우에 레터박스가 생깁니다.
+				displayH = container.height;
+				displayW = container.height * videoAR;
+				offX = (container.width - displayW) / 2;
+			}
+			const relX = clientX - container.left;
+			const relY = clientY - container.top;
+			// 왜: 레터박스 영역(검은 여백)에서 드래그하면 ROI가 비디오 영역을 벗어나므로 무시합니다.
+			if (relX < offX || relY < offY || relX > offX + displayW || relY > offY + displayH) return null;
+			const scaleX = video.videoWidth / displayW;
+			const scaleY = video.videoHeight / displayH;
+			return {
+				x: Math.round((relX - offX) * scaleX),
+				y: Math.round((relY - offY) * scaleY)
+			};
+		},
+		[videoRef]
+	);
 
-	const onMouseDown = useCallback((e: React.MouseEvent) => {
-		if (!active) return;
-		const p = toVideoSpace(e.clientX, e.clientY);
-		if (!p) {
-			// 왜: 레터박스(검은 여백)를 클릭하면 ROI 선택 모드를 취소하는 게 더 자연스럽습니다.
-			onCancelSelection?.();
-			return;
-		}
-		setDragStart(p);
-		setDragRect({ x: p.x, y: p.y, w: 1, h: 1 });
-	}, [toVideoSpace, active, onCancelSelection]);
+	const onMouseDown = useCallback(
+		(e: React.MouseEvent) => {
+			if (!active) return;
+			const p = toVideoSpace(e.clientX, e.clientY);
+			if (!p) {
+				// 왜: 레터박스(검은 여백)를 클릭하면 ROI 선택 모드를 취소하는 게 더 자연스럽습니다.
+				onCancelSelection?.();
+				return;
+			}
+			setDragStart(p);
+			setDragRect({ x: p.x, y: p.y, w: 1, h: 1 });
+		},
+		[toVideoSpace, active, onCancelSelection]
+	);
 
-	const onMouseMove = useCallback((e: React.MouseEvent) => {
-		if (!dragStart || !active) return;
-		const p = toVideoSpace(e.clientX, e.clientY);
-		if (!p) return;
-		const x = Math.min(dragStart.x, p.x);
-		const y = Math.min(dragStart.y, p.y);
-		const w = Math.abs(p.x - dragStart.x);
-		const h = Math.abs(p.y - dragStart.y);
-		setDragRect({ x, y, w, h });
-	}, [dragStart, toVideoSpace, active]);
+	const onMouseMove = useCallback(
+		(e: React.MouseEvent) => {
+			if (!dragStart || !active) return;
+			const p = toVideoSpace(e.clientX, e.clientY);
+			if (!p) return;
+			const x = Math.min(dragStart.x, p.x);
+			const y = Math.min(dragStart.y, p.y);
+			const w = Math.abs(p.x - dragStart.x);
+			const h = Math.abs(p.y - dragStart.y);
+			setDragRect({ x, y, w, h });
+		},
+		[dragStart, toVideoSpace, active]
+	);
 
 	const onMouseUp = useCallback(() => {
 		if (!active) return;
@@ -121,7 +125,7 @@ export default function RoiOverlay(props: Props) {
 	useEffect(() => {
 		const video = videoRef.current;
 		const overlay = overlayRef.current;
-		const update = () => setLayoutTick(t => t + 1);
+		const update = () => setLayoutTick((t) => t + 1);
 		if (video) {
 			try {
 				video.addEventListener("loadedmetadata", update);
@@ -152,7 +156,11 @@ export default function RoiOverlay(props: Props) {
 				}
 			}
 			if (ro) {
-				try { ro.disconnect(); } catch { /* 무시 */ }
+				try {
+					ro.disconnect();
+				} catch {
+					/* 무시 */
+				}
 			}
 			window.removeEventListener("resize", update);
 		};
@@ -177,7 +185,10 @@ export default function RoiOverlay(props: Props) {
 		if (container.width <= 0 || container.height <= 0) return { left: 0, top: 0, width: 0, height: 0 };
 		const videoAR = video.videoWidth / video.videoHeight;
 		const containerAR = container.width / container.height;
-		let displayW: number, displayH: number, offX = 0, offY = 0;
+		let displayW: number,
+			displayH: number,
+			offX = 0,
+			offY = 0;
 		if (videoAR > containerAR) {
 			displayW = container.width;
 			displayH = container.width / videoAR;
@@ -204,64 +215,61 @@ export default function RoiOverlay(props: Props) {
 	return (
 		<div
 			ref={overlayRef}
-			className={cn(
-				"absolute inset-0",
-				active ? "cursor-crosshair" : "cursor-default"
-			)}
+			className={cn("absolute inset-0", active ? "cursor-crosshair" : "cursor-default")}
 			onMouseDown={onMouseDown}
 			onMouseMove={onMouseMove}
 			onMouseUp={onMouseUp}
 		>
 			{/* ROI 선택 중에는 화면 전체를 어둡게 처리해 ROI를 강조합니다. */}
-			{props.active ? (() => {
-				// 뷰포트 크기와 hole 영역 사각형을 CSS 픽셀 기준으로 계산
-				const overlay = overlayRef.current;
-				const bounds = overlay ? overlay.getBoundingClientRect() : null;
-				const hole = highlightRect ? getCssRect(highlightRect) : null;
-				const vw = typeof window !== "undefined" ? window.innerWidth : 0;
-				const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-				if (!hole) {
-					// 아직 hole이 없으면 뷰포트 전체를 어둡게 처리
-					return (
-						<div className="fixed inset-0 bg-black/50 pointer-events-none z-[60]" />
-					);
-				}
-				// 컨테이너 오프셋을 더해 hole을 뷰포트 좌표로 변환
-				const containerLeft = bounds?.left ?? 0;
-				const containerTop = bounds?.top ?? 0;
-				const holeLeftVp = Math.max(0, containerLeft + hole.left);
-				const holeTopVp = Math.max(0, containerTop + hole.top);
-				const holeRightVp = holeLeftVp + hole.width;
-				const holeBottomVp = holeTopVp + hole.height;
-				const topH = Math.max(0, holeTopVp);
-				const leftW = Math.max(0, holeLeftVp);
-				const rightW = Math.max(0, vw - holeRightVp);
-				const bottomH = Math.max(0, vh - holeBottomVp);
-				return (
-					<>
-						{/* 상단 스트립 */}
-						<div
-							className="fixed left-0 top-0 bg-black/50 pointer-events-none z-[60]"
-							style={{ width: vw, height: topH }}
-						/>
-						{/* 좌측 스트립 */}
-						<div
-							className="fixed bg-black/50 pointer-events-none z-[60]"
-							style={{ left: 0, top: holeTopVp, width: leftW, height: hole.height }}
-						/>
-						{/* 우측 스트립 */}
-						<div
-							className="fixed bg-black/50 pointer-events-none z-[60]"
-							style={{ left: holeRightVp, top: holeTopVp, width: rightW, height: hole.height }}
-						/>
-						{/* 하단 스트립 */}
-						<div
-							className="fixed left-0 bg-black/50 pointer-events-none z-[60]"
-							style={{ top: holeBottomVp, width: vw, height: bottomH }}
-						/>
-					</>
-				);
-			})() : null}
+			{props.active
+				? (() => {
+						// 뷰포트 크기와 hole 영역 사각형을 CSS 픽셀 기준으로 계산
+						const overlay = overlayRef.current;
+						const bounds = overlay ? overlay.getBoundingClientRect() : null;
+						const hole = highlightRect ? getCssRect(highlightRect) : null;
+						const vw = typeof window !== "undefined" ? window.innerWidth : 0;
+						const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+						if (!hole) {
+							// 아직 hole이 없으면 뷰포트 전체를 어둡게 처리
+							return <div className="fixed inset-0 bg-black/50 pointer-events-none z-[60]" />;
+						}
+						// 컨테이너 오프셋을 더해 hole을 뷰포트 좌표로 변환
+						const containerLeft = bounds?.left ?? 0;
+						const containerTop = bounds?.top ?? 0;
+						const holeLeftVp = Math.max(0, containerLeft + hole.left);
+						const holeTopVp = Math.max(0, containerTop + hole.top);
+						const holeRightVp = holeLeftVp + hole.width;
+						const holeBottomVp = holeTopVp + hole.height;
+						const topH = Math.max(0, holeTopVp);
+						const leftW = Math.max(0, holeLeftVp);
+						const rightW = Math.max(0, vw - holeRightVp);
+						const bottomH = Math.max(0, vh - holeBottomVp);
+						return (
+							<>
+								{/* 상단 스트립 */}
+								<div
+									className="fixed left-0 top-0 bg-black/50 pointer-events-none z-[60]"
+									style={{ width: vw, height: topH }}
+								/>
+								{/* 좌측 스트립 */}
+								<div
+									className="fixed bg-black/50 pointer-events-none z-[60]"
+									style={{ left: 0, top: holeTopVp, width: leftW, height: hole.height }}
+								/>
+								{/* 우측 스트립 */}
+								<div
+									className="fixed bg-black/50 pointer-events-none z-[60]"
+									style={{ left: holeRightVp, top: holeTopVp, width: rightW, height: hole.height }}
+								/>
+								{/* 하단 스트립 */}
+								<div
+									className="fixed left-0 bg-black/50 pointer-events-none z-[60]"
+									style={{ top: holeBottomVp, width: vw, height: bottomH }}
+								/>
+							</>
+						);
+					})()
+				: null}
 
 			{previewRects.map((p, idx) => {
 				const css = getCssRect(p.rect);
@@ -281,5 +289,3 @@ export default function RoiOverlay(props: Props) {
 		</div>
 	);
 }
-
-

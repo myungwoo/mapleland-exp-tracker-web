@@ -49,20 +49,23 @@ export function useStopwatch() {
 		}, 1000) as unknown as number;
 	}, [baseElapsedMs, stopClock]);
 
-	const startFromElapsed = useCallback((nextElapsedMs: number) => {
-		// applySnapshot 같은 “외부 복원” 시, state 업데이트 타이밍(stale closure)을 피하기 위해
-		// baseElapsedMs를 인자로 직접 받는 별도 API를 둡니다.
-		stopClock();
-		setIsRunning(true);
-		setBaseElapsedMs(nextElapsedMs);
-		startAtRef.current = Date.now() - nextElapsedMs;
-		setElapsedMs(nextElapsedMs);
-		clockRef.current = window.setInterval(() => {
-			const startAt = startAtRef.current;
-			if (startAt == null) return;
-			setElapsedMs(Date.now() - startAt);
-		}, 1000) as unknown as number;
-	}, [stopClock]);
+	const startFromElapsed = useCallback(
+		(nextElapsedMs: number) => {
+			// applySnapshot 같은 “외부 복원” 시, state 업데이트 타이밍(stale closure)을 피하기 위해
+			// baseElapsedMs를 인자로 직접 받는 별도 API를 둡니다.
+			stopClock();
+			setIsRunning(true);
+			setBaseElapsedMs(nextElapsedMs);
+			startAtRef.current = Date.now() - nextElapsedMs;
+			setElapsedMs(nextElapsedMs);
+			clockRef.current = window.setInterval(() => {
+				const startAt = startAtRef.current;
+				if (startAt == null) return;
+				setElapsedMs(Date.now() - startAt);
+			}, 1000) as unknown as number;
+		},
+		[stopClock]
+	);
 
 	const pause = useCallback(() => {
 		stopClock();
@@ -90,18 +93,19 @@ export function useStopwatch() {
 		};
 	}, [baseElapsedMs, isRunning]);
 
-	const applySnapshot = useCallback((snap: StopwatchSnapshot) => {
-		stopClock();
-		startAtRef.current = null;
-		setElapsedMs(snap.elapsedMs);
-		setBaseElapsedMs(snap.baseElapsedMs);
-		setIsRunning(snap.isRunning);
-		if (snap.isRunning) {
-			startFromElapsed(snap.elapsedMs);
-		}
-	}, [startFromElapsed, stopClock]);
+	const applySnapshot = useCallback(
+		(snap: StopwatchSnapshot) => {
+			stopClock();
+			startAtRef.current = null;
+			setElapsedMs(snap.elapsedMs);
+			setBaseElapsedMs(snap.baseElapsedMs);
+			setIsRunning(snap.isRunning);
+			if (snap.isRunning) {
+				startFromElapsed(snap.elapsedMs);
+			}
+		},
+		[startFromElapsed, stopClock]
+	);
 
 	return { elapsedMs, baseElapsedMs, isRunning, start, startFromElapsed, pause, reset, getSnapshot, applySnapshot };
 }
-
-

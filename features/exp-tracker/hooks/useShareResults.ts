@@ -164,7 +164,10 @@ export function useShareResults(inputs: Inputs): Result {
 			bumpImageCopiedLabel();
 		} catch (e) {
 			const anyErr = e as any;
-			if (anyErr?.code === "DOCUMENT_NOT_FOCUSED" || (e instanceof Error && e.message.includes("Document is not focused"))) {
+			if (
+				anyErr?.code === "DOCUMENT_NOT_FOCUSED" ||
+				(e instanceof Error && e.message.includes("Document is not focused"))
+			) {
 				// 포커스 복귀 시 자동 재시도를 위해 저장합니다.
 				if (blob) pendingImageBlobRef.current = blob;
 				bumpImageNeedFocusLabel();
@@ -183,5 +186,3 @@ export function useShareResults(inputs: Inputs): Result {
 
 	return { isCopyingImage, textButtonLabel, imageButtonLabel, copyText, copyImage };
 }
-
-

@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+.turbo
+.claude
+coverage
+
+# 자동 생성/바이너리
+package-lock.json
+*.woff2
+*.png
+*.ico
+*.tsbuildinfo
+
+# 서드파티 라이선스 전문은 원문 그대로 유지합니다.
+public/fonts/LICENSE-*.txt

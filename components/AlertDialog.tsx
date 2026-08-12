@@ -47,5 +47,3 @@ export default function AlertDialog(props: Props) {
 		</Modal>
 	);
 }
-
-

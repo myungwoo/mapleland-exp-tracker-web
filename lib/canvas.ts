@@ -73,12 +73,15 @@ export function preprocessLevelCanvas(
 
 	const img = ctx.getImageData(0, 0, outW, outH);
 	const data = img.data;
-	const w = outW, h = outH;
+	const w = outW,
+		h = outH;
 	const mask = new Uint8Array(w * h);
 
 	// 1) 색 기반 마스크: "밝고(밝기 높음) 채도 낮은(거의 흰색)" 픽셀만 전경으로 간주
 	for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-		const r = data[i], g = data[i + 1], b = data[i + 2];
+		const r = data[i],
+			g = data[i + 1],
+			b = data[i + 2];
 		const maxc = Math.max(r, g, b);
 		const minc = Math.min(r, g, b);
 		const mean = (r + g + b) / 3;
@@ -98,9 +101,13 @@ export function preprocessLevelCanvas(
 			let on = 0;
 			for (let dy = -1; dy <= 1; dy++) {
 				for (let dx = -1; dx <= 1; dx++) {
-					const nx = x + dx, ny = y + dy;
+					const nx = x + dx,
+						ny = y + dy;
 					if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-					if (mask[ny * w + nx]) { on = 1; break; }
+					if (mask[ny * w + nx]) {
+						on = 1;
+						break;
+					}
 				}
 				if (on) break;
 			}
@@ -120,7 +127,8 @@ export function preprocessLevelCanvas(
 			for (let dy = -1; dy <= 1; dy++) {
 				for (let dx = -1; dx <= 1; dx++) {
 					if (dx === 0 && dy === 0) continue;
-					const nx = x + dx, ny = y + dy;
+					const nx = x + dx,
+						ny = y + dy;
 					if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
 					if (dil[ny * w + nx]) neighbors++;
 				}
@@ -178,7 +186,10 @@ export function cropDigitBoundingBox(
 	const ctx = source.getContext("2d")!;
 	const img = ctx.getImageData(0, 0, w, h);
 	const data = img.data;
-	let minX = w, minY = h, maxX = -1, maxY = -1;
+	let minX = w,
+		minY = h,
+		maxX = -1,
+		maxY = -1;
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 4;

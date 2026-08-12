@@ -22,7 +22,8 @@ export default function TrackerToolbar(props: Props) {
 			<button className="btn" onClick={props.onOpenSettings}>
 				<svg className="w-4 h-4 mr-2 shrink-0" viewBox="0 0 300 300" fill="currentColor" aria-hidden="true">
 					<g transform="translate(0.000000,300.000000) scale(0.100000,-0.100000)" fill="currentColor" stroke="none">
-						<path d="M1308 2940 c-69 -11 -103 -28 -145 -72 -40 -42 -53 -75 -64 -167 -14
+						<path
+							d="M1308 2940 c-69 -11 -103 -28 -145 -72 -40 -42 -53 -75 -64 -167 -14
 -126 -73 -211 -178 -259 -84 -39 -174 -37 -265 6 -84 40 -157 43 -224 11 -48
 -24 -116 -107 -189 -234 -92 -158 -119 -247 -99 -325 16 -60 40 -90 118 -148
 108 -81 155 -192 130 -309 -17 -80 -57 -140 -132 -196 -91 -68 -114 -103 -118
@@ -37,14 +38,24 @@ export default function TrackerToolbar(props: Props) {
 -1053 c93 -46 159 -112 205 -206 36 -72 37 -79 37 -181 0 -102 -1 -109 -37
 -181 -48 -97 -113 -162 -208 -208 -72 -34 -80 -36 -181 -36 -101 0 -108 1
 -180 37 -95 47 -160 112 -207 207 -36 72 -37 79 -37 181 0 102 1 109 37 181
-43 87 107 155 188 198 79 42 120 51 223 47 77 -3 97 -8 160 -39z"/>
+43 87 107 155 188 198 79 42 120 51 223 47 77 -3 97 -8 160 -39z"
+						/>
 					</g>
 				</svg>
 				설정
 			</button>
 
 			<button className="btn" onClick={props.onOpenRecords}>
-				<svg className="w-4 h-4 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+				<svg
+					className="w-4 h-4 mr-2 shrink-0"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.8"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					aria-hidden="true"
+				>
 					<path d="M6 2h9l3 3v17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
 					<path d="M9 9h6" />
 					<path d="M9 13h6" />
@@ -106,5 +117,3 @@ export default function TrackerToolbar(props: Props) {
 		</div>
 	);
 }
-
-

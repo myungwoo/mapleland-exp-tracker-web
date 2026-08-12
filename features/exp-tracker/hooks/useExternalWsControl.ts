@@ -5,11 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 export type ExternalWsStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
 export type ExternalWsEvent =
-	| { type: "toggle" }
-	| { type: "start" }
-	| { type: "pause" }
-	| { type: "reset" }
-	| { type: "raw"; data: unknown };
+	{ type: "toggle" } | { type: "start" } | { type: "pause" } | { type: "reset" } | { type: "raw"; data: unknown };
 
 function parseEvent(raw: string): ExternalWsEvent {
 	const trimmed = raw.trim();
@@ -172,5 +168,3 @@ export function useExternalWsControl(args: {
 
 	return { status, connectedUrl, lastError, lastMessageAt, readyState, reconnect: connect, disconnect: closeWs };
 }
-
-

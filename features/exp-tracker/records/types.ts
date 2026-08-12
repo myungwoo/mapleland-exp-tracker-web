@@ -48,5 +48,3 @@ export type RecordsExportArchiveV1 = {
 	exportedAt: number;
 	records: RecordItem[];
 };
-
-

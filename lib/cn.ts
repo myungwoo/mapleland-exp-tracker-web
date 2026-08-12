@@ -9,5 +9,3 @@ export type ClassNameValue = Parameters<typeof classNames>[number];
 export function cn(...values: ClassNameValue[]): string {
 	return classNames(...values);
 }
-
-

@@ -13,5 +13,3 @@ export function isEditableElement(target: EventTarget | null): boolean {
 
 	return false;
 }
-
-

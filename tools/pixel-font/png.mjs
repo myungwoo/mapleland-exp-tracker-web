@@ -59,7 +59,10 @@ export function readPng(path) {
 		for (let x = 0; x < width; x++) {
 			const i = y * stride + x * channels;
 			const o = (y * width + x) * 4;
-			let r, g, b, a = 255;
+			let r,
+				g,
+				b,
+				a = 255;
 			if (colorType === 0) r = g = b = lines[i];
 			else if (colorType === 2) [r, g, b] = [lines[i], lines[i + 1], lines[i + 2]];
 			else if (colorType === 3) {

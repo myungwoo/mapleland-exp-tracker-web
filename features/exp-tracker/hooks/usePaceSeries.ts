@@ -40,7 +40,7 @@ export function usePaceSeries(options: Options) {
 		const ts = lastSampleTsRef.current;
 		if (ts == null) return;
 
-		setHistory(prev => {
+		setHistory((prev) => {
 			let next = prev.length
 				? [...prev, { ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs }]
 				: [{ ts, cumExp: cumExpValue, cumPct: cumExpPct, elapsedAtMs: elapsedMs }];
@@ -82,7 +82,7 @@ export function usePaceSeries(options: Options) {
 	}, [history, paceWindowMin]);
 
 	const cumulativeSeries = useMemo((): PaceSeriesPoint[] => {
-		return history.map(h => ({ ts: h.elapsedAtMs, value: h.cumExp }));
+		return history.map((h) => ({ ts: h.elapsedAtMs, value: h.cumExp }));
 	}, [history]);
 
 	const recentPaceSeries = useMemo((): PaceSeriesPoint[] => {
@@ -118,5 +118,3 @@ export function usePaceSeries(options: Options) {
 
 	return { history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot };
 }
-
-

@@ -13,7 +13,9 @@
 	color-scheme: dark;
 }
 
-html, body, :root {
+html,
+body,
+:root {
 	height: 100%;
 }
 
@@ -58,4 +60,3 @@ option {
 	color: rgb(var(--foreground));
 	background-color: rgb(var(--background));
 }
-
