@@ -66,10 +66,15 @@ export function useOnboardingRoiAssist(options: Options) {
 	useEffect(() => {
 		if (!onboardingOpen) return;
 		let timer: number | null = null;
+		// 왜: OCR이 1초보다 오래 걸리면 tick이 큐에 쌓여서, 온보딩을 닫은 뒤에도 밀린 작업이 계속 돕니다.
+		// 진행 중이면 이번 tick은 그냥 건너뜁니다. (미리보기는 다음 tick에 갱신되면 충분)
+		let inFlight = false;
 
 		const tick = async () => {
 			const video = captureVideoRef.current;
 			if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
+			if (inFlight) return;
+			inFlight = true;
 			try {
 				if (roiLevel) {
 					const rect = toVideoSpaceRect(video, roiLevel);
@@ -104,6 +109,8 @@ export function useOnboardingRoiAssist(options: Options) {
 				}
 			} catch {
 				// OCR 실패는 흔하므로 조용히 무시합니다.
+			} finally {
+				inFlight = false;
 			}
 		};
 

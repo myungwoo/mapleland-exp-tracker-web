@@ -8,6 +8,21 @@ import type { RoiRect } from "@/components/RoiOverlay";
  *   (픽셀 글꼴은 확대/이진화하는 순간 글리프가 뭉개져서 오히려 인식이 나빠집니다)
  */
 
+/**
+ * 픽셀을 되읽을 캔버스의 2D 컨텍스트를 얻습니다.
+ *
+ * 왜 여기서 `willReadFrequently`를 주는가:
+ * 컨텍스트 속성은 **처음 getContext를 호출할 때만** 반영됩니다. 이후 호출은 다른 속성을 넘겨도
+ * 이미 만들어진 컨텍스트를 그대로 돌려줍니다. 이 파일의 함수들이 캔버스를 먼저 만들기 때문에,
+ * 여기서 플래그를 주지 않으면 나중에 `lib/pixelOcr.ts`가 `willReadFrequently: true`로 요청해도 무시됩니다.
+ * 그러면 1초마다 도는 getImageData가 GPU→CPU readback 경로를 타서 느려집니다.
+ */
+export function get2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+	const ctx = canvas.getContext("2d", { willReadFrequently: true });
+	if (!ctx) throw new Error("2D 캔버스 컨텍스트를 만들 수 없습니다.");
+	return ctx;
+}
+
 export function toVideoSpaceRect(video: HTMLVideoElement, rect: RoiRect): RoiRect {
 	// 현재 ROI는 RoiOverlay에서 "비디오 픽셀 좌표"로 저장됩니다.
 	// 이 함수는 과거 호환/안전성 목적(정수화)로만 유지합니다.
@@ -33,7 +48,7 @@ export function drawRoiCanvas(
 	const canvas = options.outCanvas ?? document.createElement("canvas");
 	canvas.width = outW;
 	canvas.height = outH;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = get2dContext(canvas);
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
 	return canvas;
@@ -64,7 +79,7 @@ export function preprocessLevelCanvas(
 	const canvas = options.outCanvas ?? document.createElement("canvas");
 	canvas.width = outW;
 	canvas.height = outH;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = get2dContext(canvas);
 	ctx.imageSmoothingEnabled = false;
 	// 가장자리 아티팩트를 줄이기 위해 흰 배경을 먼저 채웁니다.
 	ctx.fillStyle = "#ffffff";
@@ -158,7 +173,7 @@ export function upscaleCanvasNearest(
 	const out = outCanvas ?? document.createElement("canvas");
 	out.width = Math.max(1, source.width * f);
 	out.height = Math.max(1, source.height * f);
-	const ctx = out.getContext("2d")!;
+	const ctx = get2dContext(out);
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(source, 0, 0, out.width, out.height);
 	return out;
@@ -175,7 +190,7 @@ export function cropDigitBoundingBox(
 	const outPad = options.outPad ?? 4; // 잘라낸 숫자 주변에 흰 테두리 추가
 	const w = source.width;
 	const h = source.height;
-	const ctx = source.getContext("2d")!;
+	const ctx = get2dContext(source);
 	const img = ctx.getImageData(0, 0, w, h);
 	const data = img.data;
 	let minX = w, minY = h, maxX = -1, maxY = -1;
@@ -209,7 +224,7 @@ export function cropDigitBoundingBox(
 	const out = options.outCanvas ?? document.createElement("canvas");
 	out.width = outW + outPad * 2;
 	out.height = outH + outPad * 2;
-	const octx = out.getContext("2d")!;
+	const octx = get2dContext(out);
 	octx.imageSmoothingEnabled = false;
 	// 흰색 패딩
 	octx.fillStyle = "#ffffff";
