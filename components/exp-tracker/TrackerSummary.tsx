@@ -1,6 +1,7 @@
 "use client";
 
 import PaceChart from "@/components/PaceChart";
+import ExpCouponPanel from "@/components/exp-tracker/ExpCouponPanel";
 import { cn } from "@/lib/cn";
 import { formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
 import type { Ref } from "react";
@@ -22,6 +23,13 @@ type Props = {
 	paceWindowMin: number;
 	paceAtWindow: { pct: number; val: number };
 	intervalSec: number;
+
+	/** 경험치 쿠폰 보정: 측정이 끝난 뒤에만 노출합니다. (PiP에는 없음) */
+	showCouponPanel: boolean;
+	expCouponCount: number;
+	onExpCouponCountChange: (n: number) => void;
+	couponAdjustedElapsedMs: number;
+	couponAdjustedPace: { pct: number; val: number };
 
 	chartMode: ChartMode;
 	onChartModeChange: (m: ChartMode) => void;
@@ -68,6 +76,17 @@ export default function TrackerSummary(props: Props) {
 					</div>
 				</div>
 			</div>
+
+			{props.showCouponPanel ? (
+				<ExpCouponPanel
+					count={props.expCouponCount}
+					onCountChange={props.onExpCouponCountChange}
+					elapsedMs={props.elapsedMs}
+					adjustedElapsedMs={props.couponAdjustedElapsedMs}
+					paceWindowMin={props.paceWindowMin}
+					adjustedPace={props.couponAdjustedPace}
+				/>
+			) : null}
 
 			<div className="mt-2">
 				<div className="flex items-baseline justify-between">

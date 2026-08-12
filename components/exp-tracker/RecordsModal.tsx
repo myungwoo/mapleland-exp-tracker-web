@@ -5,7 +5,9 @@ import AlertDialog from "@/components/AlertDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Modal from "@/components/Modal";
 import { cn } from "@/lib/cn";
+import { couponAdjustedElapsedMs, normalizeCouponCount } from "@/lib/expCoupon";
 import { formatElapsed, formatNumber } from "@/lib/format";
+import { paceForDuration } from "@/lib/pace";
 import type { ExpTrackerSnapshot, RecordItem } from "@/features/exp-tracker/records/types";
 import { deleteRecord, deleteRecords, exportArchiveJson, exportRecordJson, importFromJsonText, listRecords, saveNewRecord } from "@/features/exp-tracker/records/store";
 
@@ -37,12 +39,21 @@ function formatDateTime(ts: number) {
 	}
 }
 
-function paceForWindowMin(cumExpValue: number, elapsedMs: number, paceWindowMin: number): number | null {
+/**
+ * 기록 목록에 보여줄 페이스입니다.
+ * - 경험치 쿠폰(1개=15분)을 사용한 기록은 "보정된 사냥 시간" 기준으로 환산합니다.
+ *   (요약 카드의 "실제 사냥터 효율"과 같은 값)
+ */
+function paceForWindowMin(cumExpValue: number, elapsedMs: number, couponCount: number, paceWindowMin: number): number | null {
 	const ms = Math.max(0, elapsedMs);
 	if (ms < 1000) return null;
-	const factor = (Math.max(1, paceWindowMin) * 60 * 1000) / ms;
-	const v = cumExpValue * factor;
-	return Number.isFinite(v) ? v : null;
+	const { val } = paceForDuration({
+		cumExpValue,
+		cumExpPct: 0,
+		durationMs: couponAdjustedElapsedMs(ms, couponCount),
+		windowMin: Math.max(1, paceWindowMin)
+	});
+	return Number.isFinite(val) ? val : null;
 }
 
 export default function RecordsModal(props: Props) {
@@ -315,20 +326,27 @@ export default function RecordsModal(props: Props) {
 								<div className="flex-1 min-w-0">
 									<div className="font-medium truncate">{r.name}</div>
 									<div className="text-xs text-white/60">
-										{formatDateTime(r.createdAt)}
-										{" · "}
-										경과 {formatElapsed(r.snapshot.stopwatch?.elapsedMs ?? 0)}
-										{" · "}
-										누적 {formatNumber((r.snapshot.ocr?.cumExpValue ?? 0) as number)}
-										{" · "}
-										페이스{" "}
 										{(() => {
-											const p = paceForWindowMin(
-												Number((r.snapshot.ocr?.cumExpValue ?? 0) as number),
-												Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number),
-												props.paceWindowMin
+											const elapsedMs = Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number);
+											const cumExpValue = Number((r.snapshot.ocr?.cumExpValue ?? 0) as number);
+											// 경험치 쿠폰을 쓴 기록이면 보정된 사냥 시간 기준 페이스를 보여줍니다.
+											const couponCount = normalizeCouponCount(r.snapshot.runtime?.expCouponCount);
+											const pace = paceForWindowMin(cumExpValue, elapsedMs, couponCount, props.paceWindowMin);
+											return (
+												<>
+													{formatDateTime(r.createdAt)}
+													{" · "}
+													경과 {formatElapsed(elapsedMs)}
+													{couponCount > 0
+														? ` · 쿠폰 ${couponCount}개 (보정 ${formatElapsed(couponAdjustedElapsedMs(elapsedMs, couponCount))})`
+														: ""}
+													{" · "}
+													누적 {formatNumber(cumExpValue)}
+													{" · "}
+													{couponCount > 0 ? "페이스(쿠폰 보정)" : "페이스"}{" "}
+													{pace == null ? "-" : `${formatNumber(pace)} / ${props.paceWindowMin}분`}
+												</>
 											);
-											return p == null ? "-" : `${formatNumber(p)} / ${props.paceWindowMin}분`;
 										})()}
 									</div>
 								</div>

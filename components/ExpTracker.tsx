@@ -5,6 +5,8 @@ import RoiOverlay, { RoiRect } from "./RoiOverlay";
 import { initOcr } from "@/lib/ocr";
 import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
+import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
+import { paceForDuration } from "@/lib/pace";
 import { usePersistentState } from "@/lib/persist";
 import { cn } from "@/lib/cn";
 import Modal from "./Modal";
@@ -49,6 +51,8 @@ export default function ExpTracker() {
 
 	const [isSampling, setIsSampling] = useState(false); // 측정 중
 	const [hasStarted, setHasStarted] = useState(false);
+	// 측정 종료 후 입력하는 경험치 쿠폰(경쿠) 사용 개수. 측정별 값이라 초기화 시 함께 비웁니다.
+	const [expCouponCount, setExpCouponCount] = useState(0);
 	const [isPreparingSample, setIsPreparingSample] = useState(false);
 	const stopwatch = useStopwatch();
 	const sampler = useIntervalRunner();
@@ -260,6 +264,7 @@ export default function ExpTracker() {
 		setIsSampling(false);
 		setIsPreparingSample(false);
 		setHasStarted(false);
+		setExpCouponCount(0);
 	}, [hasStarted, sampler, stopwatch, ocr]);
 
 	// PiP 핸들러에서 stale closure를 피하기 위해 최신 함수 ref를 유지합니다.
@@ -344,14 +349,29 @@ export default function ExpTracker() {
 	// 경과 시간을 이용해 누적값을 비례 환산합니다:
 	// paceAtWindow(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
 	const paceAtWindow = useMemo(() => {
-		const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-		if (elapsedSec <= 0) return { pct: 0, val: 0 };
-		const factor = (paceWindowMin * 60) / elapsedSec;
-		return {
-			pct: ocr.cumExpPct * factor,
-			val: ocr.cumExpValue * factor
-		};
+		return paceForDuration({
+			cumExpValue: ocr.cumExpValue,
+			cumExpPct: ocr.cumExpPct,
+			durationMs: elapsedMs,
+			windowMin: paceWindowMin
+		});
 	}, [elapsedMs, paceWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
+
+	// 경험치 쿠폰 보정: 쿠폰 1개(15분)만큼 사냥 시간이 늘어난 것으로 보고 페이스를 다시 계산합니다.
+	// (웹 페이지 전용 — PiP에는 노출하지 않습니다.)
+	const couponAdjustedElapsed = useMemo(
+		() => couponAdjustedElapsedMs(elapsedMs, expCouponCount),
+		[elapsedMs, expCouponCount]
+	);
+	const couponPace = useMemo(() => {
+		return couponAdjustedPace({
+			cumExpValue: ocr.cumExpValue,
+			cumExpPct: ocr.cumExpPct,
+			elapsedMs,
+			couponCount: expCouponCount,
+			windowMin: paceWindowMin
+		});
+	}, [elapsedMs, expCouponCount, paceWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
 
 	// Space: 측정 시작/일시정지 토글 (입력 폼 포커스 시에는 무시)
 	useGlobalHotkey({
@@ -526,6 +546,11 @@ export default function ExpTracker() {
 				paceWindowMin={paceWindowMin}
 				paceAtWindow={paceAtWindow}
 				intervalSec={intervalSec}
+				showCouponPanel={hasStarted && !isSampling}
+				expCouponCount={expCouponCount}
+				onExpCouponCountChange={(n) => setExpCouponCount(normalizeCouponCount(n))}
+				couponAdjustedElapsedMs={couponAdjustedElapsed}
+				couponAdjustedPace={couponPace}
 				chartMode={chartMode}
 				onChartModeChange={setChartMode}
 				chartRangeMs={chartRangeMs}
@@ -549,6 +574,10 @@ export default function ExpTracker() {
 					paceWindowMin={paceWindowMin}
 					paceValue={paceAtWindow.val}
 					pacePct={paceAtWindow.pct}
+					expCouponCount={expCouponCount}
+					couponAdjustedElapsedMs={couponAdjustedElapsed}
+					couponPaceValue={couponPace.val}
+					couponPacePct={couponPace.pct}
 					getSummaryEl={() => summaryCaptureRef.current}
 				/>
 			</div>
@@ -579,7 +608,8 @@ export default function ExpTracker() {
 						version: 3,
 						capturedAt: Date.now(),
 						runtime: {
-							hasStarted
+							hasStarted,
+							expCouponCount
 						},
 						stopwatch: stopwatch.getSnapshot(),
 						ocr: ocr.getSnapshot(),
@@ -600,6 +630,7 @@ export default function ExpTracker() {
 					// 핵심 계산 상태
 					const nextHasStarted = !!snap.runtime.hasStarted;
 					setHasStarted(nextHasStarted);
+					setExpCouponCount(nextHasStarted ? normalizeCouponCount(snap.runtime.expCouponCount) : 0);
 					ocr.applySnapshot(snap.ocr);
 					// 제약/UX: 로드 시 자동 실행하지 않기 위해 항상 "일시정지"로 복원합니다.
 					stopwatch.applySnapshot({ ...snap.stopwatch, isRunning: false });

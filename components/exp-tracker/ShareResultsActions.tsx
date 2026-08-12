@@ -12,6 +12,10 @@ type Props = {
 	paceWindowMin: number;
 	paceValue: number;
 	pacePct: number;
+	expCouponCount: number;
+	couponAdjustedElapsedMs: number;
+	couponPaceValue: number;
+	couponPacePct: number;
 	getSummaryEl: () => HTMLElement | null;
 };
 
@@ -33,6 +37,10 @@ export default function ShareResultsActions(props: Props) {
 		paceWindowMin: props.paceWindowMin,
 		paceValue: props.paceValue,
 		pacePct: props.pacePct,
+		expCouponCount: props.expCouponCount,
+		couponAdjustedElapsedMs: props.couponAdjustedElapsedMs,
+		couponPaceValue: props.couponPaceValue,
+		couponPacePct: props.couponPacePct,
 		getSummaryEl: props.getSummaryEl
 	});
 

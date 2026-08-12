@@ -12,6 +12,11 @@ type Inputs = {
 	paceWindowMin: number;
 	paceValue: number;
 	pacePct: number;
+	/** 경험치 쿠폰 보정(0개면 공유 텍스트에서 생략) */
+	expCouponCount: number;
+	couponAdjustedElapsedMs: number;
+	couponPaceValue: number;
+	couponPacePct: number;
 	getSummaryEl: () => HTMLElement | null;
 };
 
@@ -96,12 +101,19 @@ export function useShareResults(inputs: Inputs): Result {
 		const elapsed = formatElapsed(inputs.elapsedMs);
 		const gained = `${formatNumber(inputs.cumExpValue)} EXP [${inputs.cumExpPct.toFixed(2)}%]`;
 		const paceText = `${formatNumber(inputs.paceValue)} EXP [${inputs.pacePct.toFixed(2)}%] / ${inputs.paceWindowMin}분`;
+		// 경험치 쿠폰을 쓴 경우에만 "쿠폰 보정" 두 줄을 덧붙입니다.
+		const couponText =
+			inputs.expCouponCount > 0
+				? `🎟️ 경험치 쿠폰: ${inputs.expCouponCount}개 (보정 사냥 시간 ${formatElapsed(inputs.couponAdjustedElapsedMs)})\n` +
+					`🎯 실제 사냥터 효율: ${formatNumber(inputs.couponPaceValue)} EXP [${inputs.couponPacePct.toFixed(2)}%] / ${inputs.paceWindowMin}분\n`
+				: "";
 		const text =
 			`🍁 메이플랜드 경험치 측정 결과 공유합니다!\n\n` +
 			`⏱️ 경과 시간: ${elapsed}\n` +
 			`✨ 획득 EXP: ${gained}\n` +
-			`🏃 페이스: ${paceText}\n\n` +
-			`📌 메이플랜드 경험치 측정기`;
+			`🏃 페이스: ${paceText}\n` +
+			couponText +
+			`\n📌 메이플랜드 경험치 측정기`;
 
 		try {
 			if (navigator.clipboard?.writeText) {

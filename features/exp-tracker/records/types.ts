@@ -12,6 +12,8 @@ export type ExpTrackerSnapshotV3 = {
 	capturedAt: number; // epoch ms
 	runtime: {
 		hasStarted: boolean;
+		/** 측정 종료 후 입력한 경험치 쿠폰 사용 개수 (구버전 기록에는 없어 0으로 복원됩니다) */
+		expCouponCount: number;
 	};
 	stopwatch: StopwatchSnapshot;
 	ocr: OcrSamplingSnapshot;

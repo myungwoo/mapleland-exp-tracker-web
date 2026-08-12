@@ -1,3 +1,4 @@
+import { normalizeCouponCount } from "@/lib/expCoupon";
 import type { ExpTrackerSnapshot } from "@/features/exp-tracker/records/types";
 import type { OcrSamplingSnapshot } from "@/features/exp-tracker/hooks/useOcrSampling";
 import type { PaceSeriesSnapshot } from "@/features/exp-tracker/hooks/usePaceSeries";
@@ -31,7 +32,7 @@ export function makeEmptySnapshot(nowMs = Date.now()): ExpTrackerSnapshot {
 	return {
 		version: 3,
 		capturedAt: nowMs,
-		runtime: { hasStarted: false },
+		runtime: { hasStarted: false, expCouponCount: 0 },
 		stopwatch,
 		ocr,
 		pace
@@ -95,7 +96,8 @@ export function normalizeSnapshot(input: unknown): ExpTrackerSnapshot {
 			version: 3,
 			capturedAt: num((input as any).capturedAt, Date.now()),
 			runtime: {
-				hasStarted: bool(runtimeRaw.hasStarted, false)
+				hasStarted: bool(runtimeRaw.hasStarted, false),
+				expCouponCount: normalizeCouponCount(runtimeRaw.expCouponCount)
 			},
 			stopwatch: normalizeStopwatch((input as any).stopwatch),
 			ocr: normalizeOcr((input as any).ocr),
@@ -109,7 +111,8 @@ export function normalizeSnapshot(input: unknown): ExpTrackerSnapshot {
 			version: 3,
 			capturedAt: num((input as any).capturedAt, Date.now()),
 			runtime: {
-				hasStarted: bool(runtimeRaw.hasStarted, false)
+				hasStarted: bool(runtimeRaw.hasStarted, false),
+				expCouponCount: normalizeCouponCount(runtimeRaw.expCouponCount)
 			},
 			stopwatch: normalizeStopwatch((input as any).stopwatch),
 			ocr: normalizeOcr((input as any).ocr),
@@ -123,7 +126,8 @@ export function normalizeSnapshot(input: unknown): ExpTrackerSnapshot {
 		version: 3,
 		capturedAt: num((input as any).capturedAt, Date.now()),
 		runtime: {
-			hasStarted: bool((stateRaw as any).hasStarted, false)
+			hasStarted: bool((stateRaw as any).hasStarted, false),
+			expCouponCount: normalizeCouponCount((stateRaw as any).expCouponCount)
 		},
 		stopwatch: normalizeStopwatch((input as any).stopwatch),
 		ocr: normalizeOcr((input as any).ocr),
