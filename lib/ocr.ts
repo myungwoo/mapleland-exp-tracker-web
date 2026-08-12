@@ -1,6 +1,6 @@
 import { createWorker, PSM } from "tesseract.js";
 import type { Worker as TesseractWorker } from "tesseract.js";
-import { cropDigitBoundingBox } from "./canvas";
+import { cropDigitBoundingBox, get2dContext } from "./canvas";
 import { parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
 
 /**
@@ -161,15 +161,14 @@ async function createCanvasFromSource(src: HTMLCanvasElement | ImageBitmap | HTM
 	}
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = get2dContext(canvas);
 	ctx.drawImage(src as any, 0, 0);
 	return canvas;
 }
 
 function guessDigitOneFromBinaryCanvas(source: HTMLCanvasElement): boolean {
 	try {
-		const ctx = source.getContext("2d");
-		if (!ctx) return false;
+		const ctx = get2dContext(source);
 		const { width: w, height: h } = source;
 		const img = ctx.getImageData(0, 0, w, h);
 		const data = img.data;

@@ -255,6 +255,9 @@ function removeSolidBlobs(mask: Mask, k: number): Mask {
 }
 
 function getImageData(canvas: HTMLCanvasElement): ImageData | null {
+	// 주의: willReadFrequently는 컨텍스트가 "처음 만들어질 때"만 반영됩니다.
+	// 캔버스를 만드는 쪽(lib/canvas.ts의 get2dContext)에서 이미 같은 플래그를 주고 있으며,
+	// 여기서 한 번 더 주는 것은 외부에서 만든 캔버스가 들어오는 경우를 위한 보험입니다.
 	const ctx = canvas.getContext("2d", { willReadFrequently: true });
 	if (!ctx) return null;
 	try {
