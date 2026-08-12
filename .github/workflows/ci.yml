@@ -1,21 +1,23 @@
-name: Deploy static Next.js to GitHub Pages
+name: CI
 
+# 왜 별도 워크플로인가:
+# 배포 워크플로(gh-pages.yml)는 main push에서만 돌기 때문에, PR 단계에서는 아무 검사도 하지 않았습니다.
+# 이 워크플로가 PR에서 타입/린트/테스트/빌드를 먼저 확인합니다.
 on:
+  pull_request:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,32 +29,15 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      # 왜: 검증을 배포와 같은 job에 두면, 하나라도 실패했을 때 절대 배포되지 않습니다.
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
         run: npm run lint
       - name: Pixel font self-test
         run: npm run test:pixel-font
-      - name: Build
+      - name: Build (static export)
         env:
+          # 실제 배포와 같은 조건(basePath 포함)으로 빌드해서, 배포 직전에야 드러나는 문제를 미리 잡습니다.
           GITHUB_PAGES: "true"
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run build
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./out
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-
