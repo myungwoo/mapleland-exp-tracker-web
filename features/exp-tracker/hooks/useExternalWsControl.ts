@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ExternalWsStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
@@ -28,6 +28,22 @@ function parseEvent(raw: string): ExternalWsEvent {
 		return { type: "raw", data: obj };
 	} catch {
 		return { type: "raw", data: trimmed };
+	}
+}
+
+function describeReadyState(ws: WebSocket | null): string {
+	if (!ws) return "NONE";
+	switch (ws.readyState) {
+		case WebSocket.CONNECTING:
+			return "CONNECTING";
+		case WebSocket.OPEN:
+			return "OPEN";
+		case WebSocket.CLOSING:
+			return "CLOSING";
+		case WebSocket.CLOSED:
+			return "CLOSED";
+		default:
+			return String(ws.readyState);
 	}
 }
 
@@ -71,6 +87,12 @@ export function useExternalWsControl(args: {
 		}
 	}, [clearRetry]);
 
+	/**
+	 * connect ↔ scheduleRetry는 서로를 참조합니다. (연결 실패 → 재시도 예약 → 다시 연결)
+	 * 한쪽을 ref로 끊어야 deps를 정확히 적을 수 있고, 재시도 타이머가 오래된 connect를 붙잡지 않습니다.
+	 */
+	const connectRef = useRef<() => void>(() => {});
+
 	const scheduleRetry = useCallback(() => {
 		if (!enabled) return;
 		clearRetry();
@@ -81,7 +103,7 @@ export function useExternalWsControl(args: {
 		const delay = delays[attempt] ?? 300000;
 		retryTimerRef.current = window.setTimeout(() => {
 			retryTimerRef.current = null;
-			connect();
+			connectRef.current();
 		}, delay);
 	}, [clearRetry, enabled]);
 
@@ -138,6 +160,10 @@ export function useExternalWsControl(args: {
 		});
 	}, [closeWs, enabled, onEvent, scheduleRetry, url]);
 
+	useEffect(() => {
+		connectRef.current = connect;
+	}, [connect]);
+
 	// enabled/url 변경 또는 수동 reconnectToken 변경 시 재연결
 	useEffect(() => {
 		if (!enabled) {
@@ -153,22 +179,9 @@ export function useExternalWsControl(args: {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [enabled, url, reconnectToken]);
 
-	const readyState = useMemo(() => {
-		const ws = wsRef.current;
-		if (!ws) return "NONE";
-		switch (ws.readyState) {
-			case WebSocket.CONNECTING:
-				return "CONNECTING";
-			case WebSocket.OPEN:
-				return "OPEN";
-			case WebSocket.CLOSING:
-				return "CLOSING";
-			case WebSocket.CLOSED:
-				return "CLOSED";
-			default:
-				return String(ws.readyState);
-		}
-	}, [status]);
+	// 진단용 표시값입니다. ref에서 읽는 값이라 메모이즈하면 status에 억지로 의존해야 하므로,
+	// 계산이 싼 만큼 렌더마다 그대로 계산합니다.
+	const readyState = describeReadyState(wsRef.current);
 
 	return { status, connectedUrl, lastError, lastMessageAt, readyState, reconnect: connect, disconnect: closeWs };
 }
