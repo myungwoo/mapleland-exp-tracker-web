@@ -40,8 +40,12 @@ export default function OcrHealthBanner(props: Props) {
 			</svg>
 			<div className="min-w-0">
 				<span className="font-semibold">{notice.title}</span>
-				{/* 얼마나 됐는지가 "잠깐 그런 것"과 "계속 그런 것"을 가르는 정보입니다. */}
-				<span className="ml-2 font-mono text-xs opacity-80">{seconds}초째 기록 안 됨</span>
+				{/*
+				 * 얼마나 됐는지가 "잠깐 그런 것"과 "계속 그런 것"을 가르는 정보입니다.
+				 * 모노 글꼴을 쓰지 않는 이유: 문구가 대부분 한글인데 모노(D2Coding) 서브셋에는 한글이
+				 * 단위 몇 자만 들어 있어서, 나머지 글자가 폴백되며 글꼴이 섞여 보입니다.
+				 */}
+				<span className="ml-2 text-xs opacity-80">{seconds}초째 기록 안 됨</span>
 				<div className="opacity-80">{notice.detail}</div>
 			</div>
 		</div>
