@@ -433,35 +433,46 @@ export function useOcrSampling(options: Options) {
 				sample = annotateOutlier(sample, "pct_value_mismatch");
 			}
 		}
+		// 레벨 급변(예전의 `level_jump`) 검사는 일부러 하지 않습니다.
+		//
+		// 왜: 이 검사는 Tesseract 시절의 방어선이었습니다. LSTM OCR은 애매할 때도 확신에 찬 틀린 레벨
+		// (193을 183으로)을 돌려줬기 때문에 "한 틱에 2레벨 이상 변화 = 오인식"으로 막을 필요가 있었습니다.
+		// 지금 레벨 인식은 픽셀 글꼴 템플릿 매칭이라(`lib/levelPixelOcr.ts`) 한 자리라도 확신이 없으면
+		// 값을 찍지 않고 `null`을 돌려줍니다. 즉 막아야 할 "틀린 레벨" 자체가 나오지 않습니다.
+		//
+		// 반대로 이 검사에는 자가 복구가 불가능한 함정이 있었습니다. prev는 유효 샘플일 때만 갱신되므로,
+		// ROI가 오래 가려진 동안 레벨이 2번 오르면(마우스 포인터, 인게임 대화창 등) 가림이 풀린 뒤
+		// 모든 샘플이 영구히 `level_jump`로 폐기되어 측정이 조용히 죽었습니다.
+		// 누적 계산 쪽은 다중 레벨 상승을 이미 정확히 처리합니다. (`computeExpDeltaFromTable`)
+		//
+		// 되돌리고 싶다면 절대 레벨차가 아니라 "직전 유효 샘플로부터의 경과 시간"을 함께 봐야 합니다.
 		if (
 			isStructValid &&
 			!sample.isOutlier &&
 			prev &&
 			prev.level != null &&
 			prev.expValue != null &&
-			prev.expPercent != null
+			prev.expPercent != null &&
+			// 같은 레벨일 때만 의미가 있는 검사입니다. (레벨이 올랐으면 EXP가 0 근처로 떨어지는 게 정상)
+			s.level === prev.level &&
+			s.expValue != null &&
+			s.expPercent != null
 		) {
-			// 레벨이 한 번에 크게 튀는 경우는 OCR 이상치로 보는 편이 안전합니다.
-			if (s.level != null && Math.abs(s.level - prev.level) >= 2) {
-				sample = annotateOutlier(sample, "level_jump");
-			} else if (s.level != null && s.expValue != null && s.expPercent != null) {
-				// 같은 레벨로 해석했을 때, 값/퍼센트의 상호 일관성을 검사합니다. (테이블 기반)
-				if (expPercentValidationEnabled && !isPercentValueConsistent(s.level, s.expValue, s.expPercent)) {
-					sample = annotateOutlier(sample, "pct_value_mismatch");
-				} else {
-					// 같은 레벨에서 감소는 정상(사망 패널티 등)일 수 있으므로 허용하되,
-					// 단일 틱에서 과도한 급락은 OCR 이상치로 차단합니다.
-					if (s.level === prev.level) {
-						if (!isPlausibleSameLevelDrop(s.level, prev.expValue, s.expValue, prev.expPercent, s.expPercent)) {
-							sample = annotateOutlier(sample, "implausible_drop");
-						}
-					}
-				}
+			// 같은 레벨에서 감소는 정상(사망 패널티 등)일 수 있으므로 허용하되,
+			// 단일 틱에서 과도한 급락은 인식 이상치로 차단합니다.
+			// (%↔값 일관성은 위에서 이미 검사했으므로 여기서 다시 보지 않습니다)
+			if (!isPlausibleSameLevelDrop(s.level, prev.expValue, s.expValue, prev.expPercent, s.expPercent)) {
+				sample = annotateOutlier(sample, "implausible_drop");
 			}
 		}
 
-		// "현재 표시 값"은 이상치가 아닐 때만 갱신해서, PiP/메인 UI가 순간적으로 튀는 값을 보여주지 않게 합니다.
-		if (!sample.isOutlier) {
+		// "현재 표시 값"은 판독에 성공했고 이상치도 아닐 때만 갱신합니다.
+		//
+		// 왜 isStructValid까지 보는가: 인식 실패 샘플은 isOutlier가 붙지 않으므로, 이 조건이 없으면
+		// 포탈 이동(검은 화면)이나 ROI 가림 한 번에 현재값이 null로 덮입니다. 이 값들은 기록 스냅샷에
+		// 그대로 들어가므로, 그 순간 측정을 끝내면 기록의 "현재 레벨/경험치"가 비어버립니다.
+		// 마지막으로 성공한 판독을 유지하는 쪽이 항상 낫습니다.
+		if (isStructValid && !sample.isOutlier) {
 			setCurrentLevel(s.level);
 			setCurrentExpPercent(s.expPercent);
 			setCurrentExpValue(s.expValue ?? null);
