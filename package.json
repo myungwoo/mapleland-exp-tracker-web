@@ -14,7 +14,8 @@
 		"test:pixel-font": "node tools/pixel-font/selftest.mjs",
 		"test:level-roi": "node tools/level-roi/selftest.mjs",
 		"test:level-font": "node tools/level-font/selftest.mjs",
-		"test": "npm run test:pixel-font && npm run test:level-font && npm run test:level-roi"
+		"test:records": "node tools/records/selftest.mjs",
+		"test": "npm run test:pixel-font && npm run test:level-font && npm run test:level-roi && npm run test:records"
 	},
 	"dependencies": {
 		"classnames": "^2.5.1",

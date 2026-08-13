@@ -9,7 +9,7 @@ type Options = {
 	 */
 	settingsOpen: boolean;
 	/**
-	 * 측정/온보딩 등으로 OCR 캡처용 비디오 재생이 필요한지 여부입니다.
+	 * 측정/온보딩 등으로 인식 캡처용 비디오 재생이 필요한지 여부입니다.
 	 * - false일 때는 pause()해서, 화면 공유만 켜둔 상태의 부하를 줄입니다.
 	 */
 	capturePlaybackWanted: boolean;
@@ -71,7 +71,8 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 
 		// 최우선: requestVideoFrameCallback (크롬/엣지 등)
 		const rvfc = (anyVideo as any).requestVideoFrameCallback as
-			undefined | ((cb: (now: number, meta: any) => void) => number);
+			| undefined
+			| ((cb: (now: number, meta: any) => void) => number);
 		if (rvfc) {
 			try {
 				vfcId = rvfc.call(video, (_now: number, meta: any) => {
@@ -175,7 +176,7 @@ export function useDisplayCapture(options: Options) {
 	}, []);
 
 	/**
-	 * OCR/측정 시작 직전에 호출해서, capture video가 실제로 프레임을 제공할 수 있게 보장합니다.
+	 * 인식/측정 시작 직전에 호출해서, capture video가 실제로 프레임을 제공할 수 있게 보장합니다.
 	 */
 	const ensureCapturePlaying = useCallback(async () => {
 		const video = captureVideoRef.current;
@@ -187,7 +188,7 @@ export function useDisplayCapture(options: Options) {
 		attachStream(video, stream);
 		await ensurePlaying(video);
 		// 핵심: play()가 resolve된 직후에도 화면이 아직 갱신되지 않았을 수 있으므로,
-		// 최소 1프레임(또는 currentTime 변화)을 best-effort로 기다린 뒤 OCR을 시작합니다.
+		// 최소 1프레임(또는 currentTime 변화)을 best-effort로 기다린 뒤 인식을 시작합니다.
 		//
 		// - 기본 캡처 FPS가 3fps인 환경에서 1프레임은 ~333ms이므로, 여유 있게 1200ms를 둡니다.
 		// - 이미 재생 중이었거나(currentTime이 이미 변함) 프레임이 빠르게 도착하면 즉시 반환합니다.
@@ -274,7 +275,7 @@ export function useDisplayCapture(options: Options) {
 	 *
 	 * 왜: 사용자가 브라우저 하단의 "공유 중지"를 누르거나 캡처 대상 창을 닫으면 트랙이 ended가 되는데,
 	 * 이때 stream state를 그대로 두면 앱은 여전히 "캡처 중"이라고 판단합니다.
-	 * 그러면 정지된 마지막 프레임을 계속 OCR해서 증가량 0으로 누적되고,
+	 * 그러면 정지된 마지막 프레임을 계속 인식해서 증가량 0으로 누적되고,
 	 * 사용자는 측정이 잘 되고 있다고 오해합니다. (측정 시작 버튼도 계속 활성)
 	 */
 	useEffect(() => {
@@ -333,7 +334,7 @@ export function useDisplayCapture(options: Options) {
 		attachStream(previewVideoRef.current, null);
 	}, [settingsOpen, stream, attachStream, ensurePlaying, safePause, previewVideoRef]);
 
-	// OCR 캡처용 hidden video는 "필요할 때만" 재생합니다. (측정 시작 전 부하 완화)
+	// 인식 캡처용 hidden video는 "필요할 때만" 재생합니다. (측정 시작 전 부하 완화)
 	useEffect(() => {
 		const v = captureVideoRef.current;
 		if (!v) return;

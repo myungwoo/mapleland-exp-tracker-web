@@ -341,7 +341,7 @@ export default function RecordsModal(props: Props) {
 										<div className="text-xs text-white/60">
 											{(() => {
 												const elapsedMs = Number((r.snapshot.stopwatch?.elapsedMs ?? 0) as number);
-												const cumExpValue = Number((r.snapshot.ocr?.cumExpValue ?? 0) as number);
+												const cumExpValue = Number((r.snapshot.sampling?.cumExpValue ?? 0) as number);
 												// 경험치 쿠폰을 쓴 기록이면 보정된 사냥 시간 기준 페이스를 보여줍니다.
 												const couponCount = normalizeCouponCount(r.snapshot.runtime?.expCouponCount);
 												const pace = paceForWindowMin(cumExpValue, elapsedMs, couponCount, props.paceWindowMin);

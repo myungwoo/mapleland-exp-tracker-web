@@ -218,7 +218,7 @@ export function computeExpDeltaFromTable(
 	if (curLevel === prevLevel) {
 		return curValue - prevValue;
 	}
-	// 감소한 경우(대개 OCR 오인식): 증가 합의 대칭 음수로 계산합니다.
+	// 감소한 경우(대개 오인식): 증가 합의 대칭 음수로 계산합니다.
 	if (curLevel < prevLevel) {
 		const up = computeExpDeltaFromTable(table, curLevel, curValue, prevLevel, prevValue);
 		return up == null ? null : -up;

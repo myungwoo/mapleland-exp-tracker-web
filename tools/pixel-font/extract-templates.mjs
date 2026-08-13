@@ -14,7 +14,7 @@
  *   패치로 글꼴이 또 바뀌거나 아직 못 본 글자(예: 5, 7)가 나오면 이 도구로 다시 뽑으면 됩니다.
  */
 import { readPng, cropRgba } from "./png.mjs";
-import { loadPixelOcr, loadPixelFont } from "./loadLib.mjs";
+import { loadPixelRecognizer, loadPixelFont } from "./loadLib.mjs";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -27,7 +27,7 @@ if (!file) {
 const roiArg = args.find((a) => a.startsWith("--roi="));
 const text = args.find((a) => a.startsWith("--text="))?.slice("--text=".length);
 
-const { recognizePixelFontLine } = await loadPixelOcr();
+const { recognizePixelFontLine } = await loadPixelRecognizer();
 const { PIXEL_FONT_GLYPHS } = await loadPixelFont();
 
 let img = readPng(file);

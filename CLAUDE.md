@@ -4,7 +4,7 @@
 
 ## 프로젝트 한 줄 요약
 
-메이플랜드 게임 화면을 브라우저에서 캡처해 **레벨과 경험치를 OCR로 읽어** 누적 EXP·페이스를 실시간으로 보여주는 정적 웹앱입니다. 서버가 없고(GitHub Pages 정적 배포), 모든 처리는 브라우저에서 일어납니다.
+메이플랜드 게임 화면을 브라우저에서 캡처해 **레벨과 경험치를 픽셀 글꼴 인식으로 읽어** 누적 EXP·페이스를 실시간으로 보여주는 정적 웹앱입니다. 서버가 없고(GitHub Pages 정적 배포), 모든 처리는 브라우저에서 일어납니다.
 
 ## 명령
 
@@ -13,10 +13,11 @@ npm run dev              # 개발 서버 (http://localhost:3000)
 npm run build            # 정적 export → out/  (next.config.js의 output: "export")
 npm run lint             # ESLint
 npx tsc --noEmit         # 타입 검사
-npm test                 # 자동 테스트 전체 (아래 셋)
+npm test                 # 자동 테스트 전체 (아래 넷)
 npm run test:pixel-font  # EXP 픽셀 글꼴 인식기 자체 검증
 npm run test:level-font  # 레벨 픽셀 글꼴 인식기 자체 검증 (실제 캡처 픽스처 포함)
 npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 규칙 검증
+npm run test:records     # 기록 스냅샷 정규화 / 버전 마이그레이션 검증
 ```
 
 변경 후에는 **최소한 타입 검사와 lint**를, 인식 로직을 건드렸다면 `npm test`까지 돌려 주세요.
@@ -24,7 +25,7 @@ npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 �
 ## 코드 스타일
 
 - **주석·커밋 메시지·UI 문구는 한국어**로 씁니다.
-- 주석은 "무엇"이 아니라 **"왜"** 를 적습니다. 이 저장소는 `// 왜: ...` 형태를 관례로 씁니다. 특히 브라우저/OCR 관련 우회 코드에는 반드시 이유를 남기세요. (없으면 다음 사람이 "불필요해 보이는 코드"로 지웁니다)
+- 주석은 "무엇"이 아니라 **"왜"** 를 적습니다. 이 저장소는 `// 왜: ...` 형태를 관례로 씁니다. 특히 브라우저/인식 관련 우회 코드에는 반드시 이유를 남기세요. (없으면 다음 사람이 "불필요해 보이는 코드"로 지웁니다)
 - 들여쓰기는 **탭**입니다. (`components/PaceChart.tsx`, `lib/pip/*`, `lib/assetPath.ts`는 스페이스로 남아 있는 예외입니다)
 - 문자열은 쌍따옴표, 세미콜론을 씁니다.
 - `cn()`(`lib/cn.ts`)으로 Tailwind 클래스를 조합합니다. `classnames`를 직접 import하지 마세요.
@@ -32,44 +33,47 @@ npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 �
 
 ## 디렉터리 구조
 
-| 경로                            | 역할                                                                 |
-| ------------------------------- | -------------------------------------------------------------------- |
-| `app/`                          | Next.js App Router. 페이지는 사실상 `ExpTracker` 하나입니다.         |
-| `components/`                   | UI 컴포넌트. `ExpTracker.tsx`가 전체를 조립하는 컨테이너입니다.      |
-| `features/exp-tracker/hooks/`   | 측정 관련 훅(캡처, OCR 샘플링, 스톱워치, 차트 시리즈, 공유, 외부 WS) |
-| `features/exp-tracker/records/` | 기록 저장(IndexedDB) + 스냅샷 정규화/버전 마이그레이션               |
-| `lib/`                          | 순수 로직(OCR, 캔버스, EXP 테이블, 포맷, 페이스 계산, PiP)           |
-| `hooks/`                        | 앱 전역 훅(전역 단축키)                                              |
-| `tools/pixel-font/`             | EXP 픽셀 글꼴 템플릿 추출·검증 Node 스크립트                         |
-| `tools/level-font/`             | 레벨 픽셀 글꼴 템플릿 추출·검증 (+ 실제 캡처 픽스처)                 |
-| `tools/level-roi/`              | 레벨 ROI 변화 감지 지문 / 판독 재사용 규칙 검증                      |
-| `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI            |
+| 경로                            | 역할                                                                  |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `app/`                          | Next.js App Router. 페이지는 사실상 `ExpTracker` 하나입니다.          |
+| `components/`                   | UI 컴포넌트. `ExpTracker.tsx`가 전체를 조립하는 컨테이너입니다.       |
+| `features/exp-tracker/hooks/`   | 측정 관련 훅(캡처, 인식 샘플링, 스톱워치, 차트 시리즈, 공유, 외부 WS) |
+| `features/exp-tracker/records/` | 기록 저장(IndexedDB) + 스냅샷 정규화/버전 마이그레이션                |
+| `lib/`                          | 순수 로직(인식, 캔버스, EXP 테이블, 포맷, 페이스 계산, PiP)           |
+| `hooks/`                        | 앱 전역 훅(전역 단축키)                                               |
+| `tools/pixel-font/`             | EXP 픽셀 글꼴 템플릿 추출·검증 Node 스크립트                          |
+| `tools/level-font/`             | 레벨 픽셀 글꼴 템플릿 추출·검증 (+ 실제 캡처 픽스처)                  |
+| `tools/level-roi/`              | 레벨 ROI 변화 감지 지문 / 판독 재사용 규칙 검증                       |
+| `tools/records/`                | 기록 스냅샷 정규화 / 버전 마이그레이션 검증                           |
+| `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI             |
 
 **원칙**: 측정 로직은 훅으로 분리하고, `ExpTracker`는 조립만 합니다. 계산이 필요한 코드는 React에 의존하지 않는 `lib/`의 순수 함수로 빼세요. (테스트와 재사용이 쉬워집니다)
 
 ## 반드시 알아야 하는 도메인 지식
 
-### 1. EXP와 레벨 모두 픽셀 글꼴 템플릿 매칭으로 읽습니다 (Tesseract 없음)
+### 1. EXP와 레벨 모두 픽셀 글꼴 템플릿 매칭으로 읽습니다 (외부 인식 엔진 없음)
 
-두 텍스트 모두 안티에일리어싱이 없는 고정 픽셀 패턴이라, 픽셀 단위로 맞춰보면 정확히 일치하거나 아예 일치하지 않거나 둘 중 하나입니다. **의존성에 OCR 엔진이 없습니다. 다시 넣지 마세요.**
+두 텍스트 모두 안티에일리어싱이 없는 고정 픽셀 패턴이라, 픽셀 단위로 맞춰보면 정확히 일치하거나 아예 일치하지 않거나 둘 중 하나입니다. **의존성에 문자 인식 엔진이 없습니다. 다시 넣지 마세요.**
 
-|          | 글꼴                 | 템플릿                  | 인식기                 |
-| -------- | -------------------- | ----------------------- | ---------------------- |
-| **EXP**  | 5x7px                | `lib/pixelFont.ts`      | `lib/pixelOcr.ts`      |
-| **레벨** | 7x7px 볼드, 2배 렌더 | `lib/levelPixelFont.ts` | `lib/levelPixelOcr.ts` |
+진입점은 `lib/recognize.ts` 하나이고, 여기서 두 인식기로 갈라집니다.
+
+|          | 글꼴                 | 템플릿                  | 인식기                        |
+| -------- | -------------------- | ----------------------- | ----------------------------- |
+| **EXP**  | 5x7px                | `lib/pixelFont.ts`      | `lib/pixelRecognizer.ts`      |
+| **레벨** | 7x7px 볼드, 2배 렌더 | `lib/levelPixelFont.ts` | `lib/levelPixelRecognizer.ts` |
 
 공통 규칙:
 
 - **ROI 캔버스는 반드시 원본 배율(scale: 1)로 넘겨야 합니다.** 확대하거나 이진화하면 글리프가 뭉개져서 인식이 망가집니다. 전처리는 없습니다.
 - 글리프 템플릿은 **반드시 실제 게임 캡처에서** 뽑아야 합니다. 추출 도구는 `tools/pixel-font/` 와 `tools/level-font/` 에 있습니다.
-- 확신이 없으면 `null`을 반환합니다. **틀린 값을 흘리는 것보다 측정을 건너뛰는 게 낫습니다.** 이게 Tesseract를 걷어낸 이유입니다 — LSTM OCR은 애매할 때도 확신에 찬 틀린 값(레벨 193을 183으로)을 돌려주는데, 틀린 레벨은 누적 EXP를 통째로 오염시킵니다.
+- 확신이 없으면 `null`을 반환합니다. **틀린 값을 흘리는 것보다 측정을 건너뛰는 게 낫습니다.** 이게 범용 인식 엔진을 걷어낸 이유입니다 — LSTM 기반 인식기는 애매할 때도 확신에 찬 틀린 값(레벨 193을 183으로)을 돌려주는데, 틀린 레벨은 누적 EXP를 통째로 오염시킵니다.
 - **캡처 배율이 정수가 아니면 두 인식기 모두 `null`이 납니다.** 글리프 블록 구조가 템플릿 격자와 어긋나기 때문입니다. 즉 이 앱은 정수 배율 캡처를 전제로 합니다. (EXP가 안 읽히면 그 샘플은 어차피 못 쓰므로 레벨만 관대하게 만들 이유가 없습니다)
 
 ⚠️ **레벨 글꼴을 EXP 글꼴에서 유도하지 마세요.** 골격이 거의 같아서 "EXP 글리프를 볼드 처리하면 되겠다"는 생각이 자연스럽게 들지만, `1`만 우연히 맞고 나머지는 폭이 1px씩 다릅니다. 유도한 템플릿은 크기 허용오차를 통과해서 **조용히 오인식**합니다.
 
 ### 2. 이상치 필터가 측정 품질의 핵심입니다
 
-`features/exp-tracker/hooks/useOcrSampling.ts`가 `EXP_TABLE`(레벨별 필요 EXP)을 기준으로 OCR 결과를 검증합니다: 값↔퍼센트 정합성, 레벨 급변(`level_jump`), 같은 레벨에서의 과도한 급락(`implausible_drop`, 사망 패널티는 최대 10%p). 이상치는 누적/차트에 반영하지 않습니다. **임계값을 바꿀 때는 왜 그 값인지 주석에 남기세요.**
+`features/exp-tracker/hooks/useSampling.ts`가 `EXP_TABLE`(레벨별 필요 EXP)을 기준으로 인식 결과를 검증합니다: 값↔퍼센트 정합성, 레벨 급변(`level_jump`), 같은 레벨에서의 과도한 급락(`implausible_drop`, 사망 패널티는 최대 10%p). 이상치는 누적/차트에 반영하지 않습니다. **임계값을 바꿀 때는 왜 그 값인지 주석에 남기세요.**
 
 ### 3. ROI는 "비디오 픽셀 좌표"로 저장됩니다
 
@@ -77,7 +81,7 @@ npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 �
 
 ### 4. 측정 루프는 setInterval + 단일 in-flight 가드입니다
 
-OCR이 측정 주기보다 오래 걸릴 수 있어서, 동시에 여러 샘플이 쌓이지 않도록 in-flight Promise로 막습니다. 인터벌 콜백에 **렌더 시점의 함수를 그대로 넘기면 stale closure**가 되어 "측정 중 설정 변경이 반영되지 않는" 버그가 생깁니다. 최신 함수를 ref로 참조하세요.
+인식이 측정 주기보다 오래 걸릴 수 있어서, 동시에 여러 샘플이 쌓이지 않도록 in-flight Promise로 막습니다. 인터벌 콜백에 **렌더 시점의 함수를 그대로 넘기면 stale closure**가 되어 "측정 중 설정 변경이 반영되지 않는" 버그가 생깁니다. 최신 함수를 ref로 참조하세요.
 
 ### 5. 레벨은 매 샘플 인식하지 않습니다 (변화 감지 + 판독 재사용)
 
@@ -98,7 +102,7 @@ OCR이 측정 주기보다 오래 걸릴 수 있어서, 동시에 여러 샘플�
 
 - `localStorage`: 설정 (`intervalSec`, `roiLevel`, `roiExp`, `paceWindowMin`, `expPercentValidationEnabled`, `chartShowAxisLabels`, `chartShowGrid`, `onboardingDone`) — `lib/persist.ts`의 `usePersistentState`
 - `IndexedDB`: 측정 기록 (`features/exp-tracker/records/`) — 예전에는 localStorage였고 마이그레이션 코드가 남아 있습니다.
-- 기록 스냅샷은 **버전이 있고 하위 호환을 지킵니다.** 포맷을 바꾸면 `records/snapshot.ts`의 `normalizeSnapshot`에 마이그레이션을 추가하세요. 사용자가 내보낸 JSON 파일이 있으므로 옛 버전을 깨면 안 됩니다.
+- 기록 스냅샷은 **버전이 있고 하위 호환을 지킵니다.** 포맷을 바꾸면 `records/snapshot.ts`의 `normalizeSnapshot`에 마이그레이션을 추가하세요. 사용자가 내보낸 JSON 파일이 있으므로 옛 버전을 깨면 안 됩니다. (현재 v4. v3까지는 측정 스냅샷 필드 이름이 `sampling`이 아니라 `ocr`이었고, 그 폴백이 `normalizeSnapshot`에 남아 있습니다)
 
 ### 7. 서버가 없습니다
 

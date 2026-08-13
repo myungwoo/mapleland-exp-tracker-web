@@ -11,7 +11,7 @@
  * (인식기는 게이지 바/테두리 같은 큰 덩어리를 스스로 걸러냅니다)
  */
 import { readPng, cropRgba } from "./png.mjs";
-import { loadPixelOcr } from "./loadLib.mjs";
+import { loadPixelRecognizer } from "./loadLib.mjs";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -22,7 +22,7 @@ if (!file) {
 const roiArg = args.find((a) => a.startsWith("--roi="));
 const expect = args.find((a) => a.startsWith("--expect="))?.slice("--expect=".length);
 
-const { recognizePixelFontLine, parsePixelExpText } = await loadPixelOcr();
+const { recognizePixelFontLine, parsePixelExpText } = await loadPixelRecognizer();
 
 let img = readPng(file);
 if (roiArg) {

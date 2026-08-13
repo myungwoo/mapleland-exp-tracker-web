@@ -13,9 +13,9 @@
  * 주의: 이 테스트는 "파이프라인"을 검증하는 것이지 "템플릿이 실제 게임과 같은지"를
  * 검증하지는 않습니다. 템플릿 검증은 tools/pixel-font/verify.mjs 로 실제 캡처에 대해 하세요.
  */
-import { loadPixelOcr, loadPixelFont } from "./loadLib.mjs";
+import { loadPixelRecognizer, loadPixelFont } from "./loadLib.mjs";
 
-const { recognizePixelFontLine, parsePixelExpText } = await loadPixelOcr();
+const { recognizePixelFontLine, parsePixelExpText } = await loadPixelRecognizer();
 const { PIXEL_FONT_GLYPHS } = await loadPixelFont();
 
 const BG = [45, 57, 62];

@@ -29,7 +29,7 @@ python3 tools/fonts/subset-unicodes.py > unicodes.txt
 
 ## D2Coding (숫자/모노용)
 
-모노 글꼴은 경과 시간·EXP 숫자·OCR 텍스트에만 쓰고, 모노 안의 한글은 Pretendard로 폴백시킵니다.
+모노 글꼴은 경과 시간·EXP 숫자·인식 결과 텍스트에만 쓰고, 모노 안의 한글은 Pretendard로 폴백시킵니다.
 그래서 **라틴/숫자/기호만** 남겨 1.49MB → 14KB로 줄였습니다.
 
 ```bash
