@@ -1,3 +1,4 @@
+import { formatClockTime } from "@/lib/format";
 import { useMemo, useRef, useState, useEffect, useId } from "react";
 
 type Point = { ts: number; value: number };
@@ -441,7 +442,7 @@ export default function PaceChart(props: Props) {
 												fontSize={10}
 												fontFamily='"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 											>
-												{xLabelFormatter ? xLabelFormatter(t) : new Date(t).toLocaleTimeString()}
+												{xLabelFormatter ? xLabelFormatter(t) : formatClockTime(new Date(t))}
 											</text>
 										) : null}
 									</g>
@@ -514,7 +515,7 @@ export default function PaceChart(props: Props) {
 							<div className="opacity-70">
 								{xLabelFormatter
 									? xLabelFormatter(series[hover.idx].ts)
-									: new Date(series[hover.idx].ts).toLocaleTimeString()}
+									: formatClockTime(new Date(series[hover.idx].ts))}
 							</div>
 						</div>
 					) : null}

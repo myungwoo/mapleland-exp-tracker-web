@@ -1,4 +1,4 @@
-import { formatElapsed } from "../format";
+import { formatClockTime, formatElapsed } from "../format";
 import { pipMarkup, pipStyles } from "./template";
 import type { PipCallbacks, PipState } from "./types";
 
@@ -171,7 +171,8 @@ export class PipController {
 		if (nextLabel)
 			nextLabel.textContent = state.nextHours != null ? `${state.nextHours}시간 되는 시각` : "다음 시간 되는 시각";
 		const nextEl = qs("pip-next");
-		if (nextEl) nextEl.textContent = state.nextAt ? state.nextAt.toLocaleTimeString() : "-";
+		// 본문 요약 카드와 같은 값이므로 표기도 같아야 합니다. (24시간제)
+		if (nextEl) nextEl.textContent = state.nextAt ? formatClockTime(state.nextAt) : "-";
 		// 텍스트들
 		const gainedEl = qs("pip-gained");
 		if (gainedEl) gainedEl.textContent = state.gainedText;
