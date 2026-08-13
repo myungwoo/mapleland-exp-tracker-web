@@ -5,7 +5,12 @@ import { cn } from "@/lib/cn";
 type Props = {
 	isSampling: boolean;
 	hasStarted: boolean;
-	hasStream: boolean;
+	/**
+	 * 측정을 시작할 수 없는 이유입니다. null이면 시작 가능.
+	 * - 왜 boolean이 아닌 문구인가: 비활성 버튼만 보여주면 "게임 창을 안 골라서"인지
+	 *   "ROI를 안 잡아서"인지 알 수 없어서, 온보딩을 건너뛴 사용자가 막혔습니다.
+	 */
+	startDisabledReason: string | null;
 	pipSupported: boolean;
 	pipUnsupportedTooltip: string;
 	onOpenSettings: () => void;
@@ -15,6 +20,27 @@ type Props = {
 	onReset: () => void;
 	onOpenPip: () => void;
 };
+
+/**
+ * 비활성 버튼 위에 "왜 못 누르는지"를 띄웁니다.
+ *
+ * 왜 title 속성이 아닌가: disabled된 버튼은 브라우저에 따라 마우스 이벤트를 받지 않아 기본 툴팁이
+ * 안 뜹니다. 감싸는 요소에 hover를 걸어야 확실합니다.
+ */
+function DisabledHint(props: { hint: string | null; children: React.ReactNode }) {
+	if (!props.hint) return <>{props.children}</>;
+	return (
+		<div className="relative inline-block group">
+			{props.children}
+			<div
+				role="tooltip"
+				className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-pre rounded border border-white/10 bg-black/90 px-3 py-2 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+			>
+				{props.hint}
+			</div>
+		</div>
+	);
+}
 
 export default function TrackerToolbar(props: Props) {
 	return (
@@ -70,9 +96,17 @@ export default function TrackerToolbar(props: Props) {
 						측정 일시정지 <span className="ml-2 text-xs opacity-70">Space</span>
 					</button>
 				) : (
-					<button className="btn btn-primary" onClick={props.onStart} disabled={!props.hasStream}>
-						측정 시작 <span className="ml-2 text-xs opacity-70">Space</span>
-					</button>
+					<DisabledHint hint={props.startDisabledReason}>
+						<button
+							className={cn("btn btn-primary", props.startDisabledReason && "cursor-not-allowed")}
+							onClick={props.onStart}
+							disabled={!!props.startDisabledReason}
+							aria-disabled={!!props.startDisabledReason}
+						>
+							측정 시작
+							<span className="ml-2 text-xs opacity-70">Space</span>
+						</button>
+					</DisabledHint>
 				)}
 
 				<button className="btn btn-warning" onClick={props.onReset} disabled={!props.hasStarted}>

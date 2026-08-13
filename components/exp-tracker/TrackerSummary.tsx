@@ -2,8 +2,10 @@
 
 import PaceChart from "@/components/PaceChart";
 import ExpCouponPanel from "@/components/exp-tracker/ExpCouponPanel";
+import LevelUpEtaPanel from "@/components/exp-tracker/LevelUpEtaPanel";
 import { cn } from "@/lib/cn";
 import { formatClockTime, formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
+import type { LevelUpEta } from "@/lib/levelProgress";
 import type { Ref } from "react";
 
 type Stats = {
@@ -18,6 +20,10 @@ type SeriesPoint = { ts: number; value: number };
 type Props = {
 	elapsedMs: number;
 	stats: Stats | null;
+	/** 측정 중이면 경과 시간 옆에 살아 있다는 표시를 띄웁니다. */
+	isSampling: boolean;
+	/** 레벨업까지 남은 시간/경험치. 레벨이나 EXP를 아직 못 읽었으면 null입니다. */
+	levelUpEta: LevelUpEta | null;
 	cumExpValue: number;
 	cumExpPct: number;
 	paceWindowMin: number;
@@ -54,9 +60,22 @@ export default function TrackerSummary(props: Props) {
 	return (
 		<div ref={props.captureRef} className="card p-4 space-y-4">
 			<h2 className="text-lg font-semibold">측정 정보</h2>
-			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+			{/*
+			 * 왜 sm/xl까지 나누는가: 브레이크포인트가 md 하나였을 때, 600~768px에서는 지표 4개가 1열로
+			 * 길게 늘어지고 1600px에서는 2열이라 좌우가 텅 비었습니다.
+			 */}
+			<div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
 				<div>
-					<div className="opacity-70 text-sm">경과된 시간</div>
+					<div className="opacity-70 text-sm flex items-center gap-1.5">
+						경과된 시간
+						{props.isSampling ? (
+							<span className="inline-flex items-center gap-1 text-emerald-300" title="측정 중">
+								{/* 왜 애니메이션인가: 버튼 색만으로는 "지금 기록되고 있다"가 잘 안 보였습니다. */}
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
+								<span className="text-xs">측정 중</span>
+							</span>
+						) : null}
+					</div>
 					<div className="font-mono text-xl">{formatElapsed(props.elapsedMs)}</div>
 				</div>
 				<div>
@@ -80,6 +99,8 @@ export default function TrackerSummary(props: Props) {
 					</div>
 				</div>
 			</div>
+
+			{props.levelUpEta ? <LevelUpEtaPanel eta={props.levelUpEta} /> : null}
 
 			{props.showCouponPanel ? (
 				<ExpCouponPanel
@@ -167,11 +188,17 @@ export default function TrackerSummary(props: Props) {
 					</div>
 				</div>
 
-				{props.chartMode === "pace" ? (
-					<p className="text-xs text-white/60 mt-1">시작부터 시점까지의 페이스입니다.</p>
-				) : props.chartMode === "paceRecent" ? (
-					<p className="text-xs text-white/60 mt-1">시점 기준 최근 30초의 페이스입니다.</p>
-				) : null}
+				{/*
+				 * 왜 모드마다 한 줄씩 반드시 두는가: 예전에는 "누적"에만 설명이 없어서, 탭을 누를 때마다
+				 * 카드 높이가 한 줄만큼 바뀌고 아래의 공유 버튼이 위아래로 튀었습니다.
+				 */}
+				<p className="text-xs text-white/60 mt-1">
+					{props.chartMode === "pace"
+						? "시작부터 시점까지의 페이스입니다."
+						: props.chartMode === "paceRecent"
+							? "시점 기준 최근 30초의 페이스입니다."
+							: "시작부터 시점까지 쌓인 총 경험치입니다."}
+				</p>
 
 				<div className="mt-2 h-40">
 					{props.chartMode === "pace" ? (

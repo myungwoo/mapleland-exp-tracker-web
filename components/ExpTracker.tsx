@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import RoiOverlay, { isRoiRectOrNull, RoiRect } from "./RoiOverlay";
+import { isRoiRectOrNull, RoiRect } from "./RoiOverlay";
 import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
+import { computeLevelUpEta } from "@/lib/levelProgress";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
 import type { NoticeHandler } from "@/lib/notice";
 import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
-import { cn } from "@/lib/cn";
-import Modal from "./Modal";
 import AlertDialog from "@/components/AlertDialog";
 import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
@@ -18,11 +17,14 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey";
 import TrackerToolbar from "@/components/exp-tracker/TrackerToolbar";
 import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugRecognitionPreview from "@/components/exp-tracker/DebugRecognitionPreview";
+import LiveRecognitionBar from "@/components/exp-tracker/LiveRecognitionBar";
 import RecognitionHealthBanner from "@/components/exp-tracker/RecognitionHealthBanner";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
+import SettingsModal from "@/components/exp-tracker/SettingsModal";
+import SetupChecklist from "@/components/exp-tracker/SetupChecklist";
 import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
-import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardingRoiAssist";
+import { useRoiReadPreview } from "@/features/exp-tracker/hooks/useRoiReadPreview";
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
 import { useStopwatch } from "@/features/exp-tracker/hooks/useStopwatch";
 import { useIntervalRunner } from "@/features/exp-tracker/hooks/useIntervalRunner";
@@ -229,13 +231,28 @@ export default function ExpTracker() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	const { levelRoiShot, expRoiShot, onboardingLevelText, onboardingExpText } = useOnboardingRoiAssist({
-		onboardingOpen,
-		onboardingStep,
-		stream,
-		captureVideoRef,
+	// 온보딩과 설정 모달 모두에서 "이 ROI가 지금 어떻게 읽히는지"를 1초마다 보여줍니다.
+	//
+	// 왜 프리뷰 비디오를 넘기는가: 두 창 모두 settingsOpen 상태에서만 열리고, 그때 실제로 재생 중인 건
+	// 프리뷰 비디오입니다. (인식용 hidden video는 측정/온보딩이 아니면 pause되어 있습니다)
+	// 두 비디오는 같은 MediaStream이라 videoWidth/Height가 같고, ROI는 비디오 픽셀 좌표라 그대로 통합니다.
+	//
+	// 썸네일(dataURL)은 실제로 그림을 보여주는 온보딩에서만 만듭니다. (toDataURL이 인식보다 비쌈)
+	const {
+		levelRoiShot,
+		expRoiShot,
+		levelText: roiLevelReadText,
+		expText: roiExpReadText,
+		validation: roiExpValidation
+	} = useRoiReadPreview({
+		active: settingsOpen || onboardingOpen,
+		videoRef: previewVideoRef,
 		roiLevel,
-		roiExp
+		roiExp,
+		withThumbnails: onboardingOpen,
+		refreshKey: onboardingStep,
+		expTable,
+		expPercentValidationEnabled
 	});
 
 	// 새 ROI가 설정되면(선택 완료) 선택 모드를 정리합니다.
@@ -416,6 +433,18 @@ export default function ExpTracker() {
 			nextAt
 		};
 	}, [elapsedMs, hasStarted, sampling.cumExpPct]);
+
+	// 레벨업까지 남은 시간/경험치. (웹 페이지 전용 — PiP는 폭이 좁아 노출하지 않습니다)
+	const levelUpEta = useMemo(() => {
+		if (!hasStarted) return null;
+		return computeLevelUpEta({
+			table: expTable,
+			level: sampling.currentLevel,
+			currentExpValue: sampling.currentExpValue,
+			cumExpValue: sampling.cumExpValue,
+			elapsedMs
+		});
+	}, [hasStarted, expTable, sampling.currentLevel, sampling.currentExpValue, sampling.cumExpValue, elapsedMs]);
 
 	// 경과 시간을 이용해 누적값을 비례 환산합니다:
 	// paceAtWindow(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
@@ -601,6 +630,35 @@ export default function ExpTracker() {
 	// 차트 모드 토글
 	const [chartMode, setChartMode] = useState<"pace" | "paceRecent" | "cumulative">("pace");
 
+	// 설정 모달을 열고 곧바로 특정 ROI 선택 모드로 들어갑니다. (체크리스트/온보딩에서 재사용)
+	const beginRoiSelection = useCallback((kind: "level" | "exp") => {
+		setSettingsOpen(true);
+		setRoiSelectionMode(kind);
+		setActiveRoi(kind);
+	}, []);
+
+	// 설정 모달 안의 ROI 버튼: 같은 버튼을 다시 누르면 선택 모드를 끕니다.
+	const toggleRoiSelection = useCallback(
+		(kind: "level" | "exp") => {
+			if (activeRoi === kind) {
+				setActiveRoi(null);
+				setRoiSelectionMode(null);
+				return;
+			}
+			setActiveRoi(kind);
+			setRoiSelectionMode(kind);
+		},
+		[activeRoi]
+	);
+
+	// 왜 문구로 들고 있는가: 비활성 버튼만 보여주면 무엇이 빠졌는지 알 수 없어서, 툴바 툴팁으로 알립니다.
+	// (같은 조건을 화면 위 체크리스트도 씁니다)
+	const startDisabledReason = !hasStream
+		? "먼저 설정에서 게임 창을 선택해 주세요."
+		: !roiLevel || !roiExp
+			? "먼저 설정에서 레벨/경험치 영역(ROI)을 지정해 주세요."
+			: null;
+
 	// x축 레이블은 경과 시간(ms)을 바로 사용
 
 	return (
@@ -608,7 +666,7 @@ export default function ExpTracker() {
 			<TrackerToolbar
 				isSampling={isSampling}
 				hasStarted={hasStarted}
-				hasStream={hasStream}
+				startDisabledReason={startDisabledReason}
 				pipSupported={pipSupported}
 				pipUnsupportedTooltip={pipUnsupportedTooltip}
 				onOpenSettings={() => setSettingsOpen(true)}
@@ -627,9 +685,29 @@ export default function ExpTracker() {
 
 			<RecognitionHealthBanner notice={sampling.healthNotice} />
 
+			{/* 측정 중에만 노출합니다. 측정하지 않을 때는 인식 자체를 돌리지 않으므로 보여줄 값도 없습니다. */}
+			<LiveRecognitionBar live={isSampling ? sampling.liveRecognition : null} />
+
+			{/* 준비가 덜 됐을 때만 나타납니다. (요약 카드 밖 — 카드는 "결과 이미지 복사"로 통째로 캡처됩니다) */}
+			{!isSampling ? (
+				<SetupChecklist
+					hasStream={hasStream}
+					hasLevelRoi={!!roiLevel}
+					hasExpRoi={!!roiExp}
+					onSelectWindow={() => {
+						setSettingsOpen(true);
+						void startCapture();
+					}}
+					onSetupLevelRoi={() => beginRoiSelection("level")}
+					onSetupExpRoi={() => beginRoiSelection("exp")}
+				/>
+			) : null}
+
 			<TrackerSummary
 				captureRef={summaryCaptureRef}
 				elapsedMs={elapsedMs}
+				isSampling={isSampling}
+				levelUpEta={levelUpEta}
 				stats={stats ? { nextAt: stats.nextAt, nextHours: stats.nextHours } : null}
 				cumExpValue={sampling.cumExpValue}
 				cumExpPct={sampling.cumExpPct}
@@ -733,123 +811,52 @@ export default function ExpTracker() {
 				}}
 			/>
 
-			<Modal
+			<SettingsModal
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
-				title="설정"
 				disableEscClose={activeRoi !== null || onboardingOpen}
-			>
-				<div className="flex items-center gap-2">
-					<button className="btn btn-primary" onClick={startCapture}>
-						게임 창 선택
-					</button>
-					{stream ? (
-						<button className="btn" onClick={stopCapture}>
-							공유 중지
-						</button>
-					) : null}
-					<div className="ml-auto flex items-center gap-2">
-						<label className="text-sm text-white/70">측정 주기</label>
-						<select
-							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-							value={intervalSec}
-							onChange={(e) => setIntervalSec(parseInt(e.target.value, 10) as IntervalSec)}
-						>
-							<option value={1}>1초</option>
-							<option value={5}>5초</option>
-							<option value={10}>10초</option>
-						</select>
-						<label className="text-sm text-white/70 ml-4">페이스 기준 시간</label>
-						<select
-							className="bg-white/10 text-white rounded px-2 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-							value={paceWindowMin}
-							onChange={(e) => setPaceWindowMin(parseInt(e.target.value, 10))}
-						>
-							<option value={1}>1분</option>
-							<option value={5}>5분</option>
-							<option value={10}>10분</option>
-							<option value={30}>30분</option>
-							<option value={60}>60분</option>
-						</select>
-					</div>
-				</div>
-
-				<div ref={roiContainerRef} className="relative w-full h-[70vh] overflow-hidden rounded-lg bg-black/50 mt-3">
-					<video ref={previewVideoRef} className="w-full h-full object-contain" muted playsInline />
-					<RoiOverlay
-						videoRef={previewVideoRef}
-						levelRect={roiLevel}
-						expRect={roiExp}
-						onChangeLevel={handleChangeLevel}
-						onChangeExp={handleChangeExp}
-						active={activeRoi}
-						onActiveChange={setActiveRoi}
-						onCancelSelection={() => {
-							setActiveRoi(null);
-							setRoiSelectionMode(null);
-							if (onboardingPausedForRoi) {
-								setOnboardingPausedForRoi(null);
-								setOnboardingOpen(true);
-							}
-						}}
-					/>
-				</div>
-
-				<div className="flex items-center gap-2">
-					<button
-						className={cn("btn", activeRoi === "level" && "btn-primary")}
-						onClick={() => {
-							if (activeRoi === "level") {
-								setActiveRoi(null);
-								setRoiSelectionMode(null);
-							} else {
-								setActiveRoi("level");
-								setRoiSelectionMode("level");
-							}
-						}}
-					>
-						레벨 ROI 설정
-					</button>
-					<button
-						className={cn("btn", activeRoi === "exp" && "btn-primary")}
-						onClick={() => {
-							if (activeRoi === "exp") {
-								setActiveRoi(null);
-								setRoiSelectionMode(null);
-							} else {
-								setActiveRoi("exp");
-								setRoiSelectionMode("exp");
-							}
-						}}
-					>
-						경험치 ROI 설정
-					</button>
-					<label className="ml-auto flex items-center gap-2 text-sm">
-						<input type="checkbox" checked={debugEnabled} onChange={(e) => setDebugEnabled(e.target.checked)} />
-						디버그 미리보기
-					</label>
-				</div>
-
-				<div className="mt-3 space-y-2">
-					<label className="flex items-start gap-2 text-sm">
-						<input
-							type="checkbox"
-							className="mt-1"
-							checked={expPercentValidationEnabled}
-							onChange={(e) => setExpPercentValidationEnabled(e.target.checked)}
-						/>
-						<div>
-							<div className="text-white/90">EXP% 검증 활성화</div>
-							<div className="text-white/60 text-xs">
-								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 인식 결과를 검증해 이상치를 걸러냅니다.
-								<br />
-								꺼짐: 레벨/퍼센트 오인식 때문에 측정이 막히는 경우를 완화하지만, 누적/페이스가 더 부정확해질 수
-								있습니다.
-							</div>
-						</div>
-					</label>
-				</div>
-			</Modal>
+				hasStream={hasStream}
+				onStartCapture={() => {
+					void startCapture();
+				}}
+				onStopCapture={stopCapture}
+				previewVideoRef={previewVideoRef}
+				roiContainerRef={roiContainerRef}
+				roiLevel={roiLevel}
+				roiExp={roiExp}
+				onChangeLevel={handleChangeLevel}
+				onChangeExp={handleChangeExp}
+				activeRoi={activeRoi}
+				onActiveRoiChange={setActiveRoi}
+				onToggleRoiMode={toggleRoiSelection}
+				onCancelSelection={() => {
+					setActiveRoi(null);
+					setRoiSelectionMode(null);
+					if (onboardingPausedForRoi) {
+						setOnboardingPausedForRoi(null);
+						setOnboardingOpen(true);
+					}
+				}}
+				levelReadText={roiLevelReadText}
+				expReadText={roiExpReadText}
+				expValidation={roiExpValidation}
+				intervalSec={intervalSec}
+				onIntervalSecChange={(sec) => setIntervalSec(sec as IntervalSec)}
+				paceWindowMin={paceWindowMin}
+				onPaceWindowMinChange={setPaceWindowMin}
+				expPercentValidationEnabled={expPercentValidationEnabled}
+				onExpPercentValidationEnabledChange={setExpPercentValidationEnabled}
+				debugEnabled={debugEnabled}
+				onDebugEnabledChange={setDebugEnabled}
+				onReplayTutorial={() => {
+					// 왜 onboardingDone을 되돌리지 않는가: "다시 보기"는 일회성이고, 다음 방문에 또 뜨면 안 됩니다.
+					setActiveRoi(null);
+					setRoiSelectionMode(null);
+					setOnboardingPausedForRoi(null);
+					setOnboardingStep(0);
+					setOnboardingOpen(true);
+				}}
+			/>
 			{/* 인식 샘플링용 숨김 비디오(항상 마운트) */}
 			<video ref={captureVideoRef} className="hidden" muted playsInline />
 			<AlertDialog
@@ -868,18 +875,14 @@ export default function ExpTracker() {
 					await startCapture();
 				}}
 				onActivateLevel={() => {
-					setSettingsOpen(true);
 					setOnboardingOpen(false);
 					setOnboardingPausedForRoi("level");
-					setRoiSelectionMode("level");
-					setActiveRoi("level");
+					beginRoiSelection("level");
 				}}
 				onActivateExp={() => {
-					setSettingsOpen(true);
 					setOnboardingOpen(false);
 					setOnboardingPausedForRoi("exp");
-					setRoiSelectionMode("exp");
-					setActiveRoi("exp");
+					beginRoiSelection("exp");
 				}}
 				onSetIntervalSec={(sec: number) => setIntervalSec(sec as IntervalSec)}
 				currentIntervalSec={intervalSec}
@@ -887,8 +890,8 @@ export default function ExpTracker() {
 				levelRoiPreview={levelRoiShot}
 				hasExpRoi={!!roiExp}
 				expRoiPreview={expRoiShot}
-				levelReadText={onboardingLevelText}
-				expReadText={onboardingExpText}
+				levelReadText={roiLevelReadText}
+				expReadText={roiExpReadText}
 				onOpenPip={() => {
 					void openPip();
 				}}

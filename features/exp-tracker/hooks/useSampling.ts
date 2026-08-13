@@ -9,6 +9,11 @@ import {
 import { recognizeExp, recognizeLevel } from "@/lib/recognize";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import {
+	describeExpValidation as describeExpValidationPure,
+	isPercentValueConsistent as isPercentValueConsistentPure,
+	type ExpValidationResult
+} from "@/lib/expValidation";
+import {
 	applyReadOutcome,
 	classifyReadOutcome,
 	describeRecognitionHealth,
@@ -69,17 +74,40 @@ type Options = {
 	samplingActive: boolean;
 };
 
-/** 디버그 미리보기에 표시할 EXP%↔값 검증 결과 */
-export type ExpValidationDebug = {
-	/** 검증 옵션이 켜져 있는지 */
-	enabled: boolean;
-	/** pass=정합, fail=불일치, unavailable=판정에 필요한 값이 없음 */
-	status: "pass" | "fail" | "unavailable";
-	/** EXP 테이블 기준으로 계산한 퍼센트 (레벨/EXP 값이 모두 있을 때) */
-	expectedPercent: number | null;
-	/** 해당 레벨에서 100%까지 필요한 EXP */
-	requiredExp: number | null;
+/**
+ * 디버그 미리보기에 표시할 EXP%↔값 검증 결과.
+ *
+ * 판정 규칙 자체는 `lib/expValidation.ts` 한 곳에만 둡니다. (설정 창의 표시도 같은 함수를 씁니다)
+ */
+export type ExpValidationDebug = ExpValidationResult;
+
+/**
+ * 이번 tick에서 실제로 읽은 값. "지금 인식이 되고 있는지"를 화면에 그대로 보여주기 위한 것입니다.
+ *
+ * - 이상치로 걸러졌더라도 **읽은 그대로** 담습니다. (걸러진 이유를 사용자가 봐야 하므로)
+ * - `currentLevel` 등과 다릅니다: 저건 마지막 **유효** 샘플이라, 인식이 끊긴 동안에도 옛 값이 남습니다.
+ * - 별도 인식 루프가 없습니다. 측정 루프가 어차피 매 tick 읽으므로 그 결과를 그대로 올려보냅니다.
+ */
+export type LiveRecognition = {
+	level: number | null;
+	expValue: number | null;
+	expPercent: number | null;
+	validation: ExpValidationResult;
 };
+
+function liveRecognitionEquals(a: LiveRecognition | null, b: LiveRecognition | null): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	return (
+		a.level === b.level &&
+		a.expValue === b.expValue &&
+		a.expPercent === b.expPercent &&
+		a.validation.enabled === b.validation.enabled &&
+		a.validation.status === b.validation.status &&
+		a.validation.expectedPercent === b.validation.expectedPercent &&
+		a.validation.requiredExp === b.validation.requiredExp
+	);
+}
 
 /**
  * 측정(ROI 캡처 → 픽셀 글꼴 인식)과 누적(%) / 누적(값) 계산을 담당하는 훅입니다.
@@ -129,6 +157,7 @@ export function useSampling(options: Options) {
 	const [parsedExpValue, setParsedExpValue] = useState<number | null>(null);
 	const [parsedExpPercent, setParsedExpPercent] = useState<number | null>(null);
 	const [expValidation, setExpValidation] = useState<ExpValidationDebug | null>(null);
+	const [liveRecognition, setLiveRecognition] = useState<LiveRecognition | null>(null);
 	const lastDebugPreviewAtRef = useRef<number>(0);
 
 	// 레벨 판독 재사용 상태. 규칙과 근거는 `lib/levelReadCache.ts` 에 있습니다.
@@ -151,50 +180,23 @@ export function useSampling(options: Options) {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
 	}, []);
 
+	// 판정 규칙은 `lib/expValidation.ts`에 있습니다. 여기서는 expTable만 묶어 줍니다.
 	const isPercentValueConsistent = useCallback(
-		(level: number, expValue: number, expPercent: number): boolean => {
-			// EXP_TABLE은 "해당 레벨에서 0% -> 100%까지 필요한 EXP"입니다. 이를 사용해 인식 결과를 상식선에서 검증합니다.
-			const req = requiredExpForLevel(expTable, level);
-			if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
-			// expValue는 [0, req] 범위여야 자연스럽습니다. (약간의 인식 노이즈/반올림 오차 허용)
-			if (expValue < 0) return false;
-			if (expValue > req * 1.05) return false;
-			const pctFromValue = (expValue / req) * 100;
-			if (!Number.isFinite(pctFromValue)) return false;
-			// 퍼센트 인식이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
-			return Math.abs(pctFromValue - expPercent) <= 2.5;
-		},
+		(level: number, expValue: number, expPercent: number): boolean =>
+			isPercentValueConsistentPure(expTable, level, expValue, expPercent),
 		[expTable]
 	);
 
-	/**
-	 * 디버그 미리보기용 검증 결과 설명.
-	 *
-	 * 측정 로직이 실제로 쓰는 판정(`isPercentValueConsistent`)을 그대로 재사용하되,
-	 * "왜 그런 판정이 나왔는지" 보이도록 테이블 기준 퍼센트도 같이 돌려줍니다.
-	 * (인식 자체는 멀쩡한데 레벨을 잘못 읽어서 걸리는 경우가 실제로 흔합니다)
-	 */
 	const describeExpValidation = useCallback(
-		(level: number | null, expValue: number | null, expPercent: number | null): ExpValidationDebug => {
-			if (level == null || expValue == null || expPercent == null) {
-				return {
-					enabled: expPercentValidationEnabled,
-					status: "unavailable",
-					expectedPercent: null,
-					requiredExp: null
-				};
-			}
-			const req = requiredExpForLevel(expTable, level);
-			const expectedPercent = req != null && req > 0 ? (expValue / req) * 100 : null;
-			const ok = isPercentValueConsistent(level, expValue, expPercent);
-			return {
+		(level: number | null, expValue: number | null, expPercent: number | null): ExpValidationDebug =>
+			describeExpValidationPure({
+				table: expTable,
 				enabled: expPercentValidationEnabled,
-				status: ok ? "pass" : "fail",
-				expectedPercent: expectedPercent != null && Number.isFinite(expectedPercent) ? expectedPercent : null,
-				requiredExp: req ?? null
-			};
-		},
-		[expTable, expPercentValidationEnabled, isPercentValueConsistent]
+				level,
+				expValue,
+				expPercent
+			}),
+		[expTable, expPercentValidationEnabled]
 	);
 
 	const isPlausibleSameLevelDrop = useCallback(
@@ -267,6 +269,20 @@ export function useSampling(options: Options) {
 			levelCacheRef.current = applyLevelRead(levelCacheRef.current, levelFp, levelRes, Date.now());
 		}
 
+		// 화면에 그대로 보여줄 "이번 tick의 판독".
+		// 왜 debugEnabled와 무관하게 계산하는가: 이건 순수 계산(테이블 조회 + 사칙연산)이라 사실상 공짜입니다.
+		// 비싼 건 인식과 toDataURL이고, 그건 아래 디버그 블록에만 있습니다.
+		const validation = describeExpValidation(levelRes.value, expRes.value, expRes.percent);
+		const nextLive: LiveRecognition = {
+			level: levelRes.value,
+			expValue: expRes.value,
+			expPercent: expRes.percent,
+			validation
+		};
+		// 값이 그대로면 같은 객체를 유지해 불필요한 렌더를 만들지 않습니다.
+		// (레벨은 몇 시간에 한 번 바뀌고, 사냥 중이 아니면 EXP도 그대로입니다)
+		setLiveRecognition((prev) => (liveRecognitionEquals(prev, nextLive) ? prev : nextLive));
+
 		if (debugEnabled) {
 			try {
 				if (wantDebugPreview) {
@@ -296,7 +312,7 @@ export function useSampling(options: Options) {
 					setParsedLevel(levelRes.value);
 					setParsedExpValue(expRes.value);
 					setParsedExpPercent(expRes.percent);
-					setExpValidation(describeExpValidation(levelRes.value, expRes.value, expRes.percent));
+					setExpValidation(validation);
 				}
 			} catch {
 				// 프리뷰 생성 실패는 치명적이지 않으므로 무시합니다.
@@ -412,6 +428,7 @@ export function useSampling(options: Options) {
 		setCurrentLevel(null);
 		setCurrentExpPercent(null);
 		setCurrentExpValue(null);
+		setLiveRecognition(null);
 		setCumExpPct(0);
 		setCumExpValue(0);
 		lastValidSampleRef.current = null;
@@ -604,6 +621,8 @@ export function useSampling(options: Options) {
 			setCurrentLevel(snap.currentLevel ?? null);
 			setCurrentExpPercent(snap.currentExpPercent ?? null);
 			setCurrentExpValue(snap.currentExpValue ?? null);
+			// 불러온 기록은 "지금 읽고 있는 값"이 아니므로 물려받지 않습니다.
+			setLiveRecognition(null);
 			setCumExpPct(Number.isFinite(snap.cumExpPct) ? snap.cumExpPct : 0);
 			setCumExpValue(Number.isFinite(snap.cumExpValue) ? snap.cumExpValue : 0);
 			lastSampleTsRef.current = snap.lastSampleTs ?? null;
@@ -628,6 +647,8 @@ export function useSampling(options: Options) {
 		lastSampleTsRef,
 		/** 기록이 멈춘 이유. 정상이거나 측정 중이 아니면 null입니다. */
 		healthNotice,
+		/** 이번 tick에서 읽은 값 그대로. (측정 중에만 갱신됩니다) */
+		liveRecognition,
 
 		// 동작
 		readOnce,
