@@ -28,8 +28,11 @@ import { isLevelGlyphPixel, type RgbaImage } from "./levelRoiFingerprint";
  * **ROI 캔버스는 반드시 원본 배율(scale: 1)로 넘겨야 합니다.** 확대하거나 이진화하면
  * 글리프가 뭉개져서 인식이 망가집니다. (EXP 경로와 같은 원칙)
  *
- * 알려진 한계: 캡처 배율이 정수가 아니면(예: 글리프가 10.5px로 리샘플된 경우) 글리프의 블록
- * 구조가 템플릿 격자와 어긋나 점수가 떨어지고 `null`이 납니다. 이건 **EXP 인식기도 똑같습니다.**
+ * 격자가 어긋나는 캡처: 글리프 상자를 각 변마다 ±1px 움직여 다시 채점하는 재시도가 있습니다.
+ * (`alignSegment`) 4)에서 확신이 없을 때만 돌므로, 격자가 정확한 캡처의 동작·비용은 그대로입니다.
+ *
+ * 알려진 한계: 그래도 캡처 배율이 정수가 아니면(예: 글리프가 10.5px로 리샘플된 경우) 글리프의
+ * 블록 구조가 템플릿 격자와 어긋나 점수가 떨어지고 `null`이 납니다. 이건 **EXP 인식기도 똑같습니다.**
  * (실측: `1214349360[83.16%]` 를 1.25/1.5/2.25/2.5/3.5배로 렌더하면 EXP도 전부 null)
  * 즉 이 앱은 원래 정수 배율 캡처를 전제로 하며, EXP가 안 읽히면 그 샘플은 어차피 쓸모가 없으므로
  * 레벨만 더 관대하게 만들 이유가 없습니다. 두 경로 모두 **틀린 값 대신 null** 로 실패합니다.
@@ -126,12 +129,24 @@ export function recognizeLevelPixelFont(
 	const segments = segmentColumns(band, bandTop, bandBottom);
 	if (segments.length === 0 || segments.length > 3) return null;
 
+	// 채점은 "블록 안의 전경 픽셀 수"만 필요하므로 누적합을 한 번 만들어 두고 씁니다.
+	// 정렬 재시도는 같은 블록을 수십 번 다시 세는데, 누적합이 있으면 그게 4번의 배열 조회가 됩니다.
+	const sat = buildSat(band);
+
 	let text = "";
 	let unknown = 0;
 	const debug: LevelSegmentDebug[] = [];
 	for (const seg of segments) {
-		const scored = scoreSegment(band, seg, scale);
-		const ch = pickBest(scored, options);
+		let scored = scoreSegment(sat, seg, scale);
+		let ch = pickBest(scored, options);
+		if (ch == null) {
+			// 정렬이 어긋난 캡처를 한 번 더 구제합니다. (아래 alignSegment 주석 참고)
+			const realigned = alignSegment(sat, seg, scale, options);
+			if (realigned) {
+				scored = realigned;
+				ch = pickBest(scored, options);
+			}
+		}
 		if (ch == null) {
 			unknown++;
 			text += UNKNOWN_DIGIT;
@@ -301,20 +316,143 @@ function segmentColumns(band: Mask, bandTop: number, bandBottom: number): Segmen
 	return segs;
 }
 
+/**
+ * 마스크의 2D 누적합(적분 영상).
+ *
+ * `data[(y) * (w + 1) + x]` = 원점부터 (x, y) 직전까지의 전경 픽셀 수.
+ * 블록 하나의 전경 개수를 블록 크기와 무관하게 4번의 조회로 구하기 위한 것입니다.
+ */
+type Sat = { data: Int32Array; w: number; h: number };
+
+function buildSat(mask: Mask): Sat {
+	const { w, h, data } = mask;
+	const sw = w + 1;
+	const out = new Int32Array(sw * (h + 1));
+	for (let y = 0; y < h; y++) {
+		const src = y * w;
+		const prev = y * sw;
+		const cur = prev + sw;
+		let rowSum = 0;
+		for (let x = 0; x < w; x++) {
+			rowSum += data[src + x];
+			out[cur + x + 1] = out[prev + x + 1] + rowSum;
+		}
+	}
+	return { data: out, w, h };
+}
+
+/** `[x0, x1) × [y0, y1)` 의 전경 픽셀 수. 마스크 밖은 배경(0)으로 봅니다. */
+function satSum(sat: Sat, x0: number, y0: number, x1: number, y1: number): number {
+	const cx0 = x0 < 0 ? 0 : x0 > sat.w ? sat.w : x0;
+	const cx1 = x1 < 0 ? 0 : x1 > sat.w ? sat.w : x1;
+	const cy0 = y0 < 0 ? 0 : y0 > sat.h ? sat.h : y0;
+	const cy1 = y1 < 0 ? 0 : y1 > sat.h ? sat.h : y1;
+	if (cx1 <= cx0 || cy1 <= cy0) return 0;
+	const sw = sat.w + 1;
+	const d = sat.data;
+	return d[cy1 * sw + cx1] - d[cy0 * sw + cx1] - d[cy1 * sw + cx0] + d[cy0 * sw + cx0];
+}
+
+/**
+ * 크기가 같은 템플릿끼리 묶어 둡니다. (레벨 글꼴은 폭 3짜리 `1` 과 폭 7짜리 나머지, 두 묶음)
+ *
+ * 왜: 블록 격자는 템플릿의 **크기**만으로 정해지므로, 같은 크기의 템플릿 9개를 각각 채점하면
+ * 똑같은 격자를 9번 다시 계산하게 됩니다. 묶어서 격자를 한 번만 만들면 그 9배가 사라집니다.
+ * (정렬 재시도는 이 채점을 수십 번 돌리므로 차이가 그대로 곱해집니다)
+ */
+const LEVEL_FONT_SIZE_GROUPS: { width: number; height: number; glyphs: LevelGlyphMask[] }[] = (() => {
+	const by = new Map<string, { width: number; height: number; glyphs: LevelGlyphMask[] }>();
+	for (const g of LEVEL_FONT_MASKS) {
+		const key = `${g.width}x${g.height}`;
+		let entry = by.get(key);
+		if (!entry) by.set(key, (entry = { width: g.width, height: g.height, glyphs: [] }));
+		entry.glyphs.push(g);
+	}
+	return [...by.values()];
+})();
+
+/** 블록별 전경 비율을 담아 두는 재사용 버퍼. (샘플마다 새로 만들면 GC 압박이 커집니다) */
+const fracScratch = new Float64Array(
+	LEVEL_FONT_SIZE_GROUPS.reduce((m, g) => Math.max(m, g.width * g.height), 0)
+);
+
 /** 세그먼트를 크기가 맞는 모든 템플릿과 비교해 점수 내림차순 목록을 돌려줍니다. */
-function scoreSegment(band: Mask, seg: Segment, scale: number): { char: string; score: number }[] {
+function scoreSegment(sat: Sat, seg: Segment, scale: number): { char: string; score: number }[] {
 	const segW = seg.x1 - seg.x0 + 1;
 	const segH = seg.y1 - seg.y0 + 1;
+	if (segW < 2 || segH < 2) return [];
 	// 캡처가 정수배가 아니거나 1px 스케일링 오차가 있을 수 있어 여유를 둡니다.
 	const tol = Math.max(1, Math.round(scale * 0.7));
 	const out: { char: string; score: number }[] = [];
-	for (const g of LEVEL_FONT_MASKS) {
-		if (Math.abs(segW - g.width * scale) > tol) continue;
-		if (Math.abs(segH - g.height * scale) > tol) continue;
-		out.push({ char: g.char, score: compareToTemplate(band, seg, segW, segH, g) });
+	for (const group of LEVEL_FONT_SIZE_GROUPS) {
+		if (Math.abs(segW - group.width * scale) > tol) continue;
+		if (Math.abs(segH - group.height * scale) > tol) continue;
+		const n = blockFractions(sat, seg, segW, segH, group.width, group.height);
+		for (const g of group.glyphs) {
+			let total = 0;
+			// 템플릿이 전경이면 관측 전경 비율이, 배경이면 그 여집합이 그대로 점수가 됩니다.
+			for (let i = 0; i < n; i++) total += g.bits[i] ? fracScratch[i] : 1 - fracScratch[i];
+			out.push({ char: g.char, score: total / n });
+		}
 	}
 	out.sort((a, b) => b.score - a.score);
 	return out;
+}
+
+/** 정렬 재시도에서 각 변을 움직여 볼 범위(px). */
+const ALIGN_DELTA = 1;
+
+/**
+ * 세그먼트 상자를 각 변마다 ±1px 움직여 보고, 가장 잘 맞는 정렬에서의 점수표를 돌려줍니다.
+ *
+ * 왜 필요한가 — 캡처가 "정수 배율"인데도 격자가 어긋나는 경우가 있습니다.
+ * 실측(레벨 193, 글리프 높이 21px = 7px 글꼴의 3배)에서 관측된 어긋남은 두 가지입니다.
+ *   1) 글리프 오른쪽에 전경 판정을 통과하는 1px 띠가 생겨 상자가 21px이 아니라 22px로 잡힙니다.
+ *      (화면 공유는 영상 인코딩 경로를 타므로 흰 글자와 오렌지 타일 경계에서 색이 번집니다)
+ *   2) 글꼴 행 사이 경계가 한 행씩 밀립니다. 스케일링이 최근접이 아니라 보간이라, 경계 픽셀의
+ *      섞인 값이 임계를 한 행 일찍 넘습니다. (블록이 3,3,3,... 이 아니라 3,5,4,3,3,3 으로 잘립니다)
+ * 두 어긋남 모두 점수를 0.91~0.96 대로 끌어내려, 정답 글리프가 하한(0.95) 바로 아래에 걸립니다.
+ * 상자를 1px 단위로 다시 맞추면 정답이 0.96~0.98 로 회복됩니다. (실측: `1` 0.913→0.982,
+ * `9` 0.950→0.963, `3` 0.956→0.967)
+ *
+ * ⚠️ **모든 후보를 "같은" 정렬에서 채점합니다.** 후보마다 각자 제일 좋은 정렬을 골라 주면
+ * 서로 다른 조건에서 나온 점수를 비교하게 되어 마진 규칙(1등과 2등의 차)이 무의미해집니다.
+ * 그래서 정렬을 먼저 하나 고르고(=1등 점수가 가장 높아지는 정렬), 그 정렬의 점수표를 통째로
+ * 돌려줍니다. 이렇게 해야 "틀린 글리프는 정답보다 구조적으로 낮다"는 성질이 유지됩니다.
+ *
+ * 정렬을 못 맞추면 그냥 `null`입니다. 여기서도 하한·마진은 그대로 적용되므로, 이 재시도는
+ * **틀린 값을 채택하게 만드는 게 아니라 놓친 정답을 되살리는** 역할만 합니다.
+ */
+function alignSegment(
+	sat: Sat,
+	seg: Segment,
+	scale: number,
+	options: Options
+): { char: string; score: number }[] | null {
+	const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+	let best: { char: string; score: number }[] | null = null;
+	let bestTop = -1;
+	for (let dLeft = -ALIGN_DELTA; dLeft <= ALIGN_DELTA; dLeft++) {
+		for (let dRight = -ALIGN_DELTA; dRight <= ALIGN_DELTA; dRight++) {
+			for (let dTop = -ALIGN_DELTA; dTop <= ALIGN_DELTA; dTop++) {
+				for (let dBottom = -ALIGN_DELTA; dBottom <= ALIGN_DELTA; dBottom++) {
+					if (dLeft === 0 && dRight === 0 && dTop === 0 && dBottom === 0) continue;
+					const win: Segment = {
+						x0: seg.x0 + dLeft,
+						x1: seg.x1 + dRight,
+						y0: seg.y0 + dTop,
+						y1: seg.y1 + dBottom
+					};
+					const scored = scoreSegment(sat, win, scale);
+					if (scored.length === 0 || scored[0].score <= bestTop) continue;
+					bestTop = scored[0].score;
+					best = scored;
+				}
+			}
+		}
+	}
+	// 하한도 못 넘는 정렬이면 되살릴 정답이 없는 것이므로 원래대로 미인식 처리합니다.
+	return bestTop >= minScore ? best : null;
 }
 
 function pickBest(scored: { char: string; score: number }[], options: Options): string | null {
@@ -349,27 +487,29 @@ function renderSegment(band: Mask, seg: Segment): string[] {
  * 영역 평균은 경계 오차가 그 블록의 비율에만 반영되므로 훨씬 완만하게 감소합니다.
  * 정수 배율에서는 비율이 항상 0 또는 1이라 픽셀 단위 비교와 완전히 동일합니다.
  */
-function compareToTemplate(band: Mask, seg: Segment, segW: number, segH: number, g: LevelGlyphMask): number {
-	let total = 0;
-	for (let ty = 0; ty < g.height; ty++) {
-		const sy0 = Math.floor((ty * segH) / g.height);
-		const sy1 = Math.max(sy0 + 1, Math.floor(((ty + 1) * segH) / g.height));
-		for (let tx = 0; tx < g.width; tx++) {
-			const sx0 = Math.floor((tx * segW) / g.width);
-			const sx1 = Math.max(sx0 + 1, Math.floor(((tx + 1) * segW) / g.width));
-			let on = 0;
-			let count = 0;
-			for (let y = sy0; y < sy1 && y < segH; y++) {
-				const row = (seg.y0 + y) * band.w + seg.x0;
-				for (let x = sx0; x < sx1 && x < segW; x++) {
-					on += band.data[row + x];
-					count++;
-				}
-			}
-			const frac = count > 0 ? on / count : 0;
-			// 템플릿이 전경이면 관측 전경 비율이, 배경이면 그 여집합이 그대로 점수가 됩니다.
-			total += g.bits[ty * g.width + tx] ? frac : 1 - frac;
+function blockFractions(
+	sat: Sat,
+	seg: Segment,
+	segW: number,
+	segH: number,
+	gw: number,
+	gh: number
+): number {
+	for (let ty = 0; ty < gh; ty++) {
+		const sy0 = Math.floor((ty * segH) / gh);
+		const sy1 = Math.max(sy0 + 1, Math.floor(((ty + 1) * segH) / gh));
+		const by1 = sy1 < segH ? sy1 : segH;
+		for (let tx = 0; tx < gw; tx++) {
+			const sx0 = Math.floor((tx * segW) / gw);
+			const sx1 = Math.max(sx0 + 1, Math.floor(((tx + 1) * segW) / gw));
+			const bx1 = sx1 < segW ? sx1 : segW;
+			// 정렬 재시도(alignSegment)는 상자를 밴드 밖으로도 밀어 봅니다.
+			// 밖은 배경으로 세되 분모(블록 넓이)에는 그대로 넣어야, 상자를 밀어서 얻은 점수가
+			// 공짜가 되지 않습니다. 그래서 satSum(관측 전경)과 count(블록 넓이)를 따로 구합니다.
+			const count = (by1 - sy0) * (bx1 - sx0);
+			const on = satSum(sat, seg.x0 + sx0, seg.y0 + sy0, seg.x0 + bx1, seg.y0 + by1);
+			fracScratch[ty * gw + tx] = count > 0 ? on / count : 0;
 		}
 	}
-	return total / (g.width * g.height);
+	return gw * gh;
 }
