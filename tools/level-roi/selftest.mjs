@@ -163,8 +163,9 @@ for (const amp of [5, 10, 15]) {
 	check("전경 수가 같아도 배치가 다르면 지문이 다름", a != null && b != null && !levelRoiFingerprintEquals(a, b));
 }
 
-// --- 7) 전처리와 판정 규칙이 어긋나지 않았는가 ---
-// `preprocessLevelCanvas`는 이 함수를 import해서 씁니다. 규칙이 바뀌면 여기서 알 수 있게 고정값을 확인합니다.
+// --- 7) 지문과 인식기의 판정 규칙이 어긋나지 않았는가 ---
+// 레벨 인식기(`lib/levelPixelRecognizer.ts`)가 이 함수를 import해서 씁니다.
+// 규칙이 바뀌면 여기서 알 수 있게 고정값을 확인합니다.
 {
 	check("흰 글자는 전경", isLevelGlyphPixel(255, 255, 255));
 	check("크림색 글자도 전경", isLevelGlyphPixel(255, 250, 225));

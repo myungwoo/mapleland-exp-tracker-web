@@ -71,8 +71,7 @@ async function waitForAtLeastOneFreshFrame(video: HTMLVideoElement, timeoutMs: n
 
 		// 최우선: requestVideoFrameCallback (크롬/엣지 등)
 		const rvfc = (anyVideo as any).requestVideoFrameCallback as
-			| undefined
-			| ((cb: (now: number, meta: any) => void) => number);
+			undefined | ((cb: (now: number, meta: any) => void) => number);
 		if (rvfc) {
 			try {
 				vfcId = rvfc.call(video, (_now: number, meta: any) => {
