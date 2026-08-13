@@ -77,7 +77,6 @@ export default function ExpTracker() {
 	const [expCouponCount, setExpCouponCount] = useState(0);
 	const [isPreparingSample, setIsPreparingSample] = useState(false);
 	const stopwatch = useStopwatch();
-	const sampler = useIntervalRunner();
 	const elapsedMs = stopwatch.elapsedMs;
 
 	const [activeRoi, setActiveRoi] = useState<"level" | "exp" | null>(null);
@@ -315,22 +314,26 @@ export default function ExpTracker() {
 		// 타이머 시작
 		stopwatch.start();
 
-		// 샘플링 인터벌은 아래 effect가 소유합니다. (isSampling/intervalSec 변화에 따라 재시작)
+		// 샘플링 인터벌은 아래 `useIntervalRunner`가 소유합니다. (isSampling/intervalSec 변화에만 반응)
 		setIsSampling(true);
 	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, sampling, ensureCapturePlaying, showNotice]);
 
-	// 샘플링 인터벌의 생명주기를 한곳에서 관리합니다.
-	// - 왜: 측정 중 "측정 주기"를 바꿔도 즉시 반영되어야 하고, 인터벌 clear 누락도 막을 수 있습니다.
+	// 샘플링 인터벌의 생명주기는 훅이 소유합니다.
+	//
+	// ⚠️ 여기서 effect를 직접 들고 타이머를 걸지 마세요. 예전에는 그렇게 했다가
+	// 의존성에 넣은 `{ start, stop }` 객체가 렌더마다 새로 만들어져서 **매 렌더 타이머가 리셋**됐습니다.
+	// 측정 화면은 경과 시간 때문에 최소 1초에 한 번 리렌더되므로, 주기가 1초보다 길면 샘플이
+	// 단 한 번도 실행되지 않았습니다. (경과 시간만 흐르고 경험치·페이스는 영구히 멈춤 — 실제 버그)
+	// 근거와 방어 장치는 `lib/intervalRunner.ts`에 있습니다.
+	//
+	// - 측정 중 "측정 주기"를 바꾸면 `intervalMs`가 바뀌므로 즉시 반영됩니다.
 	// - setInterval 콜백에서 async/await를 직접 쓰면 예외가 unhandled로 튈 수 있어 void로 소거합니다.
-	useEffect(() => {
-		if (!isSampling) return;
-		sampler.start(intervalSec * 1000, () => {
+	const sampler = useIntervalRunner({
+		intervalMs: isSampling ? intervalSec * 1000 : null,
+		run: () => {
 			void runSampleOnceRef.current();
-		});
-		return () => {
-			sampler.stop();
-		};
-	}, [isSampling, intervalSec, sampler]);
+		}
+	});
 
 	const pauseSampling = useCallback(async () => {
 		// 상태를 고정하기 위해 타이머를 먼저 멈춥니다.
