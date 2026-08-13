@@ -1,4 +1,4 @@
-import { formatElapsed } from "../format";
+import { formatClockTime, formatElapsed } from "../format";
 import { pipMarkup, pipStyles } from "./template";
 import type { PipCallbacks, PipState } from "./types";
 
@@ -163,15 +163,22 @@ export class PipController {
 			playBtn.classList.remove("play", "pause");
 			playBtn.classList.add(state.isSampling ? "pause" : "play");
 		}
-		// 타이머
+		// 타이머. 기록이 멈춘 동안은 빨갛게 표시합니다. (창을 작게 써도 눈에 들어오도록)
 		const timer = qs("pip-timer");
-		if (timer) timer.textContent = formatElapsed(state.elapsedMs);
+		if (timer) {
+			timer.textContent = formatElapsed(state.elapsedMs);
+			timer.classList.toggle("stalled", !!state.healthText);
+			// 원인은 호버 툴팁으로만 노출합니다. 레이아웃을 건드리지 않으려는 의도입니다.
+			if (state.healthText) timer.setAttribute("title", state.healthText);
+			else timer.removeAttribute("title");
+		}
 		// 다음 시간 라벨/시간
 		const nextLabel = qs("pip-next-label");
 		if (nextLabel)
 			nextLabel.textContent = state.nextHours != null ? `${state.nextHours}시간 되는 시각` : "다음 시간 되는 시각";
 		const nextEl = qs("pip-next");
-		if (nextEl) nextEl.textContent = state.nextAt ? state.nextAt.toLocaleTimeString() : "-";
+		// 본문 요약 카드와 같은 값이므로 표기도 같아야 합니다. (24시간제)
+		if (nextEl) nextEl.textContent = state.nextAt ? formatClockTime(state.nextAt) : "-";
 		// 텍스트들
 		const gainedEl = qs("pip-gained");
 		if (gainedEl) gainedEl.textContent = state.gainedText;

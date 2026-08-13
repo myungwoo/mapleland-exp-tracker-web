@@ -1,3 +1,4 @@
+import { formatClockTime } from "@/lib/format";
 import { useMemo, useRef, useState, useEffect, useId } from "react";
 
 type Point = { ts: number; value: number };
@@ -13,6 +14,13 @@ type Props = {
 	enableBrush?: boolean;
 	onRangeChange?: (startMs: number, endMs: number) => void;
 };
+
+/**
+ * SVG `<text>`는 Tailwind의 `font-mono` 유틸리티를 쓸 수 없어 스택을 직접 적습니다.
+ * `tailwind.config.ts`의 `fontFamily.mono`와 같은 순서를 유지하세요.
+ */
+const MONO_FONT_STACK =
+	'"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 const BASE_MARGIN = { left: 10, right: 10, top: 10, bottom: 22 };
 const AXIS_LABEL_GAP = 8; // y 라벨과 플롯 영역 사이 px 간격
@@ -404,7 +412,7 @@ export default function PaceChart(props: Props) {
 												dominantBaseline="middle"
 												fill="rgba(255,255,255,0.55)"
 												fontSize={10}
-												fontFamily='"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+												fontFamily={MONO_FONT_STACK}
 											>
 												{yLabelFormatter ? yLabelFormatter(v) : v.toFixed(0)}
 											</text>
@@ -439,9 +447,9 @@ export default function PaceChart(props: Props) {
 												dominantBaseline="alphabetic"
 												fill="rgba(255,255,255,0.55)"
 												fontSize={10}
-												fontFamily='"D2 coding", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+												fontFamily={MONO_FONT_STACK}
 											>
-												{xLabelFormatter ? xLabelFormatter(t) : new Date(t).toLocaleTimeString()}
+												{xLabelFormatter ? xLabelFormatter(t) : formatClockTime(new Date(t))}
 											</text>
 										) : null}
 									</g>
@@ -514,7 +522,7 @@ export default function PaceChart(props: Props) {
 							<div className="opacity-70">
 								{xLabelFormatter
 									? xLabelFormatter(series[hover.idx].ts)
-									: new Date(series[hover.idx].ts).toLocaleTimeString()}
+									: formatClockTime(new Date(series[hover.idx].ts))}
 							</div>
 						</div>
 					) : null}

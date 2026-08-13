@@ -568,16 +568,48 @@ function compareToTemplate(band: Mask, seg: Segment, segW: number, segH: number,
  *   퍼센트가 나올 수 없습니다. (예: `[8?.18%` → 매칭 실패. 느슨하면 18%로 읽혔을 것)
  * - **값 바로 앞에 숫자 자리 미인식(`?`)이 있으면 버립니다.**
  *   자릿수가 잘린 값을 채택하면 안 됩니다. (예: `1214??91?3[83.18%` → `3` 이 되어버림)
- *   반면 `_`(라벨/UI 등 숫자가 아닌 미인식)는 값과 무관하므로 허용합니다.
+ * - **`_`(숫자가 아닌 미인식) 앞에 숫자가 하나라도 있으면 버립니다.**
+ *   `_` 는 보통 "EXP." 라벨이나 UI 조각이고 그건 숫자열보다 **왼쪽에만** 있으므로 값과 무관합니다.
+ *   그런데 `_` 앞에 숫자가 있다면 이야기가 다릅니다 — 마우스 포인터 같은 것이 숫자 중간을 가려서
+ *   숫자열이 두 토막으로 갈라진 것이고, 그러면 매칭되는 건 **뒤쪽 토막(자릿수가 잘린 값)** 입니다.
+ *   (예: `1214_49360[83.16%` → 실제 값은 1214349360인데 `49360`이 됩니다)
  */
+const EXP_TEXT_RE = /(\d{1,12})\[(\d{1,3}\.\d{2})%\]?/;
+
 export function parsePixelExpText(text: string): { value: number; percent: number } | null {
-	const m = text.match(/(\d{1,12})\[(\d{1,3}\.\d{2})%\]?/);
+	const m = text.match(EXP_TEXT_RE);
 	if (!m || m.index == null) return null;
-	// `(\d{1,12})` 는 greedy라 앞 글자는 숫자가 아닙니다. 남은 위험은 "숫자 자리 미인식"뿐입니다.
-	if (m.index > 0 && text[m.index - 1] === UNKNOWN_DIGIT_SLOT) return null;
+	// `(\d{1,12})` 는 greedy라 앞 글자는 숫자가 아닙니다. 남은 위험은 "미인식 조각에 의한 잘림"뿐입니다.
+	if (m.index > 0) {
+		const prev = text[m.index - 1];
+		if (prev === UNKNOWN_DIGIT_SLOT) return null;
+		// 앞쪽에 숫자가 남아 있다면 숫자열이 갈라진 것입니다. (라벨/UI 조각은 숫자보다 왼쪽에만 있습니다)
+		if (prev === UNKNOWN_OTHER && /\d/.test(text.slice(0, m.index))) return null;
+	}
 	const value = parseInt(m[1], 10);
 	const percent = parseFloat(m[2]);
 	if (!Number.isFinite(value) || !Number.isFinite(percent)) return null;
 	if (percent < 0 || percent > 100) return null;
 	return { value, percent };
+}
+
+/**
+ * 값 바로 앞에 미인식 조각이 붙어 있는지 알려줍니다.
+ *
+ * 왜 필요한가: 위 규칙으로도 걸러내지 못하는 경우가 하나 남습니다 — 마우스 포인터가 **앞자리를
+ * 통째로** 삼켜서 `_49360[83.16%` 처럼 되면, 남은 문자열만 봐서는 "EXP." 라벨이 앞에 있는
+ * 정상 판독(`____1214349360[83.16%`)과 구분할 수 없습니다. 둘 다 값 앞이 `_` 입니다.
+ *
+ * 이때 값은 조용히 잘리지만, 잘린 값은 퍼센트와 맞지 않으므로 상위(`useSampling`)의
+ * 값↔퍼센트 정합성 검사에 걸립니다. 다만 그 검사만으로는 **원인이 레벨인지 경험치인지** 알 수
+ * 없어서 사용자에게 엉뚱한 안내("레벨을 잘못 읽고 있을 수 있습니다")를 하게 됩니다.
+ *
+ * 그래서 이 신호를 함께 넘깁니다. "정합성 불일치 + 값 앞에 미인식 조각" 조합이면 원인은
+ * 사실상 경험치 가림입니다. 정상 판독에서는 값이 맞으므로 이 조합 자체가 나오지 않습니다.
+ */
+export function expValueHasUnknownPrefix(text: string): boolean {
+	const m = text.match(EXP_TEXT_RE);
+	if (!m || m.index == null || m.index === 0) return false;
+	const prev = text[m.index - 1];
+	return prev === UNKNOWN_DIGIT_SLOT || prev === UNKNOWN_OTHER;
 }

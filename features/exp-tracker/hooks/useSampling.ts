@@ -8,10 +8,25 @@ import {
 } from "@/lib/levelReadCache";
 import { recognizeExp, recognizeLevel } from "@/lib/recognize";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
+import {
+	applyReadOutcome,
+	classifyReadOutcome,
+	describeRecognitionHealth,
+	emptyRecognitionHealth,
+	recognitionHealthNoticeEquals,
+	type RecognitionHealthNotice,
+	type RecognitionHealthState
+} from "@/lib/recognitionHealth";
 import type { RoiRect } from "@/components/RoiOverlay";
 
 export type ReadSample = {
 	ts: number;
+	/**
+	 * 경험치 값 앞에 미인식 조각이 붙어 있었는지. (이번 틱의 진단용 — 누적 계산에는 쓰지 않습니다)
+	 *
+	 * 이상치 원인을 "레벨 문제"로 오진하지 않기 위한 신호입니다. 근거는 `lib/recognize.ts` 참고.
+	 */
+	expValueHasUnknownPrefix?: boolean;
 	level: number | null;
 	expPercent: number | null;
 	expValue: number | null;
@@ -120,6 +135,16 @@ export function useSampling(options: Options) {
 	const levelCacheRef = useRef<LevelReadCacheState>(emptyLevelReadCache());
 	const clearLevelCache = useCallback(() => {
 		levelCacheRef.current = emptyLevelReadCache();
+	}, []);
+
+	// 인식 상태(기록이 되고 있는지). 규칙과 근거는 `lib/recognitionHealth.ts` 에 있습니다.
+	// 상태 자체는 ref에 두고, 화면에 띄울 알림만 state로 노출합니다.
+	// (지속 시간은 매초 늘어나므로 상태를 그대로 state에 넣으면 매 샘플 렌더가 발생합니다)
+	const healthStateRef = useRef<RecognitionHealthState>(emptyRecognitionHealth());
+	const [healthNotice, setHealthNotice] = useState<RecognitionHealthNotice | null>(null);
+	const clearHealth = useCallback(() => {
+		healthStateRef.current = emptyRecognitionHealth();
+		setHealthNotice(null);
 	}, []);
 
 	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
@@ -283,6 +308,7 @@ export function useSampling(options: Options) {
 			level: levelRes.value ?? null,
 			expPercent: expRes.percent ?? null,
 			expValue: expRes.value ?? null,
+			expValueHasUnknownPrefix: expRes.hasUnknownBeforeValue,
 			levelWasMissing: levelRes.value == null && (expRes.percent != null || expRes.value != null)
 		};
 	}, [captureVideoRef, roiExp, roiLevel, debugEnabled, describeExpValidation]);
@@ -356,6 +382,32 @@ export function useSampling(options: Options) {
 		};
 	}, [debugEnabled, samplingActive]);
 
+	/**
+	 * "기록이 멈췄다"는 알림을 매초 다시 판단합니다.
+	 *
+	 * 왜 샘플 처리 안에서 바로 정하지 않는가: 유예 시간(기본 5초)이 지나야 알림이 뜨는데,
+	 * 측정 주기가 길면(예: 10초) 다음 샘플이 올 때까지 알림이 뜨지 않습니다. 지속 시간 표시도
+	 * 매초 갱신되어야 합니다. 그래서 판단은 시간 축에서 따로 돌립니다.
+	 *
+	 * 측정 중이 아니면 알림 자체가 의미가 없으므로 인터벌을 돌리지 않고 알림을 지웁니다.
+	 */
+	useEffect(() => {
+		if (!samplingActive) {
+			setHealthNotice(null);
+			return;
+		}
+		const evaluate = () => {
+			const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: true });
+			// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
+			setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
+		};
+		evaluate();
+		const id = window.setInterval(evaluate, 1000);
+		return () => {
+			window.clearInterval(id);
+		};
+	}, [samplingActive]);
+
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);
 		setCurrentExpPercent(null);
@@ -367,7 +419,8 @@ export function useSampling(options: Options) {
 		setSampleTick(0);
 		// 새 측정은 레벨도 처음부터 다시 읽습니다. (앞 측정의 판독을 물려받지 않도록)
 		clearLevelCache();
-	}, [clearLevelCache]);
+		clearHealth();
+	}, [clearLevelCache, clearHealth]);
 
 	const captureBaseline = useCallback(
 		async (args: { resetTotals: boolean }) => {
@@ -376,6 +429,9 @@ export function useSampling(options: Options) {
 			if (args.resetTotals) {
 				resetTotals();
 			}
+			// 재개 시에는 누적을 유지하지만 인식 상태는 초기화합니다.
+			// 일시정지 이전의 실패 이력을 물려받으면 재개 직후부터 경고가 떠 있게 됩니다.
+			clearHealth();
 			// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
 			const raw = await readOnce({ fresh: true });
 			const s: ReadSample = {
@@ -403,7 +459,7 @@ export function useSampling(options: Options) {
 				lastSampleTsRef.current = null;
 			}
 		},
-		[annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled]
+		[annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled, clearHealth]
 	);
 
 	const sampleOnceAndAccumulate = useCallback(async () => {
@@ -433,35 +489,46 @@ export function useSampling(options: Options) {
 				sample = annotateOutlier(sample, "pct_value_mismatch");
 			}
 		}
+		// 레벨 급변(예전의 `level_jump`) 검사는 일부러 하지 않습니다.
+		//
+		// 왜: 이 검사는 범용 인식 엔진을 쓰던 시절의 방어선이었습니다. LSTM 기반 인식기는 애매할 때도 확신에 찬 틀린 레벨
+		// (193을 183으로)을 돌려줬기 때문에 "한 틱에 2레벨 이상 변화 = 오인식"으로 막을 필요가 있었습니다.
+		// 지금 레벨 인식은 픽셀 글꼴 템플릿 매칭이라(`lib/levelPixelRecognizer.ts`) 한 자리라도 확신이 없으면
+		// 값을 찍지 않고 `null`을 돌려줍니다. 즉 막아야 할 "틀린 레벨" 자체가 나오지 않습니다.
+		//
+		// 반대로 이 검사에는 자가 복구가 불가능한 함정이 있었습니다. prev는 유효 샘플일 때만 갱신되므로,
+		// ROI가 오래 가려진 동안 레벨이 2번 오르면(마우스 포인터, 인게임 대화창 등) 가림이 풀린 뒤
+		// 모든 샘플이 영구히 `level_jump`로 폐기되어 측정이 조용히 죽었습니다.
+		// 누적 계산 쪽은 다중 레벨 상승을 이미 정확히 처리합니다. (`computeExpDeltaFromTable`)
+		//
+		// 되돌리고 싶다면 절대 레벨차가 아니라 "직전 유효 샘플로부터의 경과 시간"을 함께 봐야 합니다.
 		if (
 			isStructValid &&
 			!sample.isOutlier &&
 			prev &&
 			prev.level != null &&
 			prev.expValue != null &&
-			prev.expPercent != null
+			prev.expPercent != null &&
+			// 같은 레벨일 때만 의미가 있는 검사입니다. (레벨이 올랐으면 EXP가 0 근처로 떨어지는 게 정상)
+			s.level === prev.level &&
+			s.expValue != null &&
+			s.expPercent != null
 		) {
-			// 레벨이 한 번에 크게 튀는 경우는 인식 이상치로 보는 편이 안전합니다.
-			if (s.level != null && Math.abs(s.level - prev.level) >= 2) {
-				sample = annotateOutlier(sample, "level_jump");
-			} else if (s.level != null && s.expValue != null && s.expPercent != null) {
-				// 같은 레벨로 해석했을 때, 값/퍼센트의 상호 일관성을 검사합니다. (테이블 기반)
-				if (expPercentValidationEnabled && !isPercentValueConsistent(s.level, s.expValue, s.expPercent)) {
-					sample = annotateOutlier(sample, "pct_value_mismatch");
-				} else {
-					// 같은 레벨에서 감소는 정상(사망 패널티 등)일 수 있으므로 허용하되,
-					// 단일 틱에서 과도한 급락은 인식 이상치로 차단합니다.
-					if (s.level === prev.level) {
-						if (!isPlausibleSameLevelDrop(s.level, prev.expValue, s.expValue, prev.expPercent, s.expPercent)) {
-							sample = annotateOutlier(sample, "implausible_drop");
-						}
-					}
-				}
+			// 같은 레벨에서 감소는 정상(사망 패널티 등)일 수 있으므로 허용하되,
+			// 단일 틱에서 과도한 급락은 인식 이상치로 차단합니다.
+			// (%↔값 일관성은 위에서 이미 검사했으므로 여기서 다시 보지 않습니다)
+			if (!isPlausibleSameLevelDrop(s.level, prev.expValue, s.expValue, prev.expPercent, s.expPercent)) {
+				sample = annotateOutlier(sample, "implausible_drop");
 			}
 		}
 
-		// "현재 표시 값"은 이상치가 아닐 때만 갱신해서, PiP/메인 UI가 순간적으로 튀는 값을 보여주지 않게 합니다.
-		if (!sample.isOutlier) {
+		// "현재 표시 값"은 판독에 성공했고 이상치도 아닐 때만 갱신합니다.
+		//
+		// 왜 isStructValid까지 보는가: 인식 실패 샘플은 isOutlier가 붙지 않으므로, 이 조건이 없으면
+		// 포탈 이동(검은 화면)이나 ROI 가림 한 번에 현재값이 null로 덮입니다. 이 값들은 기록 스냅샷에
+		// 그대로 들어가므로, 그 순간 측정을 끝내면 기록의 "현재 레벨/경험치"가 비어버립니다.
+		// 마지막으로 성공한 판독을 유지하는 쪽이 항상 낫습니다.
+		if (isStructValid && !sample.isOutlier) {
 			setCurrentLevel(s.level);
 			setCurrentExpPercent(s.expPercent);
 			setCurrentExpValue(s.expValue ?? null);
@@ -490,11 +557,26 @@ export function useSampling(options: Options) {
 			}
 		}
 
-		if (sample.isValid && !sample.isOutlier) {
+		const isRecorded = !!sample.isValid && !sample.isOutlier;
+		if (isRecorded) {
 			lastValidSampleRef.current = sample;
 			lastSampleTsRef.current = sample.ts;
 			setSampleTick((t) => t + 1);
 		}
+
+		// 이 샘플이 기록됐는지, 안 됐다면 왜인지를 기록해 둡니다. (화면 알림은 아래 인터벌이 판단)
+		// levelRead에는 폴백 이전의 원본 판독(raw.level)을 넘겨야 "레벨을 못 읽고 있다"가 드러납니다.
+		healthStateRef.current = applyReadOutcome(
+			healthStateRef.current,
+			classifyReadOutcome({
+				isRecorded,
+				levelRead: raw.level != null,
+				expRead: raw.expValue != null && raw.expPercent != null,
+				outlierReason: sample.outlierReason ?? null,
+				expValueHasUnknownPrefix: raw.expValueHasUnknownPrefix ?? false
+			}),
+			sample.ts
+		);
 	}, [
 		readOnce,
 		expTable,
@@ -529,8 +611,10 @@ export function useSampling(options: Options) {
 			setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
 			// 기록을 불러온 직후에는 화면이 어떤 상태인지 알 수 없으므로 레벨을 다시 읽습니다.
 			clearLevelCache();
+			// 불러온 기록은 항상 일시정지 상태이므로, 앞 측정의 실패 이력을 물려받지 않게 비웁니다.
+			clearHealth();
 		},
-		[clearLevelCache]
+		[clearLevelCache, clearHealth]
 	);
 
 	return {
@@ -542,6 +626,8 @@ export function useSampling(options: Options) {
 		cumExpValue,
 		sampleTick,
 		lastSampleTsRef,
+		/** 기록이 멈춘 이유. 정상이거나 측정 중이 아니면 null입니다. */
+		healthNotice,
 
 		// 동작
 		readOnce,

@@ -6,6 +6,23 @@ export function formatElapsed(ms: number): string {
 	return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 }
 
+/**
+ * 시각을 24시간제 `HH:MM:SS`로 표시합니다.
+ *
+ * 왜 `toLocaleTimeString()`을 쓰지 않나:
+ * - 기본 로캘(ko-KR)은 "오후 3:04:05"처럼 한글을 섞는데, 이 값은 모노 글꼴(D2Coding) 영역에 표시됩니다.
+ *   D2Coding 서브셋은 라틴만 담고 있어서(`lib/fonts.ts`의 `unicode-range`) "오전/오후"만 Pretendard로
+ *   폴백해 한 줄 안에서 글꼴이 뒤섞입니다.
+ * - 시(hour) 자릿수도 흔들려서(3시 vs 13시) 값이 갱신될 때마다 폭이 변합니다.
+ *
+ * 왜 `Intl`에 `hour12: false`를 주지 않나: 일부 엔진에서 ko-KR + `hour12: false`가 자정을
+ * "24:00:00"으로 냅니다. 직접 조립하면 로캘/엔진과 무관하게 결과가 같습니다.
+ */
+export function formatClockTime(d: Date): string {
+	if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "-";
+	return [d.getHours(), d.getMinutes(), d.getSeconds()].map((v) => String(v).padStart(2, "0")).join(":");
+}
+
 export function formatNumber(n: number): string {
 	// 천 단위 구분기호를 붙여 포맷합니다. (아주 작은 음수는 0으로 취급)
 	const v = Number.isFinite(n) ? n : 0;

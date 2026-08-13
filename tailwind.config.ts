@@ -20,7 +20,10 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: ["Pretendard", ...defaultTheme.fontFamily.sans],
-				// 모노 폰트는 D2Coding을 우선 사용하고, 글리프가 없을 때는 Pretendard로 대체합니다.
+				// 여기에는 고정폭 글꼴만 넣습니다. 본문용 Pretendard(가변폭)를 폴백으로 끼워 넣으면
+				// 모노 영역의 한글이 숫자와 다른 폭으로 렌더돼 정렬이 깨집니다.
+				// 모노 영역에 쓰는 한글(단위)은 D2Coding 서브셋에 직접 담았습니다. (`lib/fonts.ts` 참고)
+				//
 				// 참고: jsDelivr의 d2coding.min.css는 폰트 패밀리명을 "D2 coding"(공백 포함)으로 정의합니다.
 				mono: ["D2 coding", ...defaultTheme.fontFamily.mono]
 			},
