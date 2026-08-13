@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StopwatchSnapshot = {
 	elapsedMs: number;
@@ -107,5 +107,11 @@ export function useStopwatch() {
 		[startFromElapsed, stopClock]
 	);
 
-	return { elapsedMs, baseElapsedMs, isRunning, start, startFromElapsed, pause, reset, getSnapshot, applySnapshot };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 주의: `elapsedMs`가 매초 바뀌므로 이 객체도 **매초** 바뀝니다. 타이머·구독을 이 객체에
+	// 의존하는 effect에 걸면 매초 재시작되므로, 그런 것은 여전히 훅이 직접 소유해야 합니다.
+	return useMemo(
+		() => ({ elapsedMs, baseElapsedMs, isRunning, start, startFromElapsed, pause, reset, getSnapshot, applySnapshot }),
+		[elapsedMs, baseElapsedMs, isRunning, start, startFromElapsed, pause, reset, getSnapshot, applySnapshot]
+	);
 }

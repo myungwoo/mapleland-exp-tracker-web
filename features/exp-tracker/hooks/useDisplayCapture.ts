@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NoticeHandler } from "@/lib/notice";
 
 type Options = {
@@ -358,5 +358,10 @@ export function useDisplayCapture(options: Options) {
 		};
 	}, [stream]);
 
-	return { stream, startCapture, stopCapture, setStream, ensureCapturePlaying };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 이 훅은 스트림이 바뀔 때만 바뀌므로, 사실상 측정 중에는 계속 같은 객체입니다.
+	return useMemo(
+		() => ({ stream, startCapture, stopCapture, setStream, ensureCapturePlaying }),
+		[stream, startCapture, stopCapture, setStream, ensureCapturePlaying]
+	);
 }

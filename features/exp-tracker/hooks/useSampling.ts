@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { drawRoiCanvas, readLevelRoiFingerprint, toVideoSpaceRect, upscaleCanvasNearest } from "@/lib/canvas";
 import {
 	applyLevelRead,
@@ -645,38 +645,70 @@ export function useSampling(options: Options) {
 		[clearLevelCache, clearHealth]
 	);
 
-	return {
-		// 상태
-		currentLevel,
-		currentExpPercent,
-		currentExpValue,
-		cumExpPct,
-		cumExpValue,
-		sampleTick,
-		lastSampleTsRef,
-		/** 기록이 멈춘 이유. 정상이거나 측정 중이 아니면 null입니다. */
-		healthNotice,
-		/** 이번 tick에서 읽은 값 그대로. (측정 중에만 갱신됩니다) */
-		liveRecognition,
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 이 훅의 값은 샘플마다 바뀌므로 identity도 샘플마다 바뀝니다. 즉 "렌더와 무관"해지는 것뿐이고,
+	// 타이머·구독을 이 객체에 의존하는 effect에 거는 것은 여전히 안전하지 않습니다.
+	return useMemo(
+		() => ({
+			// 상태
+			currentLevel,
+			currentExpPercent,
+			currentExpValue,
+			cumExpPct,
+			cumExpValue,
+			sampleTick,
+			lastSampleTsRef,
+			/** 기록이 멈춘 이유. 정상이거나 측정 중이 아니면 null입니다. */
+			healthNotice,
+			/** 이번 tick에서 읽은 값 그대로. (측정 중에만 갱신됩니다) */
+			liveRecognition,
 
-		// 동작
-		readOnce,
-		captureBaseline,
-		sampleOnceAndAccumulate,
-		resetTotals,
-		getSnapshot,
-		applySnapshot,
+			// 동작
+			readOnce,
+			captureBaseline,
+			sampleOnceAndAccumulate,
+			resetTotals,
+			getSnapshot,
+			applySnapshot,
 
-		// 디버그
-		levelPreviewRaw,
-		levelPreviewProc,
-		expPreviewRaw,
-		expPreviewProc,
-		levelReadText,
-		expReadText,
-		expValidation,
-		parsedLevel,
-		parsedExpValue,
-		parsedExpPercent
-	};
+			// 디버그
+			levelPreviewRaw,
+			levelPreviewProc,
+			expPreviewRaw,
+			expPreviewProc,
+			levelReadText,
+			expReadText,
+			expValidation,
+			parsedLevel,
+			parsedExpValue,
+			parsedExpPercent
+		}),
+		[
+			currentLevel,
+			currentExpPercent,
+			currentExpValue,
+			cumExpPct,
+			cumExpValue,
+			sampleTick,
+			lastSampleTsRef,
+			healthNotice,
+			liveRecognition,
+			readOnce,
+			captureBaseline,
+			sampleOnceAndAccumulate,
+			resetTotals,
+			getSnapshot,
+			applySnapshot,
+			levelPreviewRaw,
+			levelPreviewProc,
+			expPreviewRaw,
+			expPreviewProc,
+			levelReadText,
+			expReadText,
+			expValidation,
+			parsedLevel,
+			parsedExpValue,
+			parsedExpPercent
+		]
+	);
 }

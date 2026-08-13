@@ -123,5 +123,10 @@ export function usePaceSeries(options: Options) {
 		handledTickRef.current = Number.isFinite(handledTick) ? handledTick : 0;
 	}, []);
 
-	return { history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 이 훅의 값은 샘플마다 바뀌므로 identity도 샘플마다 바뀝니다.
+	return useMemo(
+		() => ({ history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot }),
+		[history, paceOverallSeries, cumulativeSeries, recentPaceSeries, getSnapshot, applySnapshot]
+	);
 }

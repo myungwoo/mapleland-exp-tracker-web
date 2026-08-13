@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatElapsed, formatNumber } from "@/lib/format";
 import { copyPngBlobToClipboard, elementToPngBlob } from "@/lib/domToPng";
 import type { NoticeHandler } from "@/lib/notice";
@@ -190,5 +190,10 @@ export function useShareResults(inputs: Inputs): Result {
 		}
 	}, [inputs, isCopyingImage, bumpImageCopiedLabel, bumpImageNeedFocusLabel]);
 
-	return { isCopyingImage, textButtonLabel, imageButtonLabel, copyText, copyImage };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 이 훅은 복사 버튼을 눌렀을 때만 바뀝니다.
+	return useMemo(
+		() => ({ isCopyingImage, textButtonLabel, imageButtonLabel, copyText, copyImage }),
+		[isCopyingImage, textButtonLabel, imageButtonLabel, copyText, copyImage]
+	);
 }

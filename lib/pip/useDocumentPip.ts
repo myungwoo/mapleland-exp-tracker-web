@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { PipController } from "./PipController";
 import type { PipCallbacks, PipState } from "./types";
 
@@ -58,5 +58,10 @@ export function useDocumentPip(callbacks: PipCallbacks) {
 		};
 	}, []);
 
-	return { open, update, close, isOpen: () => !!controllerRef.current?.isOpen() };
+	const isOpen = useCallback(() => !!controllerRef.current?.isOpen(), []);
+
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 여기는 전부 함수라 **한 번 만들면 끝까지 같은 객체**입니다. (`isOpen`을 인라인 화살표로 두면
+	// 렌더마다 새 객체가 되므로 useCallback으로 올렸습니다)
+	return useMemo(() => ({ open, update, close, isOpen }), [open, update, close, isOpen]);
 }
