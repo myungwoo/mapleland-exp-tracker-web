@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type ExternalWsStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
@@ -179,5 +179,11 @@ export function useExternalWsControl(args: {
 	// 계산이 싼 만큼 렌더마다 그대로 계산합니다.
 	const readyState = describeReadyState(wsRef.current);
 
-	return { status, connectedUrl, lastError, lastMessageAt, readyState, reconnect: connect, disconnect: closeWs };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// `readyState`는 ref에서 읽는 진단값이라 렌더 시점에만 갱신됩니다. 문자열이라 의존성에 그대로 넣어도
+	// 값이 같으면 같은 객체가 유지됩니다. (즉 지금 동작을 그대로 보존합니다)
+	return useMemo(
+		() => ({ status, connectedUrl, lastError, lastMessageAt, readyState, reconnect: connect, disconnect: closeWs }),
+		[status, connectedUrl, lastError, lastMessageAt, readyState, connect, closeWs]
+	);
 }

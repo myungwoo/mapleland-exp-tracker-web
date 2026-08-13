@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { drawRoiCanvas, toVideoSpaceRect } from "@/lib/canvas";
 import { recognizeExp, recognizeLevel } from "@/lib/recognize";
 import { describeExpValidation, type ExpValidationResult } from "@/lib/expValidation";
@@ -144,5 +144,10 @@ export function useRoiReadPreview(options: Options) {
 		};
 	}, [active, roiLevel, roiExp, videoRef, withThumbnails, refreshKey, expTable, expPercentValidationEnabled]);
 
-	return { levelRoiShot, expRoiShot, levelText, expText, validation };
+	// 반환 객체는 값이 바뀔 때만 새로 만듭니다. (근거는 CLAUDE.md "훅 반환 객체" 항목)
+	// 판독이 그대로면(사냥 중이 아니면 EXP도 그대로입니다) 같은 객체가 유지됩니다.
+	return useMemo(
+		() => ({ levelRoiShot, expRoiShot, levelText, expText, validation }),
+		[levelRoiShot, expRoiShot, levelText, expText, validation]
+	);
 }
