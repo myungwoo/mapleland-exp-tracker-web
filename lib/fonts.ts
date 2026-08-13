@@ -17,14 +17,22 @@ const PRETENDARD_PATH = "/fonts/PretendardVariable.subset.woff2";
 const D2CODING_PATH = "/fonts/D2Coding.subset.woff2";
 
 /**
- * D2Coding 서브셋에 실제로 들어 있는 범위입니다.
+ * D2Coding 서브셋에 실제로 들어 있는 범위입니다. (서브셋을 다시 만들면 이 값도 함께 고치세요)
  *
- * 모노 글꼴은 숫자/경과 시간/OCR 텍스트에만 쓰므로 한글을 담지 않았습니다.
- * `unicode-range`로 범위를 명시해야, 모노 영역에 한글이 섞여도 브라우저가 이 파일을 받지 않고
- * 곧바로 Pretendard로 폴백합니다. (서브셋 범위를 바꾸면 이 값도 함께 고쳐야 합니다)
+ * 라틴/숫자/기호에 더해 **한글 5자(누, 만, 분, 억, 적)** 를 담고 있습니다.
+ * 왜 이 다섯 자만인가: 모노 영역에도 숫자에 붙는 단위로 한글이 섞이는데
+ * (축 라벨 "1.2만"/"1.2억", 툴팁 "... / 60분"/"... 누적") 지금 쓰이는 한글이 이게 전부입니다.
+ * D2Coding은 원래 한글을 지원하는 모노 글꼴이고, 한글 글리프 폭이 라틴의 정확히 2배라
+ * 이 글자들을 넣어도 고정폭 정렬이 깨지지 않습니다. (5자 추가에 700바이트)
+ *
+ * 왜 한글 전체를 넣지 않나: KS X 1001 2,350자만 넣어도 300KB, 전체 음절은 425KB입니다.
+ * 단위 몇 글자 때문에 치르기에는 너무 큽니다.
+ *
+ * ⚠️ 모노 영역(`font-mono`, `MONO_FONT_STACK`)에 새 한글을 쓰려면 서브셋과 이 범위를 함께 갱신하세요.
+ * 빠뜨리면 그 글자만 시스템 모노 → OS 한글 대체 글꼴로 떨어져 한 줄 안에서 글꼴이 섞입니다.
  */
 const D2CODING_UNICODE_RANGE =
-	"U+0020-007E, U+00A0-00FF, U+2018-201D, U+2026, U+2030, U+2032-2033, U+20A9, U+20BF, U+2190-2193, U+2212, U+25A0-25CF";
+	"U+0020-007E, U+00A0-00FF, U+2018-201D, U+2026, U+2030, U+2032-2033, U+20A9, U+20BF, U+2190-2193, U+2212, U+25A0-25CF, U+B204, U+B9CC, U+BD84, U+C5B5, U+C801";
 
 export function pretendardUrl(options: { absolute?: boolean } = {}): string {
 	return resolveFontUrl(PRETENDARD_PATH, options.absolute);
