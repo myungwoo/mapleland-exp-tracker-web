@@ -7,7 +7,7 @@ import {
 	type LevelReadCacheState
 } from "@/lib/levelReadCache";
 import { recognizeExp, recognizeLevel } from "@/lib/recognize";
-import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
+import { computeExpDeltaFromTable, computeExpPercentDelta, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import {
 	describeExpValidation as describeExpValidationPure,
 	isPercentValueConsistent as isPercentValueConsistentPure,
@@ -562,16 +562,12 @@ export function useSampling(options: Options) {
 		}
 
 		if (prev && sample.isValid && !sample.isOutlier) {
-			// % 누적
+			// % 누적. 다중 레벨업(인식이 오래 끊겼다 복구된 구간)까지 `lib/expTable.ts`가 처리합니다.
 			if (prev.expPercent != null && s.expPercent != null) {
-				let deltaPct = 0;
-				if (prev.level != null && s.level != null && s.level > prev.level) {
-					deltaPct = 100 - prev.expPercent + s.expPercent;
-				} else if (prev.level != null && s.level != null && s.level < prev.level) {
-					deltaPct = -(100 - s.expPercent + prev.expPercent);
-				} else {
-					deltaPct = s.expPercent - prev.expPercent;
-				}
+				const deltaPct =
+					prev.level != null && s.level != null
+						? computeExpPercentDelta(prev.level, prev.expPercent, s.level, s.expPercent)
+						: s.expPercent - prev.expPercent;
 				setCumExpPct((v) => v + deltaPct);
 			}
 

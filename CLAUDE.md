@@ -18,6 +18,7 @@ npm run test:pixel-font           # EXP 픽셀 글꼴 인식기 자체 검증
 npm run test:level-font           # 레벨 픽셀 글꼴 인식기 자체 검증 (실제 캡처 픽스처 포함)
 npm run test:level-roi            # 레벨 ROI 변화 감지 지문 + 판독 재사용 규칙 검증
 npm run test:recognition-health   # 인식 실패 알림(유예 시간/원인 분류) 검증
+npm run test:exp-delta            # 두 샘플 사이 경험치 증가량(퍼센트/값) 계산 검증
 npm run test:records              # 기록 스냅샷 정규화 / 버전 마이그레이션 검증
 ```
 
@@ -46,6 +47,7 @@ npm run test:records              # 기록 스냅샷 정규화 / 버전 마이�
 | `tools/level-font/`             | 레벨 픽셀 글꼴 템플릿 추출·검증 (+ 실제 캡처 픽스처)                  |
 | `tools/level-roi/`              | 레벨 ROI 변화 감지 지문 / 판독 재사용 규칙 검증                       |
 | `tools/recognition-health/`     | 인식 실패 알림(유예 시간·원인 분류) 검증                              |
+| `tools/exp-delta/`              | 경험치 증가량(퍼센트/값) 계산 검증                                    |
 | `tools/records/`                | 기록 스냅샷 정규화 / 버전 마이그레이션 검증                           |
 | `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI             |
 
@@ -78,6 +80,8 @@ npm run test:records              # 기록 스냅샷 정규화 / 버전 마이�
 `features/exp-tracker/hooks/useSampling.ts`가 `EXP_TABLE`(레벨별 필요 EXP)을 기준으로 인식 결과를 검증합니다: 값↔퍼센트 정합성(`pct_value_mismatch`), 같은 레벨에서의 과도한 급락(`implausible_drop`, 사망 패널티는 최대 10%p). 이상치는 누적/차트에 반영하지 않습니다. **임계값을 바꿀 때는 왜 그 값인지 주석에 남기세요.**
 
 ⚠️ **"레벨 급변"(예전 `level_jump`) 검사를 되살리지 마세요.** 범용 인식 엔진이 확신에 찬 틀린 레벨을 뱉던 시절의 방어선입니다. 지금 인식기는 애매하면 `null`을 돌려주므로 막을 대상이 없고(§1), 반대로 자가 복구가 불가능한 함정이 있었습니다 — `prev`는 유효 샘플일 때만 갱신되므로 ROI가 오래 가려진 동안 레벨이 2번 오르면 가림이 풀린 뒤 모든 샘플이 영구히 폐기됩니다. 꼭 필요하다면 절대 레벨차가 아니라 "직전 유효 샘플로부터의 경과 시간"을 함께 봐야 합니다.
+
+**누적은 두 갈래(퍼센트/값)로 세고, 둘은 항상 같은 사건을 세야 합니다.** 계산은 `lib/expTable.ts`의 `computeExpPercentDelta`(퍼센트)와 `computeExpDeltaFromTable`(값) 한 쌍에만 두세요. 한쪽만 고치면 조용히 어긋납니다 — 실제로 퍼센트 쪽이 `100 - prev% + cur%`로만 계산해서 **한 구간에 2레벨 이상 오르면 레벨당 100%p씩 덜 세는** 버그가 있었습니다. 평소에는 1초마다 샘플이 도니까 한 틱에 2레벨이 오를 수 없어 드러나지 않지만, 아래의 "가림이 풀린 뒤 한 번에 회수"되는 구간에서는 직전 유효 샘플이 몇 시간 전일 수 있습니다. (`npm run test:exp-delta`)
 
 **인식 실패는 왜 대체로 안전한가:** 실패한 샘플은 조용히 버려지지만, EXP는 절대값이라 가림이 풀린 뒤 직전 유효 샘플과의 차분으로 그동안 오른 EXP가 **한 번에 회수**됩니다. 그래서 포탈 이동(검은 화면 1~2초)은 누적 EXP에 손실이 없습니다. 이 성질에 의존하는 코드가 여럿 있으니, `prev`를 실패 시에 비우도록 바꾸지 마세요. (그러면 공백 구간의 EXP가 통째로 사라집니다)
 
