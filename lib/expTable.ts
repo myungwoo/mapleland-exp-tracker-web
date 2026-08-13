@@ -207,6 +207,36 @@ export function requiredExpForLevel(table: ExpTable, level: number): number | nu
 	return table[level] ?? null;
 }
 
+/**
+ * 두 샘플 사이에 오른 경험치를 **퍼센트 포인트**로 계산합니다.
+ *
+ * 누적 %는 "레벨 하나를 통째로 채우면 100%p"라는 단위입니다. 그래서 레벨이 올랐다면
+ * (직전 레벨의 남은 %) + (건너뛴 레벨 수 × 100) + (지금 레벨에서 쌓은 %)가 됩니다.
+ *
+ * ⚠️ **건너뛴 레벨 수를 빼먹지 마세요.** 예전에는 `100 - prev% + cur%`로만 계산해서 한 구간에
+ * 2레벨 이상 오르면 레벨당 100%p씩 조용히 덜 세어졌습니다. 평소에는 1초마다 샘플이 도니까
+ * 한 틱에 2레벨이 오를 수 없어 드러나지 않는데, **인식이 오래 끊겼다가 복구되는 구간**에서는
+ * 실제로 발생합니다. (인식 실패 샘플은 버려지고 EXP는 절대값이라 복구 시 한 번에 회수됩니다.
+ * 그때 직전 유효 샘플과 지금 사이에 몇 시간이 있을 수 있습니다)
+ *
+ * 값(EXP) 쪽 누적(`computeExpDeltaFromTable`)은 처음부터 다중 레벨업을 정확히 처리하고 있었으므로,
+ * 이 함수는 그와 짝을 이룹니다. 두 누적이 서로 어긋나면 안 됩니다.
+ *
+ * 테이블이 필요 없는 순수 계산이지만, 짝이 되는 함수 옆에 두어야 한쪽만 고치는 사고를 막습니다.
+ */
+export function computeExpPercentDelta(
+	prevLevel: number,
+	prevPercent: number,
+	curLevel: number,
+	curPercent: number
+): number {
+	if (curLevel === prevLevel) return curPercent - prevPercent;
+	// 감소(대개 오인식): 증가 방향으로 계산한 뒤 부호를 뒤집습니다.
+	if (curLevel < prevLevel) return -computeExpPercentDelta(curLevel, curPercent, prevLevel, prevPercent);
+	const skippedLevels = curLevel - prevLevel - 1;
+	return 100 - prevPercent + skippedLevels * 100 + curPercent;
+}
+
 export function computeExpDeltaFromTable(
 	table: ExpTable,
 	prevLevel: number,
