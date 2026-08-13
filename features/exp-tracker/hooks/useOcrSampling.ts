@@ -8,10 +8,25 @@ import {
 } from "@/lib/levelReadCache";
 import { recognizeExp, recognizeLevel } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
+import {
+	applyOcrOutcome,
+	classifyOcrOutcome,
+	describeOcrHealth,
+	emptyOcrHealth,
+	ocrHealthNoticeEquals,
+	type OcrHealthNotice,
+	type OcrHealthState
+} from "@/lib/ocrHealth";
 import type { RoiRect } from "@/components/RoiOverlay";
 
 export type OcrSample = {
 	ts: number;
+	/**
+	 * 경험치 값 앞에 미인식 조각이 붙어 있었는지. (이번 틱의 진단용 — 누적 계산에는 쓰지 않습니다)
+	 *
+	 * 이상치 원인을 "레벨 문제"로 오진하지 않기 위한 신호입니다. 근거는 `lib/ocr.ts` 참고.
+	 */
+	expValueHasUnknownPrefix?: boolean;
 	level: number | null;
 	expPercent: number | null;
 	expValue: number | null;
@@ -120,6 +135,16 @@ export function useOcrSampling(options: Options) {
 	const levelCacheRef = useRef<LevelReadCacheState>(emptyLevelReadCache());
 	const clearLevelCache = useCallback(() => {
 		levelCacheRef.current = emptyLevelReadCache();
+	}, []);
+
+	// 인식 상태(기록이 되고 있는지). 규칙과 근거는 `lib/ocrHealth.ts` 에 있습니다.
+	// 상태 자체는 ref에 두고, 화면에 띄울 알림만 state로 노출합니다.
+	// (지속 시간은 매초 늘어나므로 상태를 그대로 state에 넣으면 매 샘플 렌더가 발생합니다)
+	const healthStateRef = useRef<OcrHealthState>(emptyOcrHealth());
+	const [healthNotice, setHealthNotice] = useState<OcrHealthNotice | null>(null);
+	const clearHealth = useCallback(() => {
+		healthStateRef.current = emptyOcrHealth();
+		setHealthNotice(null);
 	}, []);
 
 	const annotateOutlier = useCallback((sample: OcrSample, reason: string): OcrSample => {
@@ -283,6 +308,7 @@ export function useOcrSampling(options: Options) {
 			level: levelRes.value ?? null,
 			expPercent: expRes.percent ?? null,
 			expValue: expRes.value ?? null,
+			expValueHasUnknownPrefix: expRes.hasUnknownBeforeValue,
 			levelWasMissing: levelRes.value == null && (expRes.percent != null || expRes.value != null)
 		};
 	}, [captureVideoRef, roiExp, roiLevel, debugEnabled, describeExpValidation]);
@@ -356,6 +382,32 @@ export function useOcrSampling(options: Options) {
 		};
 	}, [debugEnabled, samplingActive]);
 
+	/**
+	 * "기록이 멈췄다"는 알림을 매초 다시 판단합니다.
+	 *
+	 * 왜 샘플 처리 안에서 바로 정하지 않는가: 유예 시간(기본 5초)이 지나야 알림이 뜨는데,
+	 * 측정 주기가 길면(예: 10초) 다음 샘플이 올 때까지 알림이 뜨지 않습니다. 지속 시간 표시도
+	 * 매초 갱신되어야 합니다. 그래서 판단은 시간 축에서 따로 돌립니다.
+	 *
+	 * 측정 중이 아니면 알림 자체가 의미가 없으므로 인터벌을 돌리지 않고 알림을 지웁니다.
+	 */
+	useEffect(() => {
+		if (!samplingActive) {
+			setHealthNotice(null);
+			return;
+		}
+		const evaluate = () => {
+			const next = describeOcrHealth(healthStateRef.current, Date.now(), { active: true });
+			// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
+			setHealthNotice((cur) => (ocrHealthNoticeEquals(cur, next) ? cur : next));
+		};
+		evaluate();
+		const id = window.setInterval(evaluate, 1000);
+		return () => {
+			window.clearInterval(id);
+		};
+	}, [samplingActive]);
+
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);
 		setCurrentExpPercent(null);
@@ -367,7 +419,8 @@ export function useOcrSampling(options: Options) {
 		setSampleTick(0);
 		// 새 측정은 레벨도 처음부터 다시 읽습니다. (앞 측정의 판독을 물려받지 않도록)
 		clearLevelCache();
-	}, [clearLevelCache]);
+		clearHealth();
+	}, [clearLevelCache, clearHealth]);
 
 	const captureBaseline = useCallback(
 		async (args: { resetTotals: boolean }) => {
@@ -376,6 +429,9 @@ export function useOcrSampling(options: Options) {
 			if (args.resetTotals) {
 				resetTotals();
 			}
+			// 재개 시에는 누적을 유지하지만 인식 상태는 초기화합니다.
+			// 일시정지 이전의 실패 이력을 물려받으면 재개 직후부터 경고가 떠 있게 됩니다.
+			clearHealth();
 			// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
 			const raw = await readOnce({ fresh: true });
 			const s: OcrSample = {
@@ -403,7 +459,7 @@ export function useOcrSampling(options: Options) {
 				lastSampleTsRef.current = null;
 			}
 		},
-		[annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled]
+		[annotateOutlier, isPercentValueConsistent, readOnce, resetTotals, expPercentValidationEnabled, clearHealth]
 	);
 
 	const sampleOnceAndAccumulate = useCallback(async () => {
@@ -501,11 +557,26 @@ export function useOcrSampling(options: Options) {
 			}
 		}
 
-		if (sample.isValid && !sample.isOutlier) {
+		const isRecorded = !!sample.isValid && !sample.isOutlier;
+		if (isRecorded) {
 			lastValidSampleRef.current = sample;
 			lastSampleTsRef.current = sample.ts;
 			setSampleTick((t) => t + 1);
 		}
+
+		// 이 샘플이 기록됐는지, 안 됐다면 왜인지를 기록해 둡니다. (화면 알림은 아래 인터벌이 판단)
+		// levelRead에는 폴백 이전의 원본 판독(raw.level)을 넘겨야 "레벨을 못 읽고 있다"가 드러납니다.
+		healthStateRef.current = applyOcrOutcome(
+			healthStateRef.current,
+			classifyOcrOutcome({
+				isRecorded,
+				levelRead: raw.level != null,
+				expRead: raw.expValue != null && raw.expPercent != null,
+				outlierReason: sample.outlierReason ?? null,
+				expValueHasUnknownPrefix: raw.expValueHasUnknownPrefix ?? false
+			}),
+			sample.ts
+		);
 	}, [
 		readOnce,
 		expTable,
@@ -540,8 +611,10 @@ export function useOcrSampling(options: Options) {
 			setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
 			// 기록을 불러온 직후에는 화면이 어떤 상태인지 알 수 없으므로 레벨을 다시 읽습니다.
 			clearLevelCache();
+			// 불러온 기록은 항상 일시정지 상태이므로, 앞 측정의 실패 이력을 물려받지 않게 비웁니다.
+			clearHealth();
 		},
-		[clearLevelCache]
+		[clearLevelCache, clearHealth]
 	);
 
 	return {
@@ -553,6 +626,8 @@ export function useOcrSampling(options: Options) {
 		cumExpValue,
 		sampleTick,
 		lastSampleTsRef,
+		/** 기록이 멈춘 이유. 정상이거나 측정 중이 아니면 null입니다. */
+		healthNotice,
 
 		// 동작
 		readOnce,

@@ -15,7 +15,7 @@
  */
 import { loadPixelOcr, loadPixelFont } from "./loadLib.mjs";
 
-const { recognizePixelFontLine, parsePixelExpText } = await loadPixelOcr();
+const { recognizePixelFontLine, parsePixelExpText, expValueHasUnknownPrefix } = await loadPixelOcr();
 const { PIXEL_FONT_GLYPHS } = await loadPixelFont();
 
 const BG = [45, 57, 62];
@@ -133,6 +133,13 @@ const parseCases = [
 	// 값 안에 못 읽은 숫자가 있으면 자릿수가 잘리므로 반드시 버려야 함
 	["1214??91?3[83.18%]", null],
 	["____1214??91?3[83.18%]", null],
+	// 마우스 포인터가 숫자 중간을 가려 숫자열이 갈라진 경우.
+	// 뒤쪽 토막만 매칭되어 자릿수가 잘린 값이 되므로 반드시 버려야 합니다.
+	// (`_` 앞에 숫자가 있다는 것이 "라벨이 아니라 숫자열이 갈라졌다"는 증거입니다)
+	["1214_49360[83.16%]", null],
+	["12_34_9360[83.16%]", null],
+	["1214349_60[83.16%]", null],
+	["____1214_49360[83.16%]", null],
 	// 퍼센트 안에 못 읽은 숫자가 있으면 엉뚱한 퍼센트가 되므로 버려야 함
 	["1214349360[8?.16%]", null],
 	["1214349360[83.1?%]", null],
@@ -149,6 +156,29 @@ for (const [input, expected] of parseCases) {
 	if (!ok) {
 		failures++;
 		console.log(`FAIL parse "${input}" → ${JSON.stringify(got)} (기대: ${JSON.stringify(expected)})`);
+	}
+}
+
+/**
+ * "값 앞에 미인식 조각이 붙어 있는지" 신호
+ *
+ * 앞자리를 통째로 가린 경우(`_49360[...]`)는 남은 문자열만으로는 "EXP." 라벨이 있는 정상 판독과
+ * 구분할 수 없어서 파서가 값을 그대로 돌려줍니다. 그때 이 신호가 상위에서 원인을 "레벨 문제"로
+ * 오진하지 않게 막아 줍니다. 그래서 **두 경우 모두 true여야** 합니다. (구분하는 게 목적이 아닙니다)
+ */
+const prefixCases = [
+	["1214349360[83.16%]", false],
+	["____1214349360[83.16%]", true],
+	["_49360[83.16%]", true],
+	// 값을 못 읽은 경우엔 애초에 판정할 대상이 없습니다.
+	["[83.16%]", false],
+	["1214349360 83.16%", false]
+];
+for (const [input, expected] of prefixCases) {
+	const got = expValueHasUnknownPrefix(input);
+	if (got !== expected) {
+		failures++;
+		console.log(`FAIL prefix "${input}" → ${got} (기대: ${expected})`);
 	}
 }
 
