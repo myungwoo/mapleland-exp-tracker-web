@@ -163,15 +163,9 @@ export class PipController {
 			playBtn.classList.remove("play", "pause");
 			playBtn.classList.add(state.isSampling ? "pause" : "play");
 		}
-		// 타이머. 기록이 멈춘 동안은 빨갛게 표시합니다. (창을 작게 써도 눈에 들어오도록)
+		// 타이머는 인식 상태와 무관하게 계속 흘러가므로 항상 같은 색으로 둡니다.
 		const timer = qs("pip-timer");
-		if (timer) {
-			timer.textContent = formatElapsed(state.elapsedMs);
-			timer.classList.toggle("stalled", !!state.healthText);
-			// 원인은 호버 툴팁으로만 노출합니다. 레이아웃을 건드리지 않으려는 의도입니다.
-			if (state.healthText) timer.setAttribute("title", state.healthText);
-			else timer.removeAttribute("title");
-		}
+		if (timer) timer.textContent = formatElapsed(state.elapsedMs);
 		// 다음 시간 라벨/시간
 		const nextLabel = qs("pip-next-label");
 		if (nextLabel)
@@ -179,11 +173,21 @@ export class PipController {
 		const nextEl = qs("pip-next");
 		// 본문 요약 카드와 같은 값이므로 표기도 같아야 합니다. (24시간제)
 		if (nextEl) nextEl.textContent = state.nextAt ? formatClockTime(state.nextAt) : "-";
-		// 텍스트들
+		// 텍스트들. 기록이 멈춘 동안은 회색으로 죽여서 "지금 갱신되지 않는 값"임을 알립니다.
+		const stalled = !!state.healthText;
+		// 원인은 호버 툴팁으로만 노출합니다. 레이아웃을 건드리지 않으려는 의도입니다.
+		const markStalled = (el: HTMLElement | null) => {
+			if (!el) return;
+			el.classList.toggle("stalled", stalled);
+			if (state.healthText) el.setAttribute("title", state.healthText);
+			else el.removeAttribute("title");
+		};
 		const gainedEl = qs("pip-gained");
 		if (gainedEl) gainedEl.textContent = state.gainedText;
+		markStalled(gainedEl);
 		const paceEl = qs("pip-pace");
 		if (paceEl) paceEl.textContent = state.paceText;
+		markStalled(paceEl);
 	}
 
 	close(): void {
