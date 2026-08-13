@@ -15,14 +15,24 @@ import {
 } from "@/lib/expValidation";
 import {
 	applyReadOutcome,
+	applyWatchdogTick,
 	classifyReadOutcome,
 	describeRecognitionHealth,
 	emptyRecognitionHealth,
 	recognitionHealthNoticeEquals,
+	recognitionSilenceLimitMs,
 	type RecognitionHealthNotice,
 	type RecognitionHealthState
 } from "@/lib/recognitionHealth";
 import type { RoiRect } from "@/components/RoiOverlay";
+
+/**
+ * 인식 상태를 다시 판단하는 주기.
+ *
+ * 표시되는 지속 시간이 매초 늘어나야 하므로 1초입니다. 이 값은 워치독이 "자기 주기가 밀렸는지"를
+ * 재는 기준이기도 해서, 바꾸면 `applyWatchdogTick`에 넘기는 값도 함께 따라가야 합니다.
+ */
+const HEALTH_TICK_MS = 1000;
 
 export type ReadSample = {
 	ts: number;
@@ -72,6 +82,13 @@ type Options = {
 	 * 이 값이 true면 별도 폴링을 하지 않습니다.
 	 */
 	samplingActive: boolean;
+	/**
+	 * 측정 주기(ms).
+	 *
+	 * 누적 계산에는 쓰지 않습니다. "이 정도 시간이 지나도록 샘플이 안 들어오면 루프가 죽은 것"을
+	 * 판단하는 기준으로만 씁니다. (`lib/recognitionHealth.ts`의 워치독)
+	 */
+	sampleIntervalMs: number;
 };
 
 /**
@@ -115,8 +132,16 @@ function liveRecognitionEquals(a: LiveRecognition | null, b: LiveRecognition | n
  * - 왜: ExpTracker에 인식/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
 export function useSampling(options: Options) {
-	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } =
-		options;
+	const {
+		captureVideoRef,
+		roiLevel,
+		roiExp,
+		expTable,
+		debugEnabled,
+		expPercentValidationEnabled,
+		samplingActive,
+		sampleIntervalMs
+	} = options;
 
 	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -172,7 +197,8 @@ export function useSampling(options: Options) {
 	const healthStateRef = useRef<RecognitionHealthState>(emptyRecognitionHealth());
 	const [healthNotice, setHealthNotice] = useState<RecognitionHealthNotice | null>(null);
 	const clearHealth = useCallback(() => {
-		healthStateRef.current = emptyRecognitionHealth();
+		// "조용한 시간"은 지금부터 셉니다. 그래야 측정을 시작하자마자 워치독이 울리지 않습니다.
+		healthStateRef.current = emptyRecognitionHealth(Date.now());
 		setHealthNotice(null);
 	}, []);
 
@@ -184,12 +210,29 @@ export function useSampling(options: Options) {
 	 * PiP 회색이 남아 있었습니다. 사용자는 원인(마우스 등)을 치운 직후 화면을 보므로, 그 지연이
 	 * "조치가 안 먹혔다"로 읽힙니다. 판단 시점을 샘플 처리에 붙여 뜨는 것도 사라지는 것도
 	 * 샘플 하나 안에서 끝나게 합니다.
+	 *
+	 * 판독 실패뿐 아니라 **샘플이 아예 안 들어오는 경우**(루프가 죽은 경우)도 여기서 잡힙니다.
+	 * 그래서 이 판단은 샘플이 오지 않아도 돌아야 합니다 — 매초 인터벌이 그 역할을 합니다.
 	 */
 	const evaluateHealth = useCallback(() => {
-		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: samplingActive });
+		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), {
+			active: samplingActive,
+			silenceLimitMs: recognitionSilenceLimitMs(sampleIntervalMs)
+		});
 		// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
 		setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
-	}, [samplingActive]);
+	}, [samplingActive, sampleIntervalMs]);
+
+	/**
+	 * 매초 인터벌에서만 부르는 판단입니다. (샘플 처리 직후의 재판단은 `evaluateHealth`를 그대로 씁니다)
+	 *
+	 * 왜 갈라놓는가: 워치독은 **자기 주기가 밀렸는지**를 보고 "브라우저/기기가 페이지를 재웠다"를
+	 * 알아냅니다. 주기적인 tick이 아닌 호출까지 여기로 섞으면 그 측정이 망가집니다.
+	 */
+	const runHealthTick = useCallback(() => {
+		healthStateRef.current = applyWatchdogTick(healthStateRef.current, Date.now(), HEALTH_TICK_MS);
+		evaluateHealth();
+	}, [evaluateHealth]);
 
 	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
@@ -427,12 +470,12 @@ export function useSampling(options: Options) {
 			setHealthNotice(null);
 			return;
 		}
-		evaluateHealth();
-		const id = window.setInterval(evaluateHealth, 1000);
+		runHealthTick();
+		const id = window.setInterval(runHealthTick, HEALTH_TICK_MS);
 		return () => {
 			window.clearInterval(id);
 		};
-	}, [samplingActive, evaluateHealth]);
+	}, [samplingActive, runHealthTick]);
 
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);
