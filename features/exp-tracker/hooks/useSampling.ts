@@ -15,6 +15,7 @@ import {
 } from "@/lib/expValidation";
 import {
 	applyReadOutcome,
+	applyWatchdogTick,
 	classifyReadOutcome,
 	describeRecognitionHealth,
 	emptyRecognitionHealth,
@@ -24,6 +25,14 @@ import {
 	type RecognitionHealthState
 } from "@/lib/recognitionHealth";
 import type { RoiRect } from "@/components/RoiOverlay";
+
+/**
+ * 인식 상태를 다시 판단하는 주기.
+ *
+ * 표시되는 지속 시간이 매초 늘어나야 하므로 1초입니다. 이 값은 워치독이 "자기 주기가 밀렸는지"를
+ * 재는 기준이기도 해서, 바꾸면 `applyWatchdogTick`에 넘기는 값도 함께 따라가야 합니다.
+ */
+const HEALTH_TICK_MS = 1000;
 
 export type ReadSample = {
 	ts: number;
@@ -208,14 +217,22 @@ export function useSampling(options: Options) {
 	const evaluateHealth = useCallback(() => {
 		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), {
 			active: samplingActive,
-			// 탭이 숨겨지면 브라우저가 타이머를 늦추므로 기준을 넉넉하게 잡습니다. (정상 동작을 오탐하지 않도록)
-			silenceLimitMs: recognitionSilenceLimitMs(sampleIntervalMs, {
-				documentHidden: typeof document !== "undefined" && document.visibilityState === "hidden"
-			})
+			silenceLimitMs: recognitionSilenceLimitMs(sampleIntervalMs)
 		});
 		// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
 		setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
 	}, [samplingActive, sampleIntervalMs]);
+
+	/**
+	 * 매초 인터벌에서만 부르는 판단입니다. (샘플 처리 직후의 재판단은 `evaluateHealth`를 그대로 씁니다)
+	 *
+	 * 왜 갈라놓는가: 워치독은 **자기 주기가 밀렸는지**를 보고 "브라우저/기기가 페이지를 재웠다"를
+	 * 알아냅니다. 주기적인 tick이 아닌 호출까지 여기로 섞으면 그 측정이 망가집니다.
+	 */
+	const runHealthTick = useCallback(() => {
+		healthStateRef.current = applyWatchdogTick(healthStateRef.current, Date.now(), HEALTH_TICK_MS);
+		evaluateHealth();
+	}, [evaluateHealth]);
 
 	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
@@ -453,12 +470,12 @@ export function useSampling(options: Options) {
 			setHealthNotice(null);
 			return;
 		}
-		evaluateHealth();
-		const id = window.setInterval(evaluateHealth, 1000);
+		runHealthTick();
+		const id = window.setInterval(runHealthTick, HEALTH_TICK_MS);
 		return () => {
 			window.clearInterval(id);
 		};
-	}, [samplingActive, evaluateHealth]);
+	}, [samplingActive, runHealthTick]);
 
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);

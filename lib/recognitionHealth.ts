@@ -57,6 +57,14 @@ export type RecognitionHealthState = {
 	 * 구분할 수 있습니다. 아래 워치독(`describeRecognitionHealth`의 `silenceLimitMs`)이 씁니다.
 	 */
 	lastSampleAt: number | null;
+	/**
+	 * 감시자(매초 인터벌)가 마지막으로 돈 시각.
+	 *
+	 * 왜 필요한가: 감시자는 감시 대상과 같은 시계를 씁니다. 자기 주기가 밀렸다면 브라우저/기기가
+	 * 페이지 전체를 재웠다는 뜻이고, 그때의 "샘플이 안 들어왔다"는 근거가 되지 못합니다.
+	 * (`applyWatchdogTick`)
+	 */
+	lastWatchdogTickAt: number | null;
 	/** 지금 이어지고 있는 연속 실패가 시작된 시각. 실패 중이 아니면 null */
 	failingSince: number | null;
 	/** 연속 실패 횟수 (성공하면 0으로 돌아갑니다) */
@@ -90,30 +98,55 @@ export const RECOGNITION_STALL_GRACE_MS = 0;
 export const RECOGNITION_SILENCE_INTERVAL_FACTOR = 3;
 
 /**
- * 화면이 보이는 상태에서의 하한. 주기가 1초면 3초인데, 브라우저가 잠깐 버벅인 것만으로
- * 경고가 뜨면 노이즈입니다. 이 정도는 기다립니다.
+ * 하한. 주기가 1초면 3초인데, 브라우저가 잠깐 버벅인 것만으로 경고가 뜨면 노이즈입니다.
  */
 export const RECOGNITION_SILENCE_MIN_MS = 5_000;
-
-/**
- * 탭이 숨겨져 있을 때의 하한.
- *
- * 왜 따로 두는가: 탭이 백그라운드로 내려가면 브라우저가 타이머를 최대 1분 주기까지 늦춥니다.
- * (Chrome의 intensive throttling) 그건 앱 버그가 아니라 브라우저의 정상 동작이므로, 그보다
- * 넉넉한 값을 넘겨야 "정말 멈췄다"고 판단합니다. 게임을 전체 화면으로 두고 쓰는 앱이라
- * 숨겨진 상태가 오히려 기본값에 가깝고, 여기서 오탐이 나면 경고가 늘 떠 있게 됩니다.
- */
-export const RECOGNITION_SILENCE_HIDDEN_MIN_MS = 90_000;
 
 /**
  * "이만큼 조용하면 루프가 멈춘 것"의 기준을 정합니다.
  *
  * React에 의존하지 않는 순수 함수로 둔 이유는 이 파일의 나머지와 같습니다. (규칙을 그대로 테스트)
  */
-export function recognitionSilenceLimitMs(sampleIntervalMs: number, options: { documentHidden: boolean }): number {
+export function recognitionSilenceLimitMs(sampleIntervalMs: number): number {
 	const interval = Number.isFinite(sampleIntervalMs) ? Math.max(1, sampleIntervalMs) : 1000;
-	const floor = options.documentHidden ? RECOGNITION_SILENCE_HIDDEN_MIN_MS : RECOGNITION_SILENCE_MIN_MS;
-	return Math.max(interval * RECOGNITION_SILENCE_INTERVAL_FACTOR, floor);
+	return Math.max(interval * RECOGNITION_SILENCE_INTERVAL_FACTOR, RECOGNITION_SILENCE_MIN_MS);
+}
+
+/**
+ * 감시자 자신의 주기가 이 배수를 넘게 밀렸다면 "우리도 자고 있었다"고 봅니다.
+ */
+export const RECOGNITION_WATCHDOG_OVERSLEEP_FACTOR = 3;
+
+/**
+ * 감시자(매초 도는 인터벌)가 한 번 돌 때마다 호출합니다. **샘플 처리 직후의 재판단에서는 부르지 마세요.**
+ * (그건 주기적인 tick이 아니라서, 부르면 자기 주기 측정이 망가집니다)
+ *
+ * 왜 필요한가 — 감시자는 감시 대상과 **같은 시계를 씁니다.** 브라우저가 백그라운드 탭의 타이머를
+ * 늦추거나(1분 단위 정렬) 기기가 절전에 들어가면 측정 루프만 멈추는 게 아니라 이 감시자도 함께
+ * 멈춥니다. 그렇게 한참 만에 깨어난 시점에서 "샘플이 오래 안 들어왔다"는 사실은 아무것도
+ * 증명하지 못합니다. 우리가 자고 있었으니까요.
+ *
+ * 그래서 자기 주기가 밀린 것을 감지하면 **침묵 시계를 지금부터 다시 셉니다.** 판단은 "감시자가
+ * 정상 주기로 돌고 있는데도 샘플이 안 들어오는" 구간에서만 내려집니다.
+ *
+ * 이 자가 점검이 탭 가시성(`visibilityState`)으로 기준을 늘리는 것보다 나은 이유:
+ * - 가시성은 스로틀링의 **간접 신호**일 뿐입니다. 숨겨져도 안 늦춰질 수 있고(캡처 중, 소리 재생 중
+ *   등 예외), 보이는 상태에서도 기기 절전으로 멈출 수 있습니다. 자기 주기는 **실제로 일어난 일**입니다.
+ * - 노트북 덮개를 닫았다 여는 경우처럼 가시성으로는 잡히지 않는 공백도 같은 규칙으로 덮입니다.
+ * - 감시자가 정상 주기로 도는 한, 경고는 늦춰지지 않습니다. (가시성으로 기준을 늘리면 그만큼 늦어집니다)
+ */
+export function applyWatchdogTick(
+	state: RecognitionHealthState,
+	now: number,
+	expectedTickMs: number
+): RecognitionHealthState {
+	const last = state.lastWatchdogTickAt;
+	const next: RecognitionHealthState = { ...state, lastWatchdogTickAt: now };
+	if (last == null) return next;
+	const overslept = now - last > Math.max(1, expectedTickMs) * RECOGNITION_WATCHDOG_OVERSLEEP_FACTOR;
+	if (!overslept) return next;
+	// 우리도 자고 있었으면 남을 탓할 수 없습니다. 침묵은 지금부터 다시 셉니다.
+	return { ...next, lastSampleAt: now };
 }
 
 /**
@@ -126,6 +159,7 @@ export function emptyRecognitionHealth(startedAt: number | null = null): Recogni
 	return {
 		lastOkAt: null,
 		lastSampleAt: startedAt,
+		lastWatchdogTickAt: null,
 		failingSince: null,
 		consecutiveFailures: 0,
 		lastFailureKind: null
@@ -183,10 +217,18 @@ export function applyReadOutcome(
 	now: number
 ): RecognitionHealthState {
 	if (kind === "ok") {
-		return { lastOkAt: now, lastSampleAt: now, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
+		return {
+			lastOkAt: now,
+			lastSampleAt: now,
+			lastWatchdogTickAt: state.lastWatchdogTickAt,
+			failingSince: null,
+			consecutiveFailures: 0,
+			lastFailureKind: null
+		};
 	}
 	return {
 		lastOkAt: state.lastOkAt,
+		lastWatchdogTickAt: state.lastWatchdogTickAt,
 		// 실패한 샘플도 "샘플이 들어온 것"입니다. 워치독은 판독 성공 여부와 무관하게 루프의 생사만 봅니다.
 		lastSampleAt: now,
 		// 연속 실패의 "시작" 시각은 유지해야 지속 시간을 셀 수 있습니다.
