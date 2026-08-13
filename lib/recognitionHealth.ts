@@ -51,13 +51,20 @@ export type RecognitionHealthState = {
 };
 
 /**
- * 이만큼 연속으로 기록이 안 되면 사용자에게 알립니다.
+ * 이만큼 연속으로 기록이 안 되면 사용자에게 알립니다. **0 = 첫 실패 샘플부터 곧바로 알립니다.**
  *
- * 왜 5초인가: 막아야 할 오탐은 "포탈 이동 중 검은 화면"입니다. 실제로 1~2초면 끝나므로
- * 5초면 충분히 걸러집니다. 반대로 ROI가 가려진 경우는 사용자가 알아채기 전까지 계속되므로,
- * 이 값을 더 키우면 알림이 늦어지는 손해만 있습니다.
+ * 왜 0인가: 예전에는 5초였습니다. "포탈 이동 중 검은 화면"(1~2초)에 경고가 뜨는 오탐을 막으려던
+ * 것인데, 유예가 있으면 표시가 화면 상태를 따라가지 않아서 원인을 찾는 실험 자체가 어려워집니다 —
+ * 마우스를 경험치 위에 올려도 몇 초간 아무 반응이 없으니 "이게 원인인가?"를 확인할 수 없습니다.
+ * 즉 유예는 오탐을 줄이는 대신 **표시와 원인의 인과관계를 끊습니다.**
+ *
+ * 대가는 짧은 실패에도 표시가 잠깐 깜빡이는 것입니다. 이게 거슬려서 유예를 되살리더라도
+ * **복귀는 반드시 즉시여야 합니다.** 알림이 늦게 뜨는 것보다 늦게 사라지는 쪽이 훨씬 혼란스럽습니다.
+ * (사용자는 원인을 없앤 직후 화면을 보는데, 그때 경고가 남아 있으면 조치가 틀린 줄 압니다)
+ *
+ * 개별 호출에서 유예를 다시 두려면 `describeRecognitionHealth`의 `graceMs`를 넘기세요.
  */
-export const RECOGNITION_STALL_GRACE_MS = 5_000;
+export const RECOGNITION_STALL_GRACE_MS = 0;
 
 export function emptyRecognitionHealth(): RecognitionHealthState {
 	return { lastOkAt: null, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
@@ -173,6 +180,9 @@ const MESSAGES: Record<ReadFailureKind, { title: string; detail: string }> = {
  *
  * `active`가 false면(측정 중이 아니면) 항상 null입니다. 측정을 멈춰 둔 상태에서
  * "기록이 안 되고 있다"고 알리는 것은 의미가 없습니다.
+ *
+ * 기본 유예는 0이므로 첫 실패 샘플에서 이미 알림이 나오고, 그때 `stalledMs`는 0입니다.
+ * 표시하는 쪽에서 "0초째"라고 쓰지 않도록 주의하세요.
  */
 export function describeRecognitionHealth(
 	state: RecognitionHealthState,
@@ -186,6 +196,17 @@ export function describeRecognitionHealth(
 	if (stalledMs < (options.graceMs ?? RECOGNITION_STALL_GRACE_MS)) return null;
 	const msg = MESSAGES[lastFailureKind];
 	return { kind: lastFailureKind, title: msg.title, detail: msg.detail, stalledMs };
+}
+
+/**
+ * 좁은 곳(PiP 툴팁, 요약 카드 표시등 툴팁)에 쓸 한 줄 문구를 만듭니다.
+ *
+ * 지속 시간은 1초 이상일 때만 붙입니다. 유예가 없으므로 첫 샘플에서는 0초인데,
+ * "(0초)"는 정보가 없으면서 문구만 어수선하게 만듭니다.
+ */
+export function formatRecognitionHealthOneLine(notice: RecognitionHealthNotice): string {
+	const seconds = Math.floor(notice.stalledMs / 1000);
+	return seconds >= 1 ? `${notice.title} (${seconds}초)` : notice.title;
 }
 
 /**

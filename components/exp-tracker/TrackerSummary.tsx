@@ -22,6 +22,13 @@ type Props = {
 	stats: Stats | null;
 	/** 측정 중이면 경과 시간 옆에 살아 있다는 표시를 띄웁니다. */
 	isSampling: boolean;
+	/**
+	 * 인식이 안 돼서 기록이 멈춘 이유(한 줄). 정상이면 null입니다.
+	 *
+	 * 측정 중이어도 기록이 안 되고 있으면 표시등을 초록 "측정 중"으로 두면 안 됩니다.
+	 * (타이머는 계속 흐르므로, 초록불은 "지금 쌓이고 있다"는 잘못된 확신을 줍니다)
+	 */
+	stalledReason?: string | null;
 	/** 레벨업까지 남은 시간/경험치. 레벨이나 EXP를 아직 못 읽었으면 null입니다. */
 	levelUpEta: LevelUpEta | null;
 	cumExpValue: number;
@@ -69,11 +76,27 @@ export default function TrackerSummary(props: Props) {
 					<div className="opacity-70 text-sm flex items-center gap-1.5">
 						경과된 시간
 						{props.isSampling ? (
-							<span className="inline-flex items-center gap-1 text-emerald-300" title="측정 중">
-								{/* 왜 애니메이션인가: 버튼 색만으로는 "지금 기록되고 있다"가 잘 안 보였습니다. */}
-								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
-								<span className="text-xs">측정 중</span>
-							</span>
+							props.stalledReason ? (
+								/*
+								 * 기록이 멈춘 동안은 표시등을 죽입니다.
+								 *
+								 * 왜 경고색(주황)이 아니라 회색인가: 바로 위 RecognitionHealthBanner가 이미 원인과
+								 * 조치를 주황으로 알리고 있어서 여기까지 경고색이면 중복입니다. 그리고 이 카드는
+								 * "결과 이미지 복사"로 통째로 캡처되므로, 공유 이미지에 경고가 찍히는 건 피해야
+								 * 합니다. 회색은 PiP에서 죽은 값을 회색으로 만드는 것과 같은 뜻입니다 —
+								 * "이 값은 지금 살아있지 않다". (원인은 툴팁으로만 노출)
+								 */
+								<span className="inline-flex items-center gap-1 text-white/45" title={props.stalledReason}>
+									<span className="h-1.5 w-1.5 rounded-full bg-white/40" />
+									<span className="text-xs">기록 안 됨</span>
+								</span>
+							) : (
+								<span className="inline-flex items-center gap-1 text-emerald-300" title="측정 중">
+									{/* 왜 애니메이션인가: 버튼 색만으로는 "지금 기록되고 있다"가 잘 안 보였습니다. */}
+									<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
+									<span className="text-xs">측정 중</span>
+								</span>
+							)
 						) : null}
 					</div>
 					<div className="font-mono text-xl">{formatElapsed(props.elapsedMs)}</div>
