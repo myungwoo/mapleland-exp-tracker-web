@@ -15,12 +15,13 @@ npm run verify           # CI와 똑같은 검사 (포맷 + 타입 + 린트 + �
 npm run format           # Prettier 자동 정리
 npm run lint             # ESLint
 npx tsc --noEmit         # 타입 검사
-npm test                          # 자동 테스트 전체 (아래 여섯)
+npm test                          # 자동 테스트 전체 (아래 일곱)
 npm run test:pixel-font           # EXP 픽셀 글꼴 인식기 자체 검증
 npm run test:level-font           # 레벨 픽셀 글꼴 인식기 자체 검증 (실제 캡처 픽스처 포함)
 npm run test:level-roi            # 레벨 ROI 변화 감지 지문 + 판독 재사용 규칙 검증
 npm run test:recognition-health   # 인식 실패 알림(유예 시간/원인 분류) 검증
 npm run test:exp-delta            # 두 샘플 사이 경험치 증가량(퍼센트/값) 계산 검증
+npm run test:interval-runner      # 측정 루프 타이머(재시작에도 굶지 않는지) 검증
 npm run test:records              # 기록 스냅샷 정규화 / 버전 마이그레이션 검증
 ```
 
@@ -50,6 +51,7 @@ npm run test:records              # 기록 스냅샷 정규화 / 버전 마이�
 | `tools/level-roi/`              | 레벨 ROI 변화 감지 지문 / 판독 재사용 규칙 검증                       |
 | `tools/recognition-health/`     | 인식 실패 알림(유예 시간·원인 분류) 검증                              |
 | `tools/exp-delta/`              | 경험치 증가량(퍼센트/값) 계산 검증                                    |
+| `tools/interval-runner/`        | 측정 루프 타이머(재시작에도 굶지 않는지) 검증                         |
 | `tools/records/`                | 기록 스냅샷 정규화 / 버전 마이그레이션 검증                           |
 | `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI             |
 
@@ -122,9 +124,20 @@ npm run test:records              # 기록 스냅샷 정규화 / 버전 마이�
 
 `lib/canvas.ts`의 `toVideoSpaceRect`는 정수화만 합니다. 캡처 해상도나 게임 창 크기가 바뀌면 ROI가 어긋나므로 사용자가 다시 지정해야 합니다. ROI 저장 방식을 바꾸려면 `RoiOverlay`(CSS↔비디오 좌표 변환)와 이 함수를 함께 고쳐야 합니다.
 
-### 4. 측정 루프는 setInterval + 단일 in-flight 가드입니다
+### 4. 측정 루프의 타이머는 훅이 소유합니다 (+ 단일 in-flight 가드)
 
 인식이 측정 주기보다 오래 걸릴 수 있어서, 동시에 여러 샘플이 쌓이지 않도록 in-flight Promise로 막습니다. 인터벌 콜백에 **렌더 시점의 함수를 그대로 넘기면 stale closure**가 되어 "측정 중 설정 변경이 반영되지 않는" 버그가 생깁니다. 최신 함수를 ref로 참조하세요.
+
+⚠️ **타이머를 렌더에 묶지 마세요. 컴포넌트에서 effect로 직접 걸지 마세요.** `useIntervalRunner`(주기와 콜백만 넘기는 선언형)와 `lib/intervalRunner.ts`(마감 시각을 기억하는 실행기)에 소유권이 있습니다.
+
+왜 이렇게까지 하는가 — 실제로 있었던 **치명적인** 버그입니다. 예전에는 `ExpTracker`가 effect로 타이머를 걸면서 의존성에 `{ start, stop }` 객체를 넣었는데, 그 객체가 렌더마다 새로 만들어져서 **매 렌더 타이머가 리셋**됐습니다. 측정 화면은 경과 시간 때문에 최소 1초에 한 번 리렌더되므로:
+
+- 측정 주기 5초/10초: 마감에 도달하기 전에 매초 리셋 → **샘플이 단 한 번도 실행되지 않음**
+- 측정 주기 1초: 렌더와 마감이 1초 간격으로 나란히 달리는 경합 → 샘플이 임의로 누락되고, 한 번 밀리면 계속 렌더가 먼저 도착해 영구히 굶음
+
+증상이 특히 나쁩니다. **인식이 실패한 게 아니라 아예 돌지 않으므로**, 판독 실패를 추적하는 §2의 알림은 이 상황을 보지 못했습니다. 경과 시간만 흐르고 현재 경험치·누적·페이스가 멈추는데 화면은 정상으로 보였습니다. 설정 창의 ROI 실시간 판독은 별도 경로(§5)라 그쪽만 보면 "인식은 잘 되는데?"가 됩니다. (지금은 §2의 워치독이 이 침묵을 `loop_stalled`로 잡아냅니다. 다만 그건 **증상을 알려주는** 장치이고, 원인을 없애는 것은 아래 두 겹의 방어입니다)
+
+그래서 방어를 두 겹으로 둡니다. (1) 훅이 원시값(`intervalMs`)만 의존성으로 쓰므로 렌더가 타이머를 건드릴 수 없습니다. (2) 실행기가 주기가 아니라 **마감 시각**을 기억해서, 혹시 다시 걸려도 남은 시간만 기다립니다 — 재시작에 무해합니다. 성질은 `npm run test:interval-runner`가 옛 구현과 나란히 돌려 검증합니다.
 
 ### 5. 레벨은 매 샘플 인식하지 않습니다 (변화 감지 + 판독 재사용)
 
