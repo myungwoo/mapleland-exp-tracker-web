@@ -3,7 +3,7 @@
 import PaceChart from "@/components/PaceChart";
 import ExpCouponPanel from "@/components/exp-tracker/ExpCouponPanel";
 import { cn } from "@/lib/cn";
-import { formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
+import { formatClockTime, formatElapsed, formatNumber, formatNumberCompact } from "@/lib/format";
 import type { Ref } from "react";
 
 type Stats = {
@@ -64,7 +64,7 @@ export default function TrackerSummary(props: Props) {
 						{props.stats ? `${props.stats.nextHours}시간 되는 시각` : "다음 시간 되는 시각"}
 					</div>
 					<div className="font-mono text-xl" suppressHydrationWarning>
-						{props.stats ? props.stats.nextAt.toLocaleTimeString() : "-"}
+						{props.stats ? formatClockTime(props.stats.nextAt) : "-"}
 					</div>
 				</div>
 				<div>
