@@ -17,7 +17,8 @@
 		"test:recognition-health": "node tools/recognition-health/selftest.mjs",
 		"test:exp-delta": "node tools/exp-delta/selftest.mjs",
 		"test:records": "node tools/records/selftest.mjs",
-		"test": "npm run test:pixel-font && npm run test:level-font && npm run test:level-roi && npm run test:recognition-health && npm run test:exp-delta && npm run test:records"
+		"test": "npm run test:pixel-font && npm run test:level-font && npm run test:level-roi && npm run test:recognition-health && npm run test:exp-delta && npm run test:records",
+		"verify": "npm run format:check && npm run typecheck && npm run lint && npm test"
 	},
 	"dependencies": {
 		"classnames": "^2.5.1",

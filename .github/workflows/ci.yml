@@ -3,6 +3,11 @@ name: CI
 # 왜 별도 워크플로인가:
 # 배포 워크플로(gh-pages.yml)는 main push에서만 돌기 때문에, PR 단계에서는 아무 검사도 하지 않았습니다.
 # 이 워크플로가 PR에서 타입/린트/테스트/빌드를 먼저 확인합니다.
+#
+# 왜 검사를 `npm run verify` 하나로 묶는가:
+# 예전에는 두 워크플로가 검사 목록을 각자 나열했고, 그러다 CI에만 format:check가 빠졌습니다.
+# 그래서 PR은 초록불인데 main에 머지된 뒤 배포가 포맷 때문에 깨졌습니다(실제로 있었던 사고입니다).
+# 검사를 추가할 때는 워크플로가 아니라 package.json의 `verify`에 넣으세요. 그래야 양쪽이 같이 움직입니다.
 on:
   pull_request:
   push:
@@ -29,12 +34,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Self-tests (EXP·레벨 픽셀 글꼴 / 레벨 ROI 지문 / 인식 상태)
-        run: npm test
+      - name: Verify (포맷·타입·린트·자체 테스트)
+        run: npm run verify
       - name: Build (static export)
         env:
           # 실제 배포와 같은 조건(basePath 포함)으로 빌드해서, 배포 직전에야 드러나는 문제를 미리 잡습니다.
