@@ -40,13 +40,18 @@ export function pipStyles(): string {
     #pip-timer { height: 40px; line-height: 40px; display: flex; align-items: center; }
     .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
     /*
-     * 인식이 안 돼서 기록이 멈추면 타이머를 빨갛게 만듭니다.
+     * 인식이 안 돼서 기록이 멈추면 경험치/페이스 텍스트를 회색으로 죽입니다.
      *
      * 왜 줄을 추가하지 않는가: 사용자들은 PiP 창을 최대한 작게 만들어 쓰기 때문에, 줄을 하나
      * 더 넣으면 잘려서 안 보일 수 있습니다. 이미 있는 요소의 색만 바꾸면 창 크기와 무관하게
      * 눈에 들어오고 레이아웃도 그대로입니다. (원인 문구는 title 툴팁과 메인 창에 있습니다)
+     *
+     * 왜 타이머가 아니라 이 두 값인가: 빨간 타이머는 "무언가 잘못됐다"는 신호일 뿐이라 처음
+     * 보는 사용자에게 의미가 전달되지 않았습니다. 실제로 멈춘 것은 "지금 이 값들의 갱신"이고,
+     * 흐려진 값은 그 자체로 "이 숫자는 지금 살아있지 않다"를 뜻하므로 설명이 덜 필요합니다.
+     * (반대로 타이머는 인식과 무관하게 계속 흘러가므로 죽은 것처럼 보이면 안 됩니다)
      */
-    #pip-timer.stalled { color: #f87171; }
+    #pip-gained.stalled, #pip-pace.stalled { color: #8a8a8a; }
   `;
 }
 
