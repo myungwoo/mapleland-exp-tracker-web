@@ -39,9 +39,24 @@ export type ReadOutcomeKind =
 
 export type ReadFailureKind = Exclude<ReadOutcomeKind, "ok">;
 
+/**
+ * 알림에 쓰이는 원인.
+ *
+ * 샘플 분류(`ReadFailureKind`)에 **"샘플 자체가 안 들어옴"**(`loop_stalled`)을 더한 것입니다.
+ * 후자는 판독 결과가 아니라 시간으로만 알 수 있어서 `classifyReadOutcome`이 만들지 않습니다.
+ */
+export type RecognitionNoticeKind = ReadFailureKind | "loop_stalled";
+
 export type RecognitionHealthState = {
 	/** 마지막으로 기록에 성공한 시각. 한 번도 없으면 null */
 	lastOkAt: number | null;
+	/**
+	 * 마지막으로 샘플이 **처리된** 시각. 성공/실패를 가리지 않습니다. (측정 시작 시각으로 초기화)
+	 *
+	 * 왜 성공과 따로 재는가: 이 값이 있어야 "인식이 실패하고 있다"와 "루프가 아예 안 돈다"를
+	 * 구분할 수 있습니다. 아래 워치독(`describeRecognitionHealth`의 `silenceLimitMs`)이 씁니다.
+	 */
+	lastSampleAt: number | null;
 	/** 지금 이어지고 있는 연속 실패가 시작된 시각. 실패 중이 아니면 null */
 	failingSince: number | null;
 	/** 연속 실패 횟수 (성공하면 0으로 돌아갑니다) */
@@ -66,8 +81,55 @@ export type RecognitionHealthState = {
  */
 export const RECOGNITION_STALL_GRACE_MS = 0;
 
-export function emptyRecognitionHealth(): RecognitionHealthState {
-	return { lastOkAt: null, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
+/**
+ * 이만큼 샘플이 아예 안 들어오면 "루프가 멈췄다"고 봅니다. (주기의 3배)
+ *
+ * 왜 3배인가: 인식이 측정 주기보다 오래 걸려 한두 틱 밀리는 것은 정상입니다. (단일 in-flight 가드)
+ * 3배를 넘겼다면 밀린 게 아니라 돌지 않는 것입니다.
+ */
+export const RECOGNITION_SILENCE_INTERVAL_FACTOR = 3;
+
+/**
+ * 화면이 보이는 상태에서의 하한. 주기가 1초면 3초인데, 브라우저가 잠깐 버벅인 것만으로
+ * 경고가 뜨면 노이즈입니다. 이 정도는 기다립니다.
+ */
+export const RECOGNITION_SILENCE_MIN_MS = 5_000;
+
+/**
+ * 탭이 숨겨져 있을 때의 하한.
+ *
+ * 왜 따로 두는가: 탭이 백그라운드로 내려가면 브라우저가 타이머를 최대 1분 주기까지 늦춥니다.
+ * (Chrome의 intensive throttling) 그건 앱 버그가 아니라 브라우저의 정상 동작이므로, 그보다
+ * 넉넉한 값을 넘겨야 "정말 멈췄다"고 판단합니다. 게임을 전체 화면으로 두고 쓰는 앱이라
+ * 숨겨진 상태가 오히려 기본값에 가깝고, 여기서 오탐이 나면 경고가 늘 떠 있게 됩니다.
+ */
+export const RECOGNITION_SILENCE_HIDDEN_MIN_MS = 90_000;
+
+/**
+ * "이만큼 조용하면 루프가 멈춘 것"의 기준을 정합니다.
+ *
+ * React에 의존하지 않는 순수 함수로 둔 이유는 이 파일의 나머지와 같습니다. (규칙을 그대로 테스트)
+ */
+export function recognitionSilenceLimitMs(sampleIntervalMs: number, options: { documentHidden: boolean }): number {
+	const interval = Number.isFinite(sampleIntervalMs) ? Math.max(1, sampleIntervalMs) : 1000;
+	const floor = options.documentHidden ? RECOGNITION_SILENCE_HIDDEN_MIN_MS : RECOGNITION_SILENCE_MIN_MS;
+	return Math.max(interval * RECOGNITION_SILENCE_INTERVAL_FACTOR, floor);
+}
+
+/**
+ * 상태를 비웁니다.
+ *
+ * `startedAt`을 주면 "조용한 시간"을 그 시각부터 셉니다. 측정을 시작/재개할 때 넘기세요.
+ * (넘기지 않으면 첫 샘플이 처리될 때까지 워치독이 판단을 보류합니다)
+ */
+export function emptyRecognitionHealth(startedAt: number | null = null): RecognitionHealthState {
+	return {
+		lastOkAt: null,
+		lastSampleAt: startedAt,
+		failingSince: null,
+		consecutiveFailures: 0,
+		lastFailureKind: null
+	};
 }
 
 /**
@@ -121,10 +183,12 @@ export function applyReadOutcome(
 	now: number
 ): RecognitionHealthState {
 	if (kind === "ok") {
-		return { lastOkAt: now, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
+		return { lastOkAt: now, lastSampleAt: now, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
 	}
 	return {
 		lastOkAt: state.lastOkAt,
+		// 실패한 샘플도 "샘플이 들어온 것"입니다. 워치독은 판독 성공 여부와 무관하게 루프의 생사만 봅니다.
+		lastSampleAt: now,
 		// 연속 실패의 "시작" 시각은 유지해야 지속 시간을 셀 수 있습니다.
 		failingSince: state.failingSince ?? now,
 		consecutiveFailures: state.consecutiveFailures + 1,
@@ -133,7 +197,7 @@ export function applyReadOutcome(
 }
 
 export type RecognitionHealthNotice = {
-	kind: ReadFailureKind;
+	kind: RecognitionNoticeKind;
 	/** 한 줄 요약 (PiP처럼 좁은 곳에서도 이것만 씁니다) */
 	title: string;
 	/** 무엇을 확인해야 하는지 */
@@ -142,7 +206,14 @@ export type RecognitionHealthNotice = {
 	stalledMs: number;
 };
 
-const MESSAGES: Record<ReadFailureKind, { title: string; detail: string }> = {
+const MESSAGES: Record<RecognitionNoticeKind, { title: string; detail: string }> = {
+	loop_stalled: {
+		// 원인을 단정하지 않습니다. 여기서 알 수 있는 것은 "샘플이 안 들어온다"뿐이고,
+		// 브라우저 절전과 앱 문제를 구분할 신호가 없습니다.
+		title: "측정이 갱신되지 않고 있습니다",
+		detail:
+			"브라우저 탭이 절전 상태이거나 앱에 문제가 생겼을 수 있습니다. 이 창을 화면에 띄워 두고, 계속되면 새로고침 후 다시 시작해 주세요."
+	},
 	no_signal: {
 		title: "화면을 읽을 수 없습니다",
 		detail: "화면 전환 중이거나 게임 창이 가려졌을 수 있습니다. 계속되면 캡처 중인 창이 맞는지 확인해 주세요."
@@ -183,14 +254,37 @@ const MESSAGES: Record<ReadFailureKind, { title: string; detail: string }> = {
  *
  * 기본 유예는 0이므로 첫 실패 샘플에서 이미 알림이 나오고, 그때 `stalledMs`는 0입니다.
  * 표시하는 쪽에서 "0초째"라고 쓰지 않도록 주의하세요.
+ *
+ * `silenceLimitMs`를 주면 **샘플이 아예 안 들어오는 경우**(측정 루프가 죽은 경우)도 잡습니다.
+ * 기준값은 `recognitionSilenceLimitMs`로 만드세요.
  */
 export function describeRecognitionHealth(
 	state: RecognitionHealthState,
 	now: number,
-	options: { active: boolean; graceMs?: number }
+	options: { active: boolean; graceMs?: number; silenceLimitMs?: number }
 ): RecognitionHealthNotice | null {
 	if (!options.active) return null;
 	const { failingSince, lastFailureKind } = state;
+
+	// 워치독: 판독 실패보다 **먼저** 봅니다.
+	//
+	// 왜 우선인가: 샘플이 아예 안 들어오면 `lastFailureKind`는 낡은 정보입니다. 그걸 그대로 띄우면
+	// 사용자가 엉뚱한 원인(마우스 가림 등)을 찾게 됩니다. 실제로 있었던 사고입니다 — 측정 루프가
+	// 렌더마다 리셋되어 샘플이 한 번도 실행되지 않았는데, 인식이 "실패"한 게 아니라 돌지 않은 것이라
+	// 아무 경고도 뜨지 않았습니다. 화면에는 경과 시간만 흐르고 경험치·페이스가 멈춰 있었습니다.
+	if (options.silenceLimitMs != null && state.lastSampleAt != null) {
+		const silentMs = now - state.lastSampleAt;
+		if (silentMs >= options.silenceLimitMs) {
+			const msg = MESSAGES.loop_stalled;
+			return {
+				kind: "loop_stalled",
+				title: msg.title,
+				detail: msg.detail,
+				// "기록이 멈춘 지"이므로 마지막 성공 시점부터 셉니다. (한 번도 성공한 적 없으면 측정 시작부터)
+				stalledMs: Math.max(0, now - (state.lastOkAt ?? state.lastSampleAt))
+			};
+		}
+	}
 	if (failingSince == null || lastFailureKind == null) return null;
 	const stalledMs = Math.max(0, now - failingSince);
 	if (stalledMs < (options.graceMs ?? RECOGNITION_STALL_GRACE_MS)) return null;

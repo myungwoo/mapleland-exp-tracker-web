@@ -19,6 +19,7 @@ import {
 	describeRecognitionHealth,
 	emptyRecognitionHealth,
 	recognitionHealthNoticeEquals,
+	recognitionSilenceLimitMs,
 	type RecognitionHealthNotice,
 	type RecognitionHealthState
 } from "@/lib/recognitionHealth";
@@ -72,6 +73,13 @@ type Options = {
 	 * 이 값이 true면 별도 폴링을 하지 않습니다.
 	 */
 	samplingActive: boolean;
+	/**
+	 * 측정 주기(ms).
+	 *
+	 * 누적 계산에는 쓰지 않습니다. "이 정도 시간이 지나도록 샘플이 안 들어오면 루프가 죽은 것"을
+	 * 판단하는 기준으로만 씁니다. (`lib/recognitionHealth.ts`의 워치독)
+	 */
+	sampleIntervalMs: number;
 };
 
 /**
@@ -115,8 +123,16 @@ function liveRecognitionEquals(a: LiveRecognition | null, b: LiveRecognition | n
  * - 왜: ExpTracker에 인식/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
 export function useSampling(options: Options) {
-	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } =
-		options;
+	const {
+		captureVideoRef,
+		roiLevel,
+		roiExp,
+		expTable,
+		debugEnabled,
+		expPercentValidationEnabled,
+		samplingActive,
+		sampleIntervalMs
+	} = options;
 
 	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -172,7 +188,8 @@ export function useSampling(options: Options) {
 	const healthStateRef = useRef<RecognitionHealthState>(emptyRecognitionHealth());
 	const [healthNotice, setHealthNotice] = useState<RecognitionHealthNotice | null>(null);
 	const clearHealth = useCallback(() => {
-		healthStateRef.current = emptyRecognitionHealth();
+		// "조용한 시간"은 지금부터 셉니다. 그래야 측정을 시작하자마자 워치독이 울리지 않습니다.
+		healthStateRef.current = emptyRecognitionHealth(Date.now());
 		setHealthNotice(null);
 	}, []);
 
@@ -184,12 +201,21 @@ export function useSampling(options: Options) {
 	 * PiP 회색이 남아 있었습니다. 사용자는 원인(마우스 등)을 치운 직후 화면을 보므로, 그 지연이
 	 * "조치가 안 먹혔다"로 읽힙니다. 판단 시점을 샘플 처리에 붙여 뜨는 것도 사라지는 것도
 	 * 샘플 하나 안에서 끝나게 합니다.
+	 *
+	 * 판독 실패뿐 아니라 **샘플이 아예 안 들어오는 경우**(루프가 죽은 경우)도 여기서 잡힙니다.
+	 * 그래서 이 판단은 샘플이 오지 않아도 돌아야 합니다 — 매초 인터벌이 그 역할을 합니다.
 	 */
 	const evaluateHealth = useCallback(() => {
-		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: samplingActive });
+		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), {
+			active: samplingActive,
+			// 탭이 숨겨지면 브라우저가 타이머를 늦추므로 기준을 넉넉하게 잡습니다. (정상 동작을 오탐하지 않도록)
+			silenceLimitMs: recognitionSilenceLimitMs(sampleIntervalMs, {
+				documentHidden: typeof document !== "undefined" && document.visibilityState === "hidden"
+			})
+		});
 		// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
 		setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
-	}, [samplingActive]);
+	}, [samplingActive, sampleIntervalMs]);
 
 	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };

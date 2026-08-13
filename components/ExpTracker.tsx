@@ -178,7 +178,9 @@ export default function ExpTracker() {
 		expTable,
 		debugEnabled,
 		expPercentValidationEnabled,
-		samplingActive: isSampling
+		samplingActive: isSampling,
+		// 워치독이 "이 정도 조용하면 루프가 죽은 것"을 판단하는 기준입니다.
+		sampleIntervalMs: intervalSec * 1000
 	});
 
 	// 인식 작업이 중첩 실행되지 않도록 방지합니다. (인식이 intervalSec보다 오래 걸릴 때 중요)

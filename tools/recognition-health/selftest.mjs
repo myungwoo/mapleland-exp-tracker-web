@@ -9,6 +9,8 @@
  * - 원인을 정확히 지목하고, 알 수 없는 것은 단정하지 않음
  * - 성공 한 번으로 즉시 정상 복귀 (실패 이력이 남아 경고가 끈적하게 붙어 있으면 안 됩니다)
  * - 측정 중이 아니면 절대 경고하지 않음
+ * - **샘플이 아예 안 들어오는 경우(측정 루프가 죽은 경우)도 잡음** — 인식 실패와 달리 판독 결과가
+ *   생기지 않아서, 워치독이 없으면 화면이 정상으로 보인 채 기록만 멈춥니다
  * - 유예를 다시 두고 싶으면 `graceMs`로 가능함 (되살릴 때의 탈출구)
  *
  * 왜 이 테스트가 중요한가:
@@ -22,6 +24,7 @@ const {
 	classifyReadOutcome,
 	applyReadOutcome,
 	describeRecognitionHealth,
+	recognitionSilenceLimitMs,
 	formatRecognitionHealthOneLine,
 	recognitionHealthNoticeEquals,
 	RECOGNITION_STALL_GRACE_MS
@@ -237,6 +240,89 @@ check(
 	check(
 		"graceMs가 크면 아직 경고 없음",
 		describeRecognitionHealth(st, 5000, { active: true, graceMs: 60_000 }) === null
+	);
+}
+
+// ---- 워치독: 샘플이 아예 안 들어오는 경우 ----
+//
+// 왜 이 검증이 중요한가: 인식 실패는 "샘플이 들어왔는데 못 읽은 것"이라 위 규칙들이 잡아냅니다.
+// 그런데 측정 루프 자체가 죽으면 판독 결과가 아예 생기지 않아서, 상태가 마지막 성공에 멈춘 채
+// **아무 경고도 뜨지 않습니다.** 실제로 그런 사고가 있었습니다. (렌더마다 타이머가 리셋되어
+// 샘플이 한 번도 실행되지 않았는데 화면은 정상으로 보였습니다)
+{
+	const LIMIT = recognitionSilenceLimitMs(1000, { documentHidden: false });
+	check("기준값은 주기의 3배와 하한 중 큰 값", LIMIT === 5000, String(LIMIT));
+	check("긴 주기는 주기의 3배", recognitionSilenceLimitMs(10_000, { documentHidden: false }) === 30_000);
+	check(
+		"탭이 숨겨져 있으면 기준이 넉넉해진다",
+		recognitionSilenceLimitMs(1000, { documentHidden: true }) === 90_000,
+		"백그라운드 타이머 지연(최대 1분)을 앱 버그로 오탐하면 경고가 늘 떠 있게 됩니다"
+	);
+
+	// 샘플이 제때 들어오는 동안에는 울리지 않습니다.
+	let st = feed(emptyRecognitionHealth(0), OK, 0);
+	st = feed(st, OK, 1000);
+	st = feed(st, OK, 2000);
+	check(
+		"정상 주기에는 워치독이 울리지 않음",
+		describeRecognitionHealth(st, 2500, { active: true, silenceLimitMs: LIMIT }) === null
+	);
+	check(
+		"기준 직전까지는 조용",
+		describeRecognitionHealth(st, 2000 + LIMIT - 1, { active: true, silenceLimitMs: LIMIT }) === null
+	);
+
+	const stalled = describeRecognitionHealth(st, 2000 + LIMIT, { active: true, silenceLimitMs: LIMIT });
+	check("기준을 넘기면 경고", stalled?.kind === "loop_stalled", JSON.stringify(stalled));
+	check("지속 시간은 마지막 성공 시점부터", stalled?.stalledMs === LIMIT, String(stalled?.stalledMs));
+	check(
+		"원인을 단정하지 않는다",
+		!!stalled && !/새로고침해야|고장|버그입니다/.test(stalled.title),
+		stalled?.title ?? ""
+	);
+
+	// 샘플이 다시 들어오면 즉시 사라져야 합니다. (늦게 사라지는 알림이 가장 혼란스럽습니다)
+	const revived = feed(st, OK, 2000 + LIMIT + 10);
+	check(
+		"샘플이 돌아오면 즉시 해제",
+		describeRecognitionHealth(revived, 2000 + LIMIT + 10, { active: true, silenceLimitMs: LIMIT }) === null
+	);
+
+	// 실패 샘플도 "루프는 살아 있다"는 증거입니다. 이때는 원인을 아는 쪽 알림이 떠야 합니다.
+	let failing = feed(emptyRecognitionHealth(0), OK, 0);
+	failing = feed(failing, EXP_GONE, 1000);
+	failing = feed(failing, EXP_GONE, 2000);
+	const cause = describeRecognitionHealth(failing, 2500, { active: true, silenceLimitMs: LIMIT });
+	check("실패가 이어져도 루프가 살아 있으면 원인 알림", cause?.kind === "exp_missing", JSON.stringify(cause));
+
+	// 그러다 샘플까지 끊기면 워치독이 우선합니다. (낡은 실패 원인을 띄우면 엉뚱한 곳을 찾게 됩니다)
+	const thenDied = describeRecognitionHealth(failing, 2000 + LIMIT, { active: true, silenceLimitMs: LIMIT });
+	check("샘플이 끊기면 워치독이 우선", thenDied?.kind === "loop_stalled", JSON.stringify(thenDied));
+
+	// 측정 중이 아니면 어떤 경우에도 알리지 않습니다.
+	check(
+		"측정 중이 아니면 워치독도 침묵",
+		describeRecognitionHealth(st, 10_000_000, { active: false, silenceLimitMs: LIMIT }) === null
+	);
+
+	// 기준을 안 넘기면(옵션 미지정) 예전과 똑같이 동작해야 합니다. (호출자가 점진적으로 붙일 수 있게)
+	check("silenceLimitMs가 없으면 워치독 없음", describeRecognitionHealth(st, 10_000_000, { active: true }) === null);
+
+	// 측정을 막 시작한 직후에는 아직 샘플이 없어도 울리면 안 됩니다.
+	const justStarted = emptyRecognitionHealth(1000);
+	check(
+		"시작 직후에는 침묵",
+		describeRecognitionHealth(justStarted, 1000 + LIMIT - 1, { active: true, silenceLimitMs: LIMIT }) === null
+	);
+	check(
+		"시작 후에도 샘플이 안 오면 결국 알림",
+		describeRecognitionHealth(justStarted, 1000 + LIMIT, { active: true, silenceLimitMs: LIMIT })?.kind ===
+			"loop_stalled"
+	);
+	// 시작 시각을 안 주면 첫 샘플 전까지 판단을 보류합니다.
+	check(
+		"시작 시각이 없으면 판단 보류",
+		describeRecognitionHealth(emptyRecognitionHealth(), 10_000_000, { active: true, silenceLimitMs: LIMIT }) === null
 	);
 }
 
