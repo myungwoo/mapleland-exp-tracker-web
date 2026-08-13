@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { drawRoiCanvas, toVideoSpaceRect, preprocessLevelCanvas, cropDigitBoundingBox } from "@/lib/canvas";
-import { recognizeExp, recognizeLevelDigitsWithText } from "@/lib/ocr";
+import { drawRoiCanvas, toVideoSpaceRect } from "@/lib/canvas";
+import { recognizeExp, recognizeLevel } from "@/lib/ocr";
 import type { RoiRect } from "@/components/RoiOverlay";
 
 type Options = {
@@ -27,9 +27,9 @@ export function useOnboardingRoiAssist(options: Options) {
 
 	// 온보딩 OCR(1초 주기)에서 매번 캔버스를 새로 만들지 않도록 재사용합니다.
 	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document가 undefined) 캔버스를 즉시 생성하면 안 됩니다.
-	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	// 레벨도 픽셀 글꼴 매칭용 원본 배율 ROI가 필요합니다.
+	const levelNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	// 2.0 비트맵 글꼴 매칭용 원본 배율 ROI (확대/이진화 전)
 	const expNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -78,18 +78,13 @@ export function useOnboardingRoiAssist(options: Options) {
 			try {
 				if (roiLevel) {
 					const rect = toVideoSpaceRect(video, roiLevel);
-					const canvasLevelProc = preprocessLevelCanvas(video, rect, {
-						scale: 4,
-						pad: 0,
-						outCanvas: getOrCreateCanvas(levelProcCanvasRef)
+					// 측정 루프와 동일하게 원본 배율 ROI를 픽셀 글꼴로 읽습니다.
+					// (온보딩에서 ROI가 제대로 잡혔는지 즉시 확인해야 하므로 같은 경로를 써야 합니다)
+					const canvasLevelNative = drawRoiCanvas(video, rect, {
+						scale: 1,
+						outCanvas: getOrCreateCanvas(levelNativeCanvasRef)
 					});
-					const canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
-						margin: 3,
-						targetHeight: 72,
-						outPad: 6,
-						outCanvas: getOrCreateCanvas(levelCropCanvasRef)
-					});
-					const res = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
+					const res = recognizeLevel(canvasLevelNative);
 					setOnboardingLevelText(res.text || "");
 					const cRaw = drawRoiCanvas(video, rect, { scale: 2, outCanvas: getOrCreateCanvas(levelRawCanvasRef) });
 					setLevelRoiShot(cRaw.toDataURL("image/png"));

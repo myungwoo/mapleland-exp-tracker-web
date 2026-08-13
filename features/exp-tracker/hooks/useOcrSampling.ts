@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-	cropDigitBoundingBox,
-	drawRoiCanvas,
-	preprocessLevelCanvas,
-	readLevelRoiFingerprint,
-	toVideoSpaceRect,
-	upscaleCanvasNearest
-} from "@/lib/canvas";
+import { drawRoiCanvas, readLevelRoiFingerprint, toVideoSpaceRect, upscaleCanvasNearest } from "@/lib/canvas";
 import {
 	applyLevelRead,
 	emptyLevelReadCache,
 	getReusableLevelRead,
 	type LevelReadCacheState
 } from "@/lib/levelReadCache";
-import { recognizeExp, recognizeLevelDigitsWithText, resetOcrWorkers } from "@/lib/ocr";
+import { recognizeExp, recognizeLevel } from "@/lib/ocr";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import type { RoiRect } from "@/components/RoiOverlay";
 
@@ -82,16 +75,11 @@ export function useOcrSampling(options: Options) {
 	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } =
 		options;
 
-	// 장시간 실행 시 워커 내부 메모리 누적/단편화 완화: 일정 샘플마다 워커를 재시작합니다.
-	// (1초 샘플링 기준 30분 주기)
-	const recycleEverySamples = 1800;
-	const recycleCounterRef = useRef<number>(0);
-
 	// 샘플마다 DOM(Canvas) 생성/GC가 반복되는 오버헤드를 줄이기 위해 캔버스를 재사용합니다.
-	const levelProcCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	const levelCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
-	// 레벨 변화 감지용 "원본 배율" ROI. 확대 전이라 전처리 캔버스의 1/16 크기입니다.
+	const levelPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	// 픽셀 글꼴 매칭은 "원본 배율 그대로"의 ROI가 필요합니다. (확대/이진화하면 글리프가 뭉개집니다)
+	// 이 캔버스 하나를 변화 감지 지문과 레벨 인식이 함께 씁니다.
 	const levelNativeCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const expRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	// 픽셀(비트맵) 글꼴 매칭은 "원본 배율 그대로"의 ROI가 필요합니다. (확대/이진화하면 글리프가 뭉개집니다)
@@ -245,25 +233,12 @@ export function useOcrSampling(options: Options) {
 		const expRes = recognizeExp(canvasExpNative);
 
 		let levelRes: { text: string; value: number | null };
-		// 캐시를 재사용하면 전처리/크롭 캔버스를 만들지 않으므로 프리뷰에 쓸 캔버스가 없습니다.
-		// (위에서 프리뷰 갱신 틱은 항상 다시 인식하도록 해두었기 때문에 문제되지 않습니다)
-		let canvasLevelCrop: HTMLCanvasElement | null = null;
 		if (reusableLevel) {
 			levelRes = { text: reusableLevel.text, value: reusableLevel.value };
 		} else {
-			// 레벨: 색 기반 전처리 → 숫자 bbox로 타이트 크롭
-			const canvasLevelProc = preprocessLevelCanvas(video, rectLevel, {
-				scale: 4,
-				pad: 0,
-				outCanvas: getOrCreateCanvas(levelProcCanvasRef)
-			});
-			canvasLevelCrop = cropDigitBoundingBox(canvasLevelProc, {
-				margin: 3,
-				targetHeight: 72,
-				outPad: 6,
-				outCanvas: getOrCreateCanvas(levelCropCanvasRef)
-			});
-			levelRes = await recognizeLevelDigitsWithText(canvasLevelCrop, { alreadyCropped: true });
+			// 레벨도 EXP와 똑같이 원본 배율 ROI를 픽셀 글꼴로 읽습니다.
+			// 지문을 만들 때 쓴 캔버스를 그대로 재사용합니다. (같은 픽셀을 두 번 읽을 이유가 없습니다)
+			levelRes = recognizeLevel(canvasLevelNative);
 			levelCacheRef.current = applyLevelRead(levelCacheRef.current, levelFp, levelRes, Date.now());
 		}
 
@@ -280,9 +255,11 @@ export function useOcrSampling(options: Options) {
 						outCanvas: getOrCreateCanvas(expRawCanvasRef)
 					});
 					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
-					// 프리뷰 갱신 틱에서는 항상 다시 인식하므로 여기서 크롭 캔버스는 반드시 존재합니다.
-					// (타입 차원에서는 nullable이라 방어만 해 둡니다)
-					if (canvasLevelCrop) setLevelPreviewProc(canvasLevelCrop.toDataURL("image/png"));
+					// 매칭에 실제로 쓰인 "원본 배율 ROI"를 픽셀 구조 그대로 확대해서 보여줍니다.
+					// (EXP 프리뷰와 같은 방식. 예전에는 Tesseract용 흑백 이진화 이미지를 보여줬습니다)
+					setLevelPreviewProc(
+						upscaleCanvasNearest(canvasLevelNative, 3, getOrCreateCanvas(levelPreviewCanvasRef)).toDataURL("image/png")
+					);
 					setExpPreviewRaw(canvasExpRaw.toDataURL("image/png"));
 					// 매칭에 실제로 쓰인 "원본 배율 ROI"를 픽셀 구조 그대로 확대해서 보여줍니다.
 					setExpPreviewProc(
@@ -299,14 +276,6 @@ export function useOcrSampling(options: Options) {
 			} catch {
 				// 프리뷰 생성 실패는 치명적이지 않으므로 무시합니다.
 			}
-		}
-
-		// 워커 재활용(장시간 실행 방어): 이번 샘플이 끝난 뒤에만 수행합니다.
-		recycleCounterRef.current += 1;
-		if (recycleCounterRef.current >= recycleEverySamples) {
-			recycleCounterRef.current = 0;
-			// 다음 샘플에서 워커가 다시 초기화됩니다. (샘플링 루프는 단일 in-flight로 보호됨)
-			void resetOcrWorkers();
 		}
 
 		return {

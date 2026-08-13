@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoiOverlay, { isRoiRectOrNull, RoiRect } from "./RoiOverlay";
-import { initOcr } from "@/lib/ocr";
 import { formatNumber } from "@/lib/format";
 import { EXP_TABLE } from "@/lib/expTable";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
@@ -167,10 +166,6 @@ export default function ExpTracker() {
 	useEffect(() => {
 		hasStreamRef.current = hasStream;
 	}, [hasStream]);
-
-	useEffect(() => {
-		initOcr(); // 워커를 지연 로딩으로 예열
-	}, []);
 
 	const ocr = useOcrSampling({
 		captureVideoRef,

@@ -74,7 +74,7 @@ export default function DebugOcrPreview(props: Props) {
 					)}
 				</div>
 				<div>
-					<div className="text-xs opacity-70 mb-1">Level Proc</div>
+					<div className="text-xs opacity-70 mb-1">Level Proc (픽셀 확대)</div>
 					{props.levelPreviewProc ? (
 						<img
 							src={props.levelPreviewProc}
