@@ -63,6 +63,33 @@ check(
 	"사유가 새로 생겼는데 조용히 삼키면 안 됩니다"
 );
 
+// ---- 정합성 불일치의 원인이 "경험치 가림"인지 가려냅니다 ----
+// 마우스 포인터가 경험치 앞자리를 통째로 가리면 값이 조용히 잘리고, 잘린 값은 퍼센트와 맞지
+// 않아 불일치로 걸립니다. 이때 "레벨을 잘못 읽고 있다"고 안내하면 사용자가 엉뚱한 곳을 봅니다.
+check(
+	"불일치 + 값 앞 미인식 조각 → 경험치 잘림으로 분류",
+	classifyOcrOutcome({ ...MISMATCH, expValueHasUnknownPrefix: true }) === "exp_truncated",
+	"원인이 경험치인데 레벨 문제로 안내하면 안 됩니다"
+);
+check(
+	"불일치 + 미인식 조각 없음 → 원인 단정하지 않음",
+	classifyOcrOutcome({ ...MISMATCH, expValueHasUnknownPrefix: false }) === "pct_value_mismatch"
+);
+check(
+	"급락 + 값 앞 미인식 조각 → 경험치 잘림으로 분류",
+	classifyOcrOutcome({ ...DROP, expValueHasUnknownPrefix: true }) === "exp_truncated",
+	"값이 잘리면 갑자기 작아져서 급락으로 먼저 걸립니다"
+);
+check(
+	"급락 + 미인식 조각 없음 → 급락 그대로",
+	classifyOcrOutcome({ ...DROP, expValueHasUnknownPrefix: false }) === "implausible_drop"
+);
+check(
+	"기록에 성공했다면 미인식 조각이 있어도 ok",
+	classifyOcrOutcome({ ...OK, expValueHasUnknownPrefix: true }) === "ok",
+	'"EXP." 라벨이 앞에 있는 정상 판독이 여기에 해당합니다'
+);
+
 // ---- 유예 시간: 포탈 이동처럼 짧은 실패는 경고하지 않습니다 ----
 {
 	// 1초 주기로 3초간 검은 화면 → 그동안 한 번도 경고하지 않아야 합니다.
@@ -140,6 +167,34 @@ check(
 	const notice = describeOcrHealth(st, 20_000, { active: true });
 	check("이어지는 이상치도 경고", notice != null);
 	check("원인이 급락", notice?.kind === "implausible_drop", `kind=${notice?.kind}`);
+}
+
+// ---- 경험치가 가려진 경우의 안내 문구 ----
+{
+	let st = feed(emptyOcrHealth(), OK, 0);
+	for (let t = 1000; t <= 20_000; t += 1000) st = feed(st, { ...MISMATCH, expValueHasUnknownPrefix: true }, t);
+	const notice = describeOcrHealth(st, 20_000, { active: true });
+	check("경험치 잘림으로 경고", notice?.kind === "exp_truncated", `kind=${notice?.kind}`);
+	check("문구가 경험치를 지목함", !!notice?.title.includes("경험치"), notice?.title);
+	check(
+		"문구가 레벨을 지목하지 않음",
+		!notice?.title.includes("레벨") && !notice?.detail.includes("레벨"),
+		`${notice?.title} / ${notice?.detail}`
+	);
+	check("마우스 포인터를 확인하라고 안내함", !!notice?.detail.includes("마우스"), notice?.detail);
+}
+
+// ---- 원인을 알 수 없는 불일치는 레벨을 단정하지 않습니다 ----
+{
+	let st = feed(emptyOcrHealth(), OK, 0);
+	for (let t = 1000; t <= 20_000; t += 1000) st = feed(st, MISMATCH, t);
+	const notice = describeOcrHealth(st, 20_000, { active: true });
+	check("불일치로 경고", notice?.kind === "pct_value_mismatch", `kind=${notice?.kind}`);
+	check(
+		"레벨이 원인이라고 단정하지 않음",
+		!notice?.detail.includes("레벨 영역"),
+		`불일치만으로는 레벨/경험치 중 무엇이 문제인지 알 수 없습니다: ${notice?.detail}`
+	);
 }
 
 // ---- 알림 비교: 초가 바뀌지 않으면 같은 알림 ----

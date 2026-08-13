@@ -1,4 +1,4 @@
-import { parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
+import { expValueHasUnknownPrefix, parsePixelExpText, recognizePixelFontLine } from "./pixelOcr";
 import { recognizeLevelPixelFont } from "./levelPixelOcr";
 
 /**
@@ -25,6 +25,13 @@ export type ExpReadResult = {
 	text: string;
 	value: number | null;
 	percent: number | null;
+	/**
+	 * 값 바로 앞에 미인식 조각이 붙어 있었는지.
+	 *
+	 * 값이 조용히 잘렸을 수 있다는 신호입니다. 자세한 근거는 `expValueHasUnknownPrefix` 주석에
+	 * 있습니다. 이상치 원인을 "레벨 문제"로 오진하지 않기 위해 함께 올려보냅니다.
+	 */
+	hasUnknownBeforeValue: boolean;
 };
 
 /**
@@ -35,9 +42,14 @@ export type ExpReadResult = {
  */
 export function recognizeExp(nativeRoiCanvas: HTMLCanvasElement): ExpReadResult {
 	const line = recognizePixelFontLine(nativeRoiCanvas);
-	if (!line) return { text: "", value: null, percent: null };
+	if (!line) return { text: "", value: null, percent: null, hasUnknownBeforeValue: false };
 	const parsed = parsePixelExpText(line.text);
-	return { text: line.text, value: parsed?.value ?? null, percent: parsed?.percent ?? null };
+	return {
+		text: line.text,
+		value: parsed?.value ?? null,
+		percent: parsed?.percent ?? null,
+		hasUnknownBeforeValue: expValueHasUnknownPrefix(line.text)
+	};
 }
 
 export type LevelReadResult = {

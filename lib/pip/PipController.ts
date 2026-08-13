@@ -163,9 +163,15 @@ export class PipController {
 			playBtn.classList.remove("play", "pause");
 			playBtn.classList.add(state.isSampling ? "pause" : "play");
 		}
-		// 타이머
+		// 타이머. 기록이 멈춘 동안은 빨갛게 표시합니다. (창을 작게 써도 눈에 들어오도록)
 		const timer = qs("pip-timer");
-		if (timer) timer.textContent = formatElapsed(state.elapsedMs);
+		if (timer) {
+			timer.textContent = formatElapsed(state.elapsedMs);
+			timer.classList.toggle("stalled", !!state.healthText);
+			// 원인은 호버 툴팁으로만 노출합니다. 레이아웃을 건드리지 않으려는 의도입니다.
+			if (state.healthText) timer.setAttribute("title", state.healthText);
+			else timer.removeAttribute("title");
+		}
 		// 다음 시간 라벨/시간
 		const nextLabel = qs("pip-next-label");
 		if (nextLabel)
@@ -178,12 +184,6 @@ export class PipController {
 		if (gainedEl) gainedEl.textContent = state.gainedText;
 		const paceEl = qs("pip-pace");
 		if (paceEl) paceEl.textContent = state.paceText;
-		// 인식 경고: 문제가 없을 때는 줄 자체를 감춥니다.
-		const healthEl = qs("pip-health");
-		if (healthEl) {
-			healthEl.textContent = state.healthText ?? "";
-			healthEl.classList.toggle("on", !!state.healthText);
-		}
 	}
 
 	close(): void {

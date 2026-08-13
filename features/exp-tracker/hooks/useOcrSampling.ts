@@ -21,6 +21,12 @@ import type { RoiRect } from "@/components/RoiOverlay";
 
 export type OcrSample = {
 	ts: number;
+	/**
+	 * 경험치 값 앞에 미인식 조각이 붙어 있었는지. (이번 틱의 진단용 — 누적 계산에는 쓰지 않습니다)
+	 *
+	 * 이상치 원인을 "레벨 문제"로 오진하지 않기 위한 신호입니다. 근거는 `lib/ocr.ts` 참고.
+	 */
+	expValueHasUnknownPrefix?: boolean;
 	level: number | null;
 	expPercent: number | null;
 	expValue: number | null;
@@ -302,6 +308,7 @@ export function useOcrSampling(options: Options) {
 			level: levelRes.value ?? null,
 			expPercent: expRes.percent ?? null,
 			expValue: expRes.value ?? null,
+			expValueHasUnknownPrefix: expRes.hasUnknownBeforeValue,
 			levelWasMissing: levelRes.value == null && (expRes.percent != null || expRes.value != null)
 		};
 	}, [captureVideoRef, roiExp, roiLevel, debugEnabled, describeExpValidation]);
@@ -565,7 +572,8 @@ export function useOcrSampling(options: Options) {
 				isRecorded,
 				levelRead: raw.level != null,
 				expRead: raw.expValue != null && raw.expPercent != null,
-				outlierReason: sample.outlierReason ?? null
+				outlierReason: sample.outlierReason ?? null,
+				expValueHasUnknownPrefix: raw.expValueHasUnknownPrefix ?? false
 			}),
 			sample.ts
 		);

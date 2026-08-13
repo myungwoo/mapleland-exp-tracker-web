@@ -26,6 +26,8 @@ export type OcrOutcomeKind =
 	| "no_signal"
 	/** 경험치를 못 읽음 (레벨은 읽힘) */
 	| "exp_missing"
+	/** 경험치 숫자 일부가 가려져 값이 잘렸음 (정합성 불일치 + 값 앞에 미인식 조각) */
+	| "exp_truncated"
 	/** 레벨을 못 읽음 (경험치는 읽혔고, 직전 레벨로 대체하는 것도 불가능했음) */
 	| "level_missing"
 	/** 이상치: 경험치 값과 퍼센트가 테이블 기준으로 맞지 않음 */
@@ -79,10 +81,23 @@ export function classifyOcrOutcome(args: {
 	expRead: boolean;
 	/** 이상치로 걸러졌다면 그 사유 */
 	outlierReason?: string | null;
+	/**
+	 * 경험치 값 바로 앞에 미인식 조각이 붙어 있었는지. (`lib/ocr.ts`의 `hasUnknownBeforeValue`)
+	 *
+	 * 정합성 불일치의 원인을 가리는 데 씁니다. 불일치만 보면 레벨을 잘못 읽은 것인지 경험치를
+	 * 잘못 읽은 것인지 알 수 없는데, 값 앞에 미인식 조각이 붙어 있었다면 원인은 사실상
+	 * "경험치 숫자가 가려져 값이 잘린 것"입니다. 정상 판독에서는 값이 맞으므로 이 조합이 나오지 않습니다.
+	 */
+	expValueHasUnknownPrefix?: boolean;
 }): OcrOutcomeKind {
 	if (args.isRecorded) return "ok";
-	if (args.outlierReason === "pct_value_mismatch") return "pct_value_mismatch";
-	if (args.outlierReason === "implausible_drop") return "implausible_drop";
+	if (args.outlierReason === "pct_value_mismatch") {
+		return args.expValueHasUnknownPrefix ? "exp_truncated" : "pct_value_mismatch";
+	}
+	if (args.outlierReason === "implausible_drop") {
+		// 급락도 같은 원인일 수 있습니다. (값이 잘리면 갑자기 작아지므로 급락으로 먼저 걸립니다)
+		return args.expValueHasUnknownPrefix ? "exp_truncated" : "implausible_drop";
+	}
 	// 이상치 사유가 새로 생겼는데 여기에 반영되지 않은 경우를 조용히 삼키지 않습니다.
 	if (args.outlierReason) return "unknown";
 	if (!args.expRead && !args.levelRead) return "no_signal";
@@ -125,13 +140,19 @@ const MESSAGES: Record<OcrFailureKind, { title: string; detail: string }> = {
 		title: "경험치를 읽을 수 없습니다",
 		detail: "경험치 영역이 마우스 포인터나 다른 창에 가려졌는지 확인해 주세요."
 	},
+	exp_truncated: {
+		title: "경험치 숫자 일부가 가려졌습니다",
+		detail: "마우스 포인터가 경험치 숫자 위에 올라가 있는지 확인해 주세요."
+	},
 	level_missing: {
 		title: "레벨을 읽을 수 없습니다",
 		detail: "레벨 영역이 마우스 포인터나 다른 창에 가려졌는지 확인해 주세요."
 	},
 	pct_value_mismatch: {
-		title: "경험치 값과 퍼센트가 맞지 않습니다",
-		detail: "레벨을 잘못 읽고 있을 수 있습니다. 설정에서 레벨 영역을 다시 확인해 주세요."
+		// 원인을 단정하지 않습니다. 불일치만으로는 레벨·경험치 중 무엇을 잘못 읽었는지 알 수 없고,
+		// 원인이 경험치 가림인 경우는 위 `exp_truncated`가 따로 집어냅니다.
+		title: "레벨과 경험치가 서로 맞지 않습니다",
+		detail: "설정의 디버그 미리보기로 레벨/경험치가 어떻게 읽히는지 확인해 주세요."
 	},
 	implausible_drop: {
 		title: "경험치가 갑자기 크게 줄었습니다",

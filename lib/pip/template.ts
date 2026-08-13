@@ -39,20 +39,14 @@ export function pipStyles(): string {
     /* Edge에서 타이머 블록이 40px 버튼과 상/하 정렬이 맞도록 보정 */
     #pip-timer { height: 40px; line-height: 40px; display: flex; align-items: center; }
     .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
-    /* 인식이 안 돼서 기록이 멈춘 경우에만 보이는 줄. 평소에는 감춰서 레이아웃을 건드리지 않습니다. */
-    .warn {
-      display: none;
-      margin-top: 6px;
-      padding: 4px 8px;
-      border: 1px solid #fbbf2455;
-      border-radius: 6px;
-      background: #fbbf2418;
-      color: #fcd34d;
-      font-size: 12px;
-      font-weight: 700;
-      line-height: 1.35;
-    }
-    .warn.on { display: block; }
+    /*
+     * 인식이 안 돼서 기록이 멈추면 타이머를 빨갛게 만듭니다.
+     *
+     * 왜 줄을 추가하지 않는가: 사용자들은 PiP 창을 최대한 작게 만들어 쓰기 때문에, 줄을 하나
+     * 더 넣으면 잘려서 안 보일 수 있습니다. 이미 있는 요소의 색만 바꾸면 창 크기와 무관하게
+     * 눈에 들어오고 레이아웃도 그대로입니다. (원인 문구는 title 툴팁과 메인 창에 있습니다)
+     */
+    #pip-timer.stalled { color: #f87171; }
   `;
 }
 
@@ -78,9 +72,6 @@ export function pipMarkup(): string {
     </div>
     <div class="row">
       <div class="big" id="pip-pace">-</div>
-    </div>
-    <div class="row">
-      <div class="warn" id="pip-health" role="status" aria-live="polite"></div>
     </div>
   `;
 }
