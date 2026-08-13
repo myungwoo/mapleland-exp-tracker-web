@@ -6,25 +6,25 @@ import {
 	getReusableLevelRead,
 	type LevelReadCacheState
 } from "@/lib/levelReadCache";
-import { recognizeExp, recognizeLevel } from "@/lib/ocr";
+import { recognizeExp, recognizeLevel } from "@/lib/recognize";
 import { computeExpDeltaFromTable, requiredExpForLevel, type ExpTable } from "@/lib/expTable";
 import {
-	applyOcrOutcome,
-	classifyOcrOutcome,
-	describeOcrHealth,
-	emptyOcrHealth,
-	ocrHealthNoticeEquals,
-	type OcrHealthNotice,
-	type OcrHealthState
-} from "@/lib/ocrHealth";
+	applyReadOutcome,
+	classifyReadOutcome,
+	describeRecognitionHealth,
+	emptyRecognitionHealth,
+	recognitionHealthNoticeEquals,
+	type RecognitionHealthNotice,
+	type RecognitionHealthState
+} from "@/lib/recognitionHealth";
 import type { RoiRect } from "@/components/RoiOverlay";
 
-export type OcrSample = {
+export type ReadSample = {
 	ts: number;
 	/**
 	 * 경험치 값 앞에 미인식 조각이 붙어 있었는지. (이번 틱의 진단용 — 누적 계산에는 쓰지 않습니다)
 	 *
-	 * 이상치 원인을 "레벨 문제"로 오진하지 않기 위한 신호입니다. 근거는 `lib/ocr.ts` 참고.
+	 * 이상치 원인을 "레벨 문제"로 오진하지 않기 위한 신호입니다. 근거는 `lib/recognize.ts` 참고.
 	 */
 	expValueHasUnknownPrefix?: boolean;
 	level: number | null;
@@ -36,7 +36,7 @@ export type OcrSample = {
 	levelWasMissing?: boolean;
 };
 
-export type OcrSamplingSnapshot = {
+export type SamplingSnapshot = {
 	currentLevel: number | null;
 	currentExpPercent: number | null;
 	currentExpValue: number | null;
@@ -44,7 +44,7 @@ export type OcrSamplingSnapshot = {
 	cumExpValue: number;
 	sampleTick: number;
 	lastSampleTs: number | null;
-	lastValidSample: OcrSample | null;
+	lastValidSample: ReadSample | null;
 };
 
 type Options = {
@@ -55,7 +55,7 @@ type Options = {
 	debugEnabled: boolean;
 	/**
 	 * 값(EXP) ↔ 퍼센트(EXP%) 정합성(테이블 기반) 검증을 적용할지 여부
-	 * - true(기본): OCR 오탐을 줄이기 위해 mismatch 샘플을 이상치로 처리
+	 * - true(기본): 오인식을 줄이기 위해 mismatch 샘플을 이상치로 처리
 	 * - false: 레벨/퍼센트가 흔들리는 환경에서 측정이 "아예 시작 못 하는" 문제를 완화
 	 */
 	expPercentValidationEnabled: boolean;
@@ -63,7 +63,7 @@ type Options = {
 	 * 측정 루프가 돌고 있는지 여부.
 	 *
 	 * 디버그 미리보기는 "측정을 시작하지 않았을 때도" 갱신되어야 ROI 설정을 바로 확인할 수 있습니다.
-	 * 다만 측정 중에는 이미 매 tick OCR이 돌고 있으므로, 중복 실행(레벨 워커 파라미터 경합)을 막기 위해
+	 * 다만 측정 중에는 이미 매 tick 인식이 돌고 있으므로, 같은 프레임을 두 번 읽는 낭비를 막기 위해
 	 * 이 값이 true면 별도 폴링을 하지 않습니다.
 	 */
 	samplingActive: boolean;
@@ -82,11 +82,11 @@ export type ExpValidationDebug = {
 };
 
 /**
- * OCR 측정(ROI 캡처 → 전처리 → OCR)과 누적(%) / 누적(값) 계산을 담당하는 훅입니다.
+ * 측정(ROI 캡처 → 픽셀 글꼴 인식)과 누적(%) / 누적(값) 계산을 담당하는 훅입니다.
  *
- * - 왜: ExpTracker에 OCR/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
+ * - 왜: ExpTracker에 인식/누적/디버그 프리뷰까지 섞이면 파일이 비대해지고, 변경 영향 범위가 커집니다.
  */
-export function useOcrSampling(options: Options) {
+export function useSampling(options: Options) {
 	const { captureVideoRef, roiLevel, roiExp, expTable, debugEnabled, expPercentValidationEnabled, samplingActive } =
 		options;
 
@@ -113,7 +113,7 @@ export function useOcrSampling(options: Options) {
 	const [cumExpPct, setCumExpPct] = useState(0);
 	const [cumExpValue, setCumExpValue] = useState(0);
 
-	const lastValidSampleRef = useRef<OcrSample | null>(null);
+	const lastValidSampleRef = useRef<ReadSample | null>(null);
 	const lastSampleTsRef = useRef<number | null>(null);
 	const [sampleTick, setSampleTick] = useState<number>(0);
 
@@ -122,8 +122,8 @@ export function useOcrSampling(options: Options) {
 	const [levelPreviewProc, setLevelPreviewProc] = useState<string | null>(null);
 	const [expPreviewRaw, setExpPreviewRaw] = useState<string | null>(null);
 	const [expPreviewProc, setExpPreviewProc] = useState<string | null>(null);
-	const [levelOcrText, setLevelOcrText] = useState<string>("");
-	const [expOcrText, setExpOcrText] = useState<string>("");
+	const [levelReadText, setLevelReadText] = useState<string>("");
+	const [expReadText, setExpReadText] = useState<string>("");
 	// 이번 tick에서 파싱된 값 (디버그 표시용 — 이상치 필터를 거치기 전 원본)
 	const [parsedLevel, setParsedLevel] = useState<number | null>(null);
 	const [parsedExpValue, setParsedExpValue] = useState<number | null>(null);
@@ -137,31 +137,31 @@ export function useOcrSampling(options: Options) {
 		levelCacheRef.current = emptyLevelReadCache();
 	}, []);
 
-	// 인식 상태(기록이 되고 있는지). 규칙과 근거는 `lib/ocrHealth.ts` 에 있습니다.
+	// 인식 상태(기록이 되고 있는지). 규칙과 근거는 `lib/recognitionHealth.ts` 에 있습니다.
 	// 상태 자체는 ref에 두고, 화면에 띄울 알림만 state로 노출합니다.
 	// (지속 시간은 매초 늘어나므로 상태를 그대로 state에 넣으면 매 샘플 렌더가 발생합니다)
-	const healthStateRef = useRef<OcrHealthState>(emptyOcrHealth());
-	const [healthNotice, setHealthNotice] = useState<OcrHealthNotice | null>(null);
+	const healthStateRef = useRef<RecognitionHealthState>(emptyRecognitionHealth());
+	const [healthNotice, setHealthNotice] = useState<RecognitionHealthNotice | null>(null);
 	const clearHealth = useCallback(() => {
-		healthStateRef.current = emptyOcrHealth();
+		healthStateRef.current = emptyRecognitionHealth();
 		setHealthNotice(null);
 	}, []);
 
-	const annotateOutlier = useCallback((sample: OcrSample, reason: string): OcrSample => {
+	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
 	}, []);
 
 	const isPercentValueConsistent = useCallback(
 		(level: number, expValue: number, expPercent: number): boolean => {
-			// EXP_TABLE은 "해당 레벨에서 0% -> 100%까지 필요한 EXP"입니다. 이를 사용해 OCR 결과를 상식선에서 검증합니다.
+			// EXP_TABLE은 "해당 레벨에서 0% -> 100%까지 필요한 EXP"입니다. 이를 사용해 인식 결과를 상식선에서 검증합니다.
 			const req = requiredExpForLevel(expTable, level);
 			if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
-			// expValue는 [0, req] 범위여야 자연스럽습니다. (약간의 OCR 노이즈/반올림 오차 허용)
+			// expValue는 [0, req] 범위여야 자연스럽습니다. (약간의 인식 노이즈/반올림 오차 허용)
 			if (expValue < 0) return false;
 			if (expValue > req * 1.05) return false;
 			const pctFromValue = (expValue / req) * 100;
 			if (!Number.isFinite(pctFromValue)) return false;
-			// 퍼센트 OCR이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
+			// 퍼센트 인식이 상대적으로 더 흔들리는 편이라, 어느 정도 오차 범위를 허용합니다.
 			return Math.abs(pctFromValue - expPercent) <= 2.5;
 		},
 		[expTable]
@@ -200,7 +200,7 @@ export function useOcrSampling(options: Options) {
 	const isPlausibleSameLevelDrop = useCallback(
 		(level: number, prevValue: number, curValue: number, prevPct: number, curPct: number): boolean => {
 			// 같은 레벨에서 EXP 감소는 정상 케이스가 있습니다. (예: 사망 패널티)
-			// 다만 "단일 틱에서 과도한 급락"은 OCR 이상치일 가능성이 높아 차단합니다.
+			// 다만 "단일 틱에서 과도한 급락"은 인식 이상치일 가능성이 높아 차단합니다.
 			const req = requiredExpForLevel(expTable, level);
 			if (req == null || req <= 0) return true; // 검증 불가(테이블 없음)면 막지 않습니다.
 			// 기본 정합성: 값/퍼센트는 같은 방향으로 움직이는 것이 자연스럽습니다.
@@ -209,17 +209,17 @@ export function useOcrSampling(options: Options) {
 			if (dv > 0 || dp > 0) return true; // 증가 방향이면 OK
 			// 감소: 허용하되, 급락 폭에 상한을 둡니다.
 			// 메이플랜드: 사망 시 경험치 감소량은 최대 10%p로 알려져 있습니다.
-			// (OCR/반올림 오차를 고려해 아주 약간의 여유를 둡니다.)
+			// (인식/반올림 오차를 고려해 아주 약간의 여유를 둡니다.)
 			const dropPctPoints = Math.abs(dp);
 			const dropFrac = Math.abs(dv) / req;
 			// 퍼센트 기준이 가장 직관적이며, 값 기준은 보조 신호로 사용합니다.
-			// 사망 패널티(최대 10%p) + OCR 소수점 오차를 고려해 약 0.2%p 정도 여유를 둡니다.
+			// 사망 패널티(최대 10%p) + 인식 소수점 오차를 고려해 약 0.2%p 정도 여유를 둡니다.
 			return dropPctPoints <= 10.2 && dropFrac <= 0.12;
 		},
 		[expTable]
 	);
 
-	const readOnceUncoordinated = useCallback(async (): Promise<OcrSample> => {
+	const readOnceUncoordinated = useCallback(async (): Promise<ReadSample> => {
 		const video = captureVideoRef.current;
 		if (!video || !roiExp || !roiLevel) return { ts: Date.now(), level: null, expPercent: null, expValue: null };
 		if (video.videoWidth === 0 || video.videoHeight === 0)
@@ -281,7 +281,7 @@ export function useOcrSampling(options: Options) {
 					});
 					setLevelPreviewRaw(canvasLevelRaw.toDataURL("image/png"));
 					// 매칭에 실제로 쓰인 "원본 배율 ROI"를 픽셀 구조 그대로 확대해서 보여줍니다.
-					// (EXP 프리뷰와 같은 방식. 예전에는 Tesseract용 흑백 이진화 이미지를 보여줬습니다)
+					// (EXP 프리뷰와 같은 방식. 이진화한 이미지를 보여주면 실제 매칭 입력과 달라서 쓸모가 없습니다)
 					setLevelPreviewProc(
 						upscaleCanvasNearest(canvasLevelNative, 3, getOrCreateCanvas(levelPreviewCanvasRef)).toDataURL("image/png")
 					);
@@ -290,8 +290,8 @@ export function useOcrSampling(options: Options) {
 					setExpPreviewProc(
 						upscaleCanvasNearest(canvasExpNative, 3, getOrCreateCanvas(expPreviewCanvasRef)).toDataURL("image/png")
 					);
-					setLevelOcrText(levelRes.text || "");
-					setExpOcrText(expRes.text || "");
+					setLevelReadText(levelRes.text || "");
+					setExpReadText(expRes.text || "");
 					// 이번 tick에서 실제로 파싱된 값. (이상치로 걸러진 경우에도 그대로 보여줍니다)
 					setParsedLevel(levelRes.value);
 					setParsedExpValue(expRes.value);
@@ -316,17 +316,17 @@ export function useOcrSampling(options: Options) {
 	/**
 	 * ROI 읽기는 항상 하나만 돌게 합니다.
 	 *
-	 * 워커 파라미터 경합 자체는 `lib/ocr.ts`가 워커 큐로 직렬화하므로 여기서 다시 막을 필요는 없습니다.
-	 * 다만 같은 프레임을 두 번 읽는 낭비를 줄이고, baseline만은 "새 프레임"에서 잡도록 조정합니다.
+	 * 인식기(`lib/recognize.ts`)는 동기 함수라 경합 자체는 없습니다. 여기서 막는 건 같은 프레임을
+	 * 두 번 읽는 낭비이고, baseline만은 "새 프레임"에서 잡도록 조정합니다.
 	 * (디버그 폴링과 측정 루프가 겹칠 수 있는 순간 — 예: 측정 시작 직후 baseline 캡처 — 이 실제로 존재합니다)
 	 *
 	 * - 기본: 진행 중인 읽기가 있으면 그 Promise를 재사용합니다. (같은 프레임을 공유하는 셈)
 	 * - `fresh: true`: 진행 중인 읽기가 끝나기를 기다렸다가 **새로** 읽습니다.
 	 *   baseline은 "재생 재개 후 새 프레임"을 기다린 직후에 잡아야 의미가 있어서, 재사용하면 안 됩니다.
 	 */
-	const readInFlightRef = useRef<Promise<OcrSample> | null>(null);
+	const readInFlightRef = useRef<Promise<ReadSample> | null>(null);
 	const readOnce = useCallback(
-		(opts?: { fresh?: boolean }): Promise<OcrSample> => {
+		(opts?: { fresh?: boolean }): Promise<ReadSample> => {
 			const inFlight = readInFlightRef.current;
 			if (inFlight && !opts?.fresh) return inFlight;
 			const run = async () => {
@@ -359,7 +359,7 @@ export function useOcrSampling(options: Options) {
 	 *
 	 * ROI를 잡자마자 "제대로 읽히는지"를 확인할 수 있어야 하는데,
 	 * 기존에는 측정 루프 안에서만 미리보기를 갱신해서 시작 전에는 아무것도 볼 수 없었습니다.
-	 * 측정 중에는 이미 매 tick 갱신되므로 이 폴링은 돌리지 않습니다. (OCR 중복 실행 방지)
+	 * 측정 중에는 이미 매 tick 갱신되므로 이 폴링은 돌리지 않습니다. (인식 중복 실행 방지)
 	 */
 	useEffect(() => {
 		if (!debugEnabled || samplingActive) return;
@@ -397,9 +397,9 @@ export function useOcrSampling(options: Options) {
 			return;
 		}
 		const evaluate = () => {
-			const next = describeOcrHealth(healthStateRef.current, Date.now(), { active: true });
+			const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: true });
 			// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
-			setHealthNotice((cur) => (ocrHealthNoticeEquals(cur, next) ? cur : next));
+			setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
 		};
 		evaluate();
 		const id = window.setInterval(evaluate, 1000);
@@ -434,12 +434,12 @@ export function useOcrSampling(options: Options) {
 			clearHealth();
 			// baseline은 반드시 새 프레임에서 읽습니다. (디버그 폴링이 잡아둔 이전 프레임을 재사용하면 안 됩니다)
 			const raw = await readOnce({ fresh: true });
-			const s: OcrSample = {
+			const s: ReadSample = {
 				...raw,
 				levelWasMissing: raw.level == null && (raw.expPercent != null || raw.expValue != null)
 			};
 			const isStructValid = s.level != null && s.expValue != null && s.expPercent != null;
-			let sample: OcrSample = { ...s, isValid: isStructValid };
+			let sample: ReadSample = { ...s, isValid: isStructValid };
 			// baseline은 prev가 없더라도 최소한의 검증(%↔값 일관성)은 통과해야 채택합니다.
 			if (isStructValid && expPercentValidationEnabled) {
 				if (!isPercentValueConsistent(s.level as number, s.expValue as number, s.expPercent as number)) {
@@ -464,7 +464,7 @@ export function useOcrSampling(options: Options) {
 
 	const sampleOnceAndAccumulate = useCallback(async () => {
 		const raw = await readOnce();
-		// 레벨 OCR이 흔들릴 때 측정을 끊지 않기 위한 보정:
+		// 레벨 인식이 흔들릴 때 측정을 끊지 않기 위한 보정:
 		// 직전 유효 레벨이 있고, 이번 샘플에서 EXP 관련 값이 잡히면 "레벨은 그대로"라고 가정합니다.
 		const prev = lastValidSampleRef.current;
 		const level =
@@ -473,13 +473,13 @@ export function useOcrSampling(options: Options) {
 				: prev?.level != null && (raw.expPercent != null || raw.expValue != null)
 					? prev.level
 					: null;
-		const s: OcrSample = {
+		const s: ReadSample = {
 			...raw,
 			level,
 			levelWasMissing: raw.level == null && level != null
 		};
 		const isStructValid = s.level != null && s.expValue != null && s.expPercent != null;
-		let sample: OcrSample = { ...s, isValid: isStructValid };
+		let sample: ReadSample = { ...s, isValid: isStructValid };
 
 		// 이상치 감지: 이번 틱이 이상해 보이면 "유효 샘플"로 취급하지 않습니다.
 		// 이렇게 하면 sampleTick이 증가하지 않아 차트 히스토리에 기록되지 않습니다.
@@ -491,9 +491,9 @@ export function useOcrSampling(options: Options) {
 		}
 		// 레벨 급변(예전의 `level_jump`) 검사는 일부러 하지 않습니다.
 		//
-		// 왜: 이 검사는 Tesseract 시절의 방어선이었습니다. LSTM OCR은 애매할 때도 확신에 찬 틀린 레벨
+		// 왜: 이 검사는 범용 인식 엔진을 쓰던 시절의 방어선이었습니다. LSTM 기반 인식기는 애매할 때도 확신에 찬 틀린 레벨
 		// (193을 183으로)을 돌려줬기 때문에 "한 틱에 2레벨 이상 변화 = 오인식"으로 막을 필요가 있었습니다.
-		// 지금 레벨 인식은 픽셀 글꼴 템플릿 매칭이라(`lib/levelPixelOcr.ts`) 한 자리라도 확신이 없으면
+		// 지금 레벨 인식은 픽셀 글꼴 템플릿 매칭이라(`lib/levelPixelRecognizer.ts`) 한 자리라도 확신이 없으면
 		// 값을 찍지 않고 `null`을 돌려줍니다. 즉 막아야 할 "틀린 레벨" 자체가 나오지 않습니다.
 		//
 		// 반대로 이 검사에는 자가 복구가 불가능한 함정이 있었습니다. prev는 유효 샘플일 때만 갱신되므로,
@@ -566,9 +566,9 @@ export function useOcrSampling(options: Options) {
 
 		// 이 샘플이 기록됐는지, 안 됐다면 왜인지를 기록해 둡니다. (화면 알림은 아래 인터벌이 판단)
 		// levelRead에는 폴백 이전의 원본 판독(raw.level)을 넘겨야 "레벨을 못 읽고 있다"가 드러납니다.
-		healthStateRef.current = applyOcrOutcome(
+		healthStateRef.current = applyReadOutcome(
 			healthStateRef.current,
-			classifyOcrOutcome({
+			classifyReadOutcome({
 				isRecorded,
 				levelRead: raw.level != null,
 				expRead: raw.expValue != null && raw.expPercent != null,
@@ -586,7 +586,7 @@ export function useOcrSampling(options: Options) {
 		expPercentValidationEnabled
 	]);
 
-	const getSnapshot = useCallback((): OcrSamplingSnapshot => {
+	const getSnapshot = useCallback((): SamplingSnapshot => {
 		return {
 			currentLevel,
 			currentExpPercent,
@@ -595,19 +595,19 @@ export function useOcrSampling(options: Options) {
 			cumExpValue,
 			sampleTick,
 			lastSampleTs: lastSampleTsRef.current,
-			lastValidSample: lastValidSampleRef.current as OcrSample | null
+			lastValidSample: lastValidSampleRef.current as ReadSample | null
 		};
 	}, [currentLevel, currentExpPercent, currentExpValue, cumExpPct, cumExpValue, sampleTick]);
 
 	const applySnapshot = useCallback(
-		(snap: OcrSamplingSnapshot) => {
+		(snap: SamplingSnapshot) => {
 			setCurrentLevel(snap.currentLevel ?? null);
 			setCurrentExpPercent(snap.currentExpPercent ?? null);
 			setCurrentExpValue(snap.currentExpValue ?? null);
 			setCumExpPct(Number.isFinite(snap.cumExpPct) ? snap.cumExpPct : 0);
 			setCumExpValue(Number.isFinite(snap.cumExpValue) ? snap.cumExpValue : 0);
 			lastSampleTsRef.current = snap.lastSampleTs ?? null;
-			lastValidSampleRef.current = (snap.lastValidSample as OcrSample | null) ?? null;
+			lastValidSampleRef.current = (snap.lastValidSample as ReadSample | null) ?? null;
 			setSampleTick(Number.isFinite(snap.sampleTick) ? snap.sampleTick : 0);
 			// 기록을 불러온 직후에는 화면이 어떤 상태인지 알 수 없으므로 레벨을 다시 읽습니다.
 			clearLevelCache();
@@ -642,8 +642,8 @@ export function useOcrSampling(options: Options) {
 		levelPreviewProc,
 		expPreviewRaw,
 		expPreviewProc,
-		levelOcrText,
-		expOcrText,
+		levelReadText,
+		expReadText,
 		expValidation,
 		parsedLevel,
 		parsedExpValue,

@@ -17,8 +17,8 @@ import OnboardingOverlay from "@/components/OnboardingOverlay";
 import { useGlobalHotkey } from "@/hooks/useGlobalHotkey";
 import TrackerToolbar from "@/components/exp-tracker/TrackerToolbar";
 import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
-import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
-import OcrHealthBanner from "@/components/exp-tracker/OcrHealthBanner";
+import DebugRecognitionPreview from "@/components/exp-tracker/DebugRecognitionPreview";
+import RecognitionHealthBanner from "@/components/exp-tracker/RecognitionHealthBanner";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
 import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
@@ -26,7 +26,7 @@ import { useOnboardingRoiAssist } from "@/features/exp-tracker/hooks/useOnboardi
 import { usePaceSeries } from "@/features/exp-tracker/hooks/usePaceSeries";
 import { useStopwatch } from "@/features/exp-tracker/hooks/useStopwatch";
 import { useIntervalRunner } from "@/features/exp-tracker/hooks/useIntervalRunner";
-import { useOcrSampling } from "@/features/exp-tracker/hooks/useOcrSampling";
+import { useSampling } from "@/features/exp-tracker/hooks/useSampling";
 import { ExternalWsEvent, useExternalWsControl } from "@/features/exp-tracker/hooks/useExternalWsControl";
 import type { ExpTrackerSnapshot } from "@/features/exp-tracker/records/types";
 import { normalizeSnapshot } from "@/features/exp-tracker/records/snapshot";
@@ -39,7 +39,7 @@ const INTERVAL_SEC_VALIDATOR = oneOf<IntervalSec>([1, 5, 10]);
 const PACE_WINDOW_MIN_VALIDATOR = oneOf([1, 5, 10, 30, 60]);
 
 export default function ExpTracker() {
-	// OCR 샘플링에 사용하는 숨김(항상 마운트) 비디오
+	// 인식 샘플링에 사용하는 숨김(항상 마운트) 비디오
 	const captureVideoRef = useRef<HTMLVideoElement | null>(null);
 	// ROI 선택에만 사용하는 모달 프리뷰 비디오
 	const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -168,7 +168,7 @@ export default function ExpTracker() {
 		hasStreamRef.current = hasStream;
 	}, [hasStream]);
 
-	const ocr = useOcrSampling({
+	const sampling = useSampling({
 		captureVideoRef,
 		roiLevel,
 		roiExp,
@@ -178,23 +178,23 @@ export default function ExpTracker() {
 		samplingActive: isSampling
 	});
 
-	// OCR 작업이 중첩 실행되지 않도록 방지합니다. (OCR이 intervalSec보다 오래 걸릴 때 중요)
-	// 이 가드가 없으면 setInterval이 여러 OCR 작업을 동시에 쌓아 CPU 스파이크/끊김을 유발할 수 있습니다.
+	// 인식 작업이 중첩 실행되지 않도록 방지합니다. (인식이 intervalSec보다 오래 걸릴 때 중요)
+	// 이 가드가 없으면 setInterval이 여러 인식 작업을 동시에 쌓아 CPU 스파이크/끊김을 유발할 수 있습니다.
 	const sampleInFlightRef = useRef<Promise<void> | null>(null);
 	const runSampleOnce = useCallback(async () => {
 		// 이미 샘플링이 실행 중이면 같은 Promise를 재사용합니다. (예: pause 시 완료를 기다릴 수 있음)
 		if (sampleInFlightRef.current) return sampleInFlightRef.current;
-		const p = ocr
+		const p = sampling
 			.sampleOnceAndAccumulate()
 			.catch(() => {
-				// OCR 실패는 흔할 수 있으므로 사용자 경험을 위해 조용히 무시합니다.
+				// 인식 실패는 흔할 수 있으므로 사용자 경험을 위해 조용히 무시합니다.
 			})
 			.finally(() => {
 				sampleInFlightRef.current = null;
 			}) as Promise<void>;
 		sampleInFlightRef.current = p;
 		return p;
-	}, [ocr]);
+	}, [sampling]);
 
 	// 왜: 샘플링 인터벌 콜백이 "시작 시점의 runSampleOnce"를 붙잡고 있으면,
 	// 측정 중에 바꾼 ROI / EXP% 검증 / 디버그 미리보기 설정이 재시작 전까지 반영되지 않습니다.
@@ -281,9 +281,9 @@ export default function ExpTracker() {
 		// - baseline이 %↔값 불일치 등으로 이상하면, 이번 틱은 무시하고 다음 틱을 첫 틱으로 삼음
 		setIsPreparingSample(true);
 		try {
-			// OCR 전에 캡처 비디오가 실제 프레임을 내고 있는지 보장합니다.
+			// 인식 전에 캡처 비디오가 실제 프레임을 내고 있는지 보장합니다.
 			await ensureCapturePlaying();
-			await ocr.captureBaseline({ resetTotals: !hasStarted });
+			await sampling.captureBaseline({ resetTotals: !hasStarted });
 		} finally {
 			setIsPreparingSample(false);
 		}
@@ -297,7 +297,7 @@ export default function ExpTracker() {
 
 		// 샘플링 인터벌은 아래 effect가 소유합니다. (isSampling/intervalSec 변화에 따라 재시작)
 		setIsSampling(true);
-	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, ocr, ensureCapturePlaying, showNotice]);
+	}, [stream, roiLevel, roiExp, hasStarted, stopwatch, sampling, ensureCapturePlaying, showNotice]);
 
 	// 샘플링 인터벌의 생명주기를 한곳에서 관리합니다.
 	// - 왜: 측정 중 "측정 주기"를 바꿔도 즉시 반영되어야 하고, 인터벌 clear 누락도 막을 수 있습니다.
@@ -326,12 +326,12 @@ export default function ExpTracker() {
 		if (!hasStarted) return;
 		sampler.stop();
 		stopwatch.reset();
-		ocr.resetTotals();
+		sampling.resetTotals();
 		setIsSampling(false);
 		setIsPreparingSample(false);
 		setHasStarted(false);
 		setExpCouponCount(0);
-	}, [hasStarted, sampler, stopwatch, ocr]);
+	}, [hasStarted, sampler, stopwatch, sampling]);
 
 	// PiP 핸들러에서 stale closure를 피하기 위해 최신 함수 ref를 유지합니다.
 	const startOrResumeRef = useRef(startOrResume);
@@ -402,7 +402,7 @@ export default function ExpTracker() {
 	const stats = useMemo(() => {
 		if (!hasStarted) return null;
 		const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-		const gainedPctPoints = ocr.cumExpPct; // 샘플 누적
+		const gainedPctPoints = sampling.cumExpPct; // 샘플 누적
 		const ratePerSec = elapsedSec > 0 ? gainedPctPoints / elapsedSec : 0;
 		// 동적 "N시간 되는 시각": N = floor(elapsed/3600)+1
 		const nextHours = Math.floor(elapsedSec / 3600) + 1;
@@ -415,18 +415,18 @@ export default function ExpTracker() {
 			nextHours,
 			nextAt
 		};
-	}, [elapsedMs, hasStarted, ocr.cumExpPct]);
+	}, [elapsedMs, hasStarted, sampling.cumExpPct]);
 
 	// 경과 시간을 이용해 누적값을 비례 환산합니다:
 	// paceAtWindow(targetMinutes) = cumulative * (targetMinutes / elapsedMinutes)
 	const paceAtWindow = useMemo(() => {
 		return paceForDuration({
-			cumExpValue: ocr.cumExpValue,
-			cumExpPct: ocr.cumExpPct,
+			cumExpValue: sampling.cumExpValue,
+			cumExpPct: sampling.cumExpPct,
 			durationMs: elapsedMs,
 			windowMin: paceWindowMin
 		});
-	}, [elapsedMs, paceWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
+	}, [elapsedMs, paceWindowMin, sampling.cumExpPct, sampling.cumExpValue]);
 
 	// 경험치 쿠폰 보정: 쿠폰 1개(15분)만큼 사냥 시간이 늘어난 것으로 보고 페이스를 다시 계산합니다.
 	// (웹 페이지 전용 — PiP에는 노출하지 않습니다.)
@@ -436,13 +436,13 @@ export default function ExpTracker() {
 	);
 	const couponPace = useMemo(() => {
 		return couponAdjustedPace({
-			cumExpValue: ocr.cumExpValue,
-			cumExpPct: ocr.cumExpPct,
+			cumExpValue: sampling.cumExpValue,
+			cumExpPct: sampling.cumExpPct,
 			elapsedMs,
 			couponCount: expCouponCount,
 			windowMin: paceWindowMin
 		});
-	}, [elapsedMs, expCouponCount, paceWindowMin, ocr.cumExpPct, ocr.cumExpValue]);
+	}, [elapsedMs, expCouponCount, paceWindowMin, sampling.cumExpPct, sampling.cumExpValue]);
 
 	// Space: 측정 시작/일시정지 토글 (입력 폼 포커스 시에는 무시)
 	useGlobalHotkey({
@@ -545,11 +545,11 @@ export default function ExpTracker() {
 			elapsedMs,
 			nextAt: stats ? stats.nextAt : null,
 			nextHours: stats ? stats.nextHours : null,
-			gainedText: `${formatNumber(ocr.cumExpValue)} [${ocr.cumExpPct.toFixed(2)}%]`,
+			gainedText: `${formatNumber(sampling.cumExpValue)} [${sampling.cumExpPct.toFixed(2)}%]`,
 			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`,
 			// PiP는 폭이 좁으므로 원인 한 줄만 보냅니다. (조치 안내는 메인 창에 있습니다)
-			healthText: ocr.healthNotice
-				? `${ocr.healthNotice.title} (${Math.floor(ocr.healthNotice.stalledMs / 1000)}초)`
+			healthText: sampling.healthNotice
+				? `${sampling.healthNotice.title} (${Math.floor(sampling.healthNotice.stalledMs / 1000)}초)`
 				: null
 		};
 		pipUpdate(state);
@@ -557,9 +557,9 @@ export default function ExpTracker() {
 		isSampling,
 		elapsedMs,
 		stats,
-		ocr.cumExpValue,
-		ocr.cumExpPct,
-		ocr.healthNotice,
+		sampling.cumExpValue,
+		sampling.cumExpPct,
+		sampling.healthNotice,
 		paceAtWindow.val,
 		paceAtWindow.pct,
 		paceWindowMin,
@@ -589,10 +589,10 @@ export default function ExpTracker() {
 	// ----- 페이스 히스토리/시리즈 (시간 정규화) -----
 	const pace = usePaceSeries({
 		hasStarted,
-		sampleTick: ocr.sampleTick,
-		lastSampleTsRef: ocr.lastSampleTsRef,
-		cumExpValue: ocr.cumExpValue,
-		cumExpPct: ocr.cumExpPct,
+		sampleTick: sampling.sampleTick,
+		lastSampleTsRef: sampling.lastSampleTsRef,
+		cumExpValue: sampling.cumExpValue,
+		cumExpPct: sampling.cumExpPct,
 		elapsedMs,
 		paceWindowMin
 	});
@@ -625,14 +625,14 @@ export default function ExpTracker() {
 				}}
 			/>
 
-			<OcrHealthBanner notice={ocr.healthNotice} />
+			<RecognitionHealthBanner notice={sampling.healthNotice} />
 
 			<TrackerSummary
 				captureRef={summaryCaptureRef}
 				elapsedMs={elapsedMs}
 				stats={stats ? { nextAt: stats.nextAt, nextHours: stats.nextHours } : null}
-				cumExpValue={ocr.cumExpValue}
-				cumExpPct={ocr.cumExpPct}
+				cumExpValue={sampling.cumExpValue}
+				cumExpPct={sampling.cumExpPct}
 				paceWindowMin={paceWindowMin}
 				paceAtWindow={paceAtWindow}
 				intervalSec={intervalSec}
@@ -659,8 +659,8 @@ export default function ExpTracker() {
 				<ShareResultsActions
 					hasStarted={hasStarted}
 					elapsedMs={elapsedMs}
-					cumExpValue={ocr.cumExpValue}
-					cumExpPct={ocr.cumExpPct}
+					cumExpValue={sampling.cumExpValue}
+					cumExpPct={sampling.cumExpPct}
 					paceWindowMin={paceWindowMin}
 					paceValue={paceAtWindow.val}
 					pacePct={paceAtWindow.pct}
@@ -674,17 +674,17 @@ export default function ExpTracker() {
 			</div>
 
 			{debugEnabled && (
-				<DebugOcrPreview
-					levelPreviewRaw={ocr.levelPreviewRaw}
-					levelPreviewProc={ocr.levelPreviewProc}
-					expPreviewRaw={ocr.expPreviewRaw}
-					expPreviewProc={ocr.expPreviewProc}
-					levelOcrText={ocr.levelOcrText}
-					expOcrText={ocr.expOcrText}
-					parsedLevel={ocr.parsedLevel}
-					parsedExpValue={ocr.parsedExpValue}
-					parsedExpPercent={ocr.parsedExpPercent}
-					expValidation={ocr.expValidation}
+				<DebugRecognitionPreview
+					levelPreviewRaw={sampling.levelPreviewRaw}
+					levelPreviewProc={sampling.levelPreviewProc}
+					expPreviewRaw={sampling.expPreviewRaw}
+					expPreviewProc={sampling.expPreviewProc}
+					levelReadText={sampling.levelReadText}
+					expReadText={sampling.expReadText}
+					parsedLevel={sampling.parsedLevel}
+					parsedExpValue={sampling.parsedExpValue}
+					parsedExpPercent={sampling.parsedExpPercent}
+					expValidation={sampling.expValidation}
 				/>
 			)}
 
@@ -696,14 +696,14 @@ export default function ExpTracker() {
 				paceWindowMin={paceWindowMin}
 				getSnapshot={() => {
 					const snap: ExpTrackerSnapshot = {
-						version: 3,
+						version: 4,
 						capturedAt: Date.now(),
 						runtime: {
 							hasStarted,
 							expCouponCount
 						},
 						stopwatch: stopwatch.getSnapshot(),
-						ocr: ocr.getSnapshot(),
+						sampling: sampling.getSnapshot(),
 						pace: pace.getSnapshot()
 					};
 					return snap;
@@ -722,11 +722,14 @@ export default function ExpTracker() {
 					const nextHasStarted = !!snap.runtime.hasStarted;
 					setHasStarted(nextHasStarted);
 					setExpCouponCount(nextHasStarted ? normalizeCouponCount(snap.runtime.expCouponCount) : 0);
-					ocr.applySnapshot(snap.ocr);
+					sampling.applySnapshot(snap.sampling);
 					// 제약/UX: 로드 시 자동 실행하지 않기 위해 항상 "일시정지"로 복원합니다.
 					stopwatch.applySnapshot({ ...snap.stopwatch, isRunning: false });
 					// handledTick으로 복원된 sampleTick을 함께 넘겨, 복원 직후 중복 포인트가 append되지 않게 합니다.
-					pace.applySnapshot(nextHasStarted ? snap.pace : { history: [] }, nextHasStarted ? snap.ocr.sampleTick : 0);
+					pace.applySnapshot(
+						nextHasStarted ? snap.pace : { history: [] },
+						nextHasStarted ? snap.sampling.sampleTick : 0
+					);
 				}}
 			/>
 
@@ -838,7 +841,7 @@ export default function ExpTracker() {
 						<div>
 							<div className="text-white/90">EXP% 검증 활성화</div>
 							<div className="text-white/60 text-xs">
-								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 OCR 결과를 검증해 이상치를 걸러냅니다.
+								켜짐: EXP, EXP%와 레벨을 EXP 테이블을 통해 대조하여 인식 결과를 검증해 이상치를 걸러냅니다.
 								<br />
 								꺼짐: 레벨/퍼센트 오인식 때문에 측정이 막히는 경우를 완화하지만, 누적/페이스가 더 부정확해질 수
 								있습니다.
@@ -847,7 +850,7 @@ export default function ExpTracker() {
 					</label>
 				</div>
 			</Modal>
-			{/* OCR 샘플링용 숨김 비디오(항상 마운트) */}
+			{/* 인식 샘플링용 숨김 비디오(항상 마운트) */}
 			<video ref={captureVideoRef} className="hidden" muted playsInline />
 			<AlertDialog
 				open={!!notice}
@@ -884,8 +887,8 @@ export default function ExpTracker() {
 				levelRoiPreview={levelRoiShot}
 				hasExpRoi={!!roiExp}
 				expRoiPreview={expRoiShot}
-				ocrLevelText={onboardingLevelText}
-				ocrExpText={onboardingExpText}
+				levelReadText={onboardingLevelText}
+				expReadText={onboardingExpText}
 				onOpenPip={() => {
 					void openPip();
 				}}

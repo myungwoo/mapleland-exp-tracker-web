@@ -29,7 +29,7 @@ python3 tools/fonts/subset-unicodes.py > unicodes.txt
 
 ## D2Coding (숫자/모노용)
 
-모노 글꼴은 경과 시간·EXP 숫자·OCR 텍스트에 씁니다. **라틴/숫자/기호 + 한글 5자**만 남겨
+모노 글꼴은 경과 시간·EXP 숫자·인식 결과 텍스트에 씁니다. **라틴/숫자/기호 + 한글 5자**만 남겨
 1.49MB → 14KB로 줄였습니다.
 
 한글 5자(`누 만 분 억 적`)는 숫자에 붙는 단위입니다. 축 라벨 "1.2만"/"1.2억", 툴팁 "... / 60분"/"... 누적"에
@@ -62,4 +62,6 @@ curl -sLo D2Coding.woff2 \
 - Pretendard: SIL Open Font License 1.1 (Kil Hyung-jin)
 - D2Coding: SIL Open Font License 1.1 (NAVER)
 
-두 폰트 모두 OFL이라 서브셋 재배포가 허용됩니다. (`public/fonts/OFL.txt` 참고)
+두 폰트 모두 OFL이라 서브셋 재배포가 허용됩니다.
+라이선스 전문은 `public/fonts/LICENSE-Pretendard.txt` / `public/fonts/LICENSE-D2Coding.txt` 에 있습니다.
+**서브셋 woff2를 갱신할 때 이 파일들도 같이 두어야 합니다.** (OFL은 재배포 시 라이선스 동봉을 요구합니다)

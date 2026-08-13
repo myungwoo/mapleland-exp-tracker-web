@@ -11,7 +11,7 @@
  * 사용자가 원인을 알 방법이 없었습니다. 그래서 "왜 기록이 안 되는지"를 화면에 띄웁니다.
  *
  * React에 의존하지 않는 순수 함수로 둔 이유: 유예 시간/원인 분류 규칙을 그대로 테스트할 수
- * 있어야 합니다. (`tools/ocr-health/selftest.mjs`)
+ * 있어야 합니다. (`tools/recognition-health/selftest.mjs`)
  */
 
 /**
@@ -19,7 +19,7 @@
  *
  * `ok`가 아닌 것은 모두 "이 샘플은 기록되지 않았다"는 뜻입니다.
  */
-export type OcrOutcomeKind =
+export type ReadOutcomeKind =
 	/** 누적·차트에 기록됨 */
 	| "ok"
 	/** 레벨도 경험치도 못 읽음 — 화면 전환/검은 화면/캡처 중단 */
@@ -37,9 +37,9 @@ export type OcrOutcomeKind =
 	/** 위 어디에도 해당하지 않는 실패 (분류 누락 방어) */
 	| "unknown";
 
-export type OcrFailureKind = Exclude<OcrOutcomeKind, "ok">;
+export type ReadFailureKind = Exclude<ReadOutcomeKind, "ok">;
 
-export type OcrHealthState = {
+export type RecognitionHealthState = {
 	/** 마지막으로 기록에 성공한 시각. 한 번도 없으면 null */
 	lastOkAt: number | null;
 	/** 지금 이어지고 있는 연속 실패가 시작된 시각. 실패 중이 아니면 null */
@@ -47,7 +47,7 @@ export type OcrHealthState = {
 	/** 연속 실패 횟수 (성공하면 0으로 돌아갑니다) */
 	consecutiveFailures: number;
 	/** 가장 최근 실패의 원인 */
-	lastFailureKind: OcrFailureKind | null;
+	lastFailureKind: ReadFailureKind | null;
 };
 
 /**
@@ -57,9 +57,9 @@ export type OcrHealthState = {
  * 5초면 충분히 걸러집니다. 반대로 ROI가 가려진 경우는 사용자가 알아채기 전까지 계속되므로,
  * 이 값을 더 키우면 알림이 늦어지는 손해만 있습니다.
  */
-export const OCR_STALL_GRACE_MS = 5_000;
+export const RECOGNITION_STALL_GRACE_MS = 5_000;
 
-export function emptyOcrHealth(): OcrHealthState {
+export function emptyRecognitionHealth(): RecognitionHealthState {
 	return { lastOkAt: null, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
 }
 
@@ -72,7 +72,7 @@ export function emptyOcrHealth(): OcrHealthState {
  * 주의: `levelRead`에는 **원본 판독**을 넘겨야 합니다. 직전 레벨로 대체한 값을 넘기면
  * "레벨을 못 읽고 있다"는 사실 자체가 사라집니다.
  */
-export function classifyOcrOutcome(args: {
+export function classifyReadOutcome(args: {
 	/** 누적·차트에 반영되었는지 */
 	isRecorded: boolean;
 	/** 레벨을 실제로 읽었는지 (직전 레벨 대체 이전) */
@@ -82,14 +82,14 @@ export function classifyOcrOutcome(args: {
 	/** 이상치로 걸러졌다면 그 사유 */
 	outlierReason?: string | null;
 	/**
-	 * 경험치 값 바로 앞에 미인식 조각이 붙어 있었는지. (`lib/ocr.ts`의 `hasUnknownBeforeValue`)
+	 * 경험치 값 바로 앞에 미인식 조각이 붙어 있었는지. (`lib/recognize.ts`의 `hasUnknownBeforeValue`)
 	 *
 	 * 정합성 불일치의 원인을 가리는 데 씁니다. 불일치만 보면 레벨을 잘못 읽은 것인지 경험치를
 	 * 잘못 읽은 것인지 알 수 없는데, 값 앞에 미인식 조각이 붙어 있었다면 원인은 사실상
 	 * "경험치 숫자가 가려져 값이 잘린 것"입니다. 정상 판독에서는 값이 맞으므로 이 조합이 나오지 않습니다.
 	 */
 	expValueHasUnknownPrefix?: boolean;
-}): OcrOutcomeKind {
+}): ReadOutcomeKind {
 	if (args.isRecorded) return "ok";
 	if (args.outlierReason === "pct_value_mismatch") {
 		return args.expValueHasUnknownPrefix ? "exp_truncated" : "pct_value_mismatch";
@@ -108,7 +108,11 @@ export function classifyOcrOutcome(args: {
 }
 
 /** 분류 결과를 반영한 새 상태를 돌려줍니다. */
-export function applyOcrOutcome(state: OcrHealthState, kind: OcrOutcomeKind, now: number): OcrHealthState {
+export function applyReadOutcome(
+	state: RecognitionHealthState,
+	kind: ReadOutcomeKind,
+	now: number
+): RecognitionHealthState {
 	if (kind === "ok") {
 		return { lastOkAt: now, failingSince: null, consecutiveFailures: 0, lastFailureKind: null };
 	}
@@ -121,8 +125,8 @@ export function applyOcrOutcome(state: OcrHealthState, kind: OcrOutcomeKind, now
 	};
 }
 
-export type OcrHealthNotice = {
-	kind: OcrFailureKind;
+export type RecognitionHealthNotice = {
+	kind: ReadFailureKind;
 	/** 한 줄 요약 (PiP처럼 좁은 곳에서도 이것만 씁니다) */
 	title: string;
 	/** 무엇을 확인해야 하는지 */
@@ -131,7 +135,7 @@ export type OcrHealthNotice = {
 	stalledMs: number;
 };
 
-const MESSAGES: Record<OcrFailureKind, { title: string; detail: string }> = {
+const MESSAGES: Record<ReadFailureKind, { title: string; detail: string }> = {
 	no_signal: {
 		title: "화면을 읽을 수 없습니다",
 		detail: "화면 전환 중이거나 게임 창이 가려졌을 수 있습니다. 계속되면 캡처 중인 창이 맞는지 확인해 주세요."
@@ -170,16 +174,16 @@ const MESSAGES: Record<OcrFailureKind, { title: string; detail: string }> = {
  * `active`가 false면(측정 중이 아니면) 항상 null입니다. 측정을 멈춰 둔 상태에서
  * "기록이 안 되고 있다"고 알리는 것은 의미가 없습니다.
  */
-export function describeOcrHealth(
-	state: OcrHealthState,
+export function describeRecognitionHealth(
+	state: RecognitionHealthState,
 	now: number,
 	options: { active: boolean; graceMs?: number }
-): OcrHealthNotice | null {
+): RecognitionHealthNotice | null {
 	if (!options.active) return null;
 	const { failingSince, lastFailureKind } = state;
 	if (failingSince == null || lastFailureKind == null) return null;
 	const stalledMs = Math.max(0, now - failingSince);
-	if (stalledMs < (options.graceMs ?? OCR_STALL_GRACE_MS)) return null;
+	if (stalledMs < (options.graceMs ?? RECOGNITION_STALL_GRACE_MS)) return null;
 	const msg = MESSAGES[lastFailureKind];
 	return { kind: lastFailureKind, title: msg.title, detail: msg.detail, stalledMs };
 }
@@ -190,7 +194,10 @@ export function describeOcrHealth(
  * 왜: 지속 시간은 매초 늘어나므로 객체를 그대로 비교하면 매초 상태가 바뀐 것으로 보입니다.
  * 표시는 초 단위이므로 초가 바뀌지 않았다면 같은 알림으로 취급해 불필요한 렌더를 막습니다.
  */
-export function ocrHealthNoticeEquals(a: OcrHealthNotice | null, b: OcrHealthNotice | null): boolean {
+export function recognitionHealthNoticeEquals(
+	a: RecognitionHealthNotice | null,
+	b: RecognitionHealthNotice | null
+): boolean {
 	if (a == null || b == null) return a === b;
 	return a.kind === b.kind && Math.floor(a.stalledMs / 1000) === Math.floor(b.stalledMs / 1000);
 }

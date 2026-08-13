@@ -1,14 +1,14 @@
 "use client";
 
-import type { ExpValidationDebug } from "@/features/exp-tracker/hooks/useOcrSampling";
+import type { ExpValidationDebug } from "@/features/exp-tracker/hooks/useSampling";
 
 type Props = {
 	levelPreviewRaw: string | null;
 	levelPreviewProc: string | null;
 	expPreviewRaw: string | null;
 	expPreviewProc: string | null;
-	levelOcrText: string;
-	expOcrText: string;
+	levelReadText: string;
+	expReadText: string;
 	/** 이번 tick에서 파싱된 값 (이상치 필터를 거치기 전) */
 	parsedLevel: number | null;
 	parsedExpValue: number | null;
@@ -58,10 +58,10 @@ function ParsedValue(props: { label: string; value: string | null }) {
 	);
 }
 
-export default function DebugOcrPreview(props: Props) {
+export default function DebugRecognitionPreview(props: Props) {
 	return (
 		<div className="card p-4 space-y-3">
-			<h3 className="font-semibold">OCR 입력 미리보기</h3>
+			<h3 className="font-semibold">인식 입력 미리보기</h3>
 			{/* 왜: dataURL로 만드는 디버그 미리보기는 next/image 최적화 이점이 거의 없어 <img>를 사용합니다. */}
 			{/* eslint-disable @next/next/no-img-element */}
 			<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -105,15 +105,15 @@ export default function DebugOcrPreview(props: Props) {
 
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 				<div className="text-xs">
-					<div className="opacity-70 mb-1">Level OCR</div>
+					<div className="opacity-70 mb-1">레벨 인식 결과</div>
 					<pre className="whitespace-pre-wrap break-all bg-black/30 rounded p-2 border border-white/10 min-h-[2.5rem]">
-						{props.levelOcrText || "-"}
+						{props.levelReadText || "-"}
 					</pre>
 				</div>
 				<div className="text-xs">
-					<div className="opacity-70 mb-1">EXP OCR</div>
+					<div className="opacity-70 mb-1">EXP 인식 결과</div>
 					<pre className="whitespace-pre-wrap break-all bg-black/30 rounded p-2 border border-white/10 min-h-[2.5rem]">
-						{props.expOcrText || "-"}
+						{props.expReadText || "-"}
 					</pre>
 				</div>
 			</div>
@@ -142,7 +142,7 @@ export default function DebugOcrPreview(props: Props) {
 
 			<p className="text-xs opacity-60">
 				미리보기는 디버그가 켜져 있으면 <span className="font-semibold">측정 시작 전에도</span> 1초마다 갱신됩니다. EXP
-				OCR의 <span className="font-mono">?</span>는 못 읽은 숫자 한 자리, <span className="font-mono">_</span>는
+				인식 결과의 <span className="font-mono">?</span>는 못 읽은 숫자 한 자리, <span className="font-mono">_</span>는
 				&quot;EXP.&quot; 라벨이나 UI 조각처럼 숫자가 아닌 부분이라 값에 영향을 주지 않습니다.
 			</p>
 		</div>

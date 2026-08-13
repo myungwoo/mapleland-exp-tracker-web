@@ -14,7 +14,7 @@
  *
  * 그리고 이 인식기의 존재 이유인 안전 성질을 못박아 둡니다:
  *   **어떤 입력에도 "틀린 숫자"를 돌려주지 않는다. 확신이 없으면 null이다.**
- *   (Tesseract는 193을 183으로 읽는 식으로 확신에 찬 틀린 값을 냈고, 그게 전환의 이유였습니다)
+ *   (범용 인식 엔진은 193을 183으로 읽는 식으로 확신에 찬 틀린 값을 냈고, 그게 전환의 이유였습니다)
  */
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,8 +25,8 @@ import { loadLibModules } from "../pixel-font/loadLib.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 
 const { recognizeLevelPixelFont } = await loadLibModules(
-	["levelRoiFingerprint", "levelPixelFont", "levelPixelOcr"],
-	"levelPixelOcr"
+	["levelRoiFingerprint", "levelPixelFont", "levelPixelRecognizer"],
+	"levelPixelRecognizer"
 );
 const { LEVEL_FONT_GLYPHS, LEVEL_FONT_MASKS, LEVEL_FONT_DIGIT_HEIGHT } = await loadLibModules(
 	["levelPixelFont"],

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { drawRoiCanvas, toVideoSpaceRect } from "@/lib/canvas";
-import { recognizeExp, recognizeLevel } from "@/lib/ocr";
+import { recognizeExp, recognizeLevel } from "@/lib/recognize";
 import type { RoiRect } from "@/components/RoiOverlay";
 
 type Options = {
@@ -13,7 +13,7 @@ type Options = {
 };
 
 /**
- * 온보딩 중 ROI 썸네일과 OCR 인식 텍스트를 자동 갱신하는 훅입니다.
+ * 온보딩 중 ROI 썸네일과 인식 인식 텍스트를 자동 갱신하는 훅입니다.
  *
  * - 왜: 온보딩 관련 state/effect가 ExpTracker에 섞여 있으면, 핵심 측정 로직을 읽기 어렵습니다.
  */
@@ -25,7 +25,7 @@ export function useOnboardingRoiAssist(options: Options) {
 	const [onboardingLevelText, setOnboardingLevelText] = useState<string | null>(null);
 	const [onboardingExpText, setOnboardingExpText] = useState<string | null>(null);
 
-	// 온보딩 OCR(1초 주기)에서 매번 캔버스를 새로 만들지 않도록 재사용합니다.
+	// 온보딩 인식(1초 주기)에서 매번 캔버스를 새로 만들지 않도록 재사용합니다.
 	// 중요: SSR 렌더 단계에서는 document가 없으므로(=document가 undefined) 캔버스를 즉시 생성하면 안 됩니다.
 	const levelRawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	// 레벨도 픽셀 글꼴 매칭용 원본 배율 ROI가 필요합니다.
@@ -62,11 +62,11 @@ export function useOnboardingRoiAssist(options: Options) {
 		}
 	}, [onboardingOpen, onboardingStep, roiLevel, roiExp, stream, captureVideoRef]);
 
-	// 온보딩 중에는 1초마다 OCR 텍스트를 갱신해서 “ROI가 제대로 잡혔는지” 즉시 피드백합니다.
+	// 온보딩 중에는 1초마다 인식 텍스트를 갱신해서 “ROI가 제대로 잡혔는지” 즉시 피드백합니다.
 	useEffect(() => {
 		if (!onboardingOpen) return;
 		let timer: number | null = null;
-		// 왜: OCR이 1초보다 오래 걸리면 tick이 큐에 쌓여서, 온보딩을 닫은 뒤에도 밀린 작업이 계속 돕니다.
+		// 왜: 인식이 1초보다 오래 걸리면 tick이 큐에 쌓여서, 온보딩을 닫은 뒤에도 밀린 작업이 계속 돕니다.
 		// 진행 중이면 이번 tick은 그냥 건너뜁니다. (미리보기는 다음 tick에 갱신되면 충분)
 		let inFlight = false;
 
@@ -103,7 +103,7 @@ export function useOnboardingRoiAssist(options: Options) {
 					setExpRoiShot(cRaw.toDataURL("image/png"));
 				}
 			} catch {
-				// OCR 실패는 흔하므로 조용히 무시합니다.
+				// 인식 실패는 흔하므로 조용히 무시합니다.
 			} finally {
 				inFlight = false;
 			}

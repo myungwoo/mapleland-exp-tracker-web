@@ -19,9 +19,9 @@ type Props = {
 	levelRoiPreview?: string | null;
 	hasExpRoi?: boolean;
 	expRoiPreview?: string | null;
-	// OCR 텍스트
-	ocrLevelText?: string | null;
-	ocrExpText?: string | null;
+	// 인식 텍스트
+	levelReadText?: string | null;
+	expReadText?: string | null;
 	// 현재 측정 주기(4단계 버튼 라벨용)
 	currentIntervalSec?: number;
 	// PiP 열기(5단계)
@@ -88,11 +88,11 @@ export default function OnboardingOverlay(props: Props) {
 										className="max-h-32 rounded border border-white/10"
 									/>
 								) : null}
-								{typeof props.ocrLevelText === "string" ? (
+								{typeof props.levelReadText === "string" ? (
 									<div className="mt-2">
 										<div className="text-xs text-white/70 mb-1">인식된 텍스트 (1초마다 갱신)</div>
 										<pre className="text-xs bg-black/40 border border-white/10 rounded p-2 whitespace-pre-wrap break-all">
-											{props.ocrLevelText || "-"}
+											{props.levelReadText || "-"}
 										</pre>
 									</div>
 								) : null}
@@ -138,11 +138,11 @@ export default function OnboardingOverlay(props: Props) {
 										className="max-h-32 rounded border border-white/10"
 									/>
 								) : null}
-								{typeof props.ocrExpText === "string" ? (
+								{typeof props.expReadText === "string" ? (
 									<div className="mt-2">
 										<div className="text-xs text-white/70 mb-1">인식된 텍스트 (1초마다 갱신)</div>
 										<pre className="text-xs bg-black/40 border border-white/10 rounded p-2 whitespace-pre-wrap break-all">
-											{props.ocrExpText || "-"}
+											{props.expReadText || "-"}
 										</pre>
 									</div>
 								) : null}

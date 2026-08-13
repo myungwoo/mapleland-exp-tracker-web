@@ -5,11 +5,12 @@ import { computeLevelRoiFingerprint, type LevelRoiFingerprint } from "./levelRoi
  * 이 파일은 ROI 캡처를 담당합니다.
  *
  * 레벨(LEVEL)과 경험치(EXP) 둘 다 픽셀 글꼴 템플릿 매칭으로 읽으므로, **전처리가 없습니다.**
- * 원본 배율 ROI를 그대로 잘라서 `lib/levelPixelOcr.ts` / `lib/pixelOcr.ts` 에 넘기면 됩니다.
+ * 원본 배율 ROI를 그대로 잘라서 `lib/levelPixelRecognizer.ts` / `lib/pixelRecognizer.ts` 에 넘기면 됩니다.
  * (픽셀 글꼴은 확대/이진화하는 순간 글리프가 뭉개져서 오히려 인식이 나빠집니다)
  *
- * 예전에는 레벨을 Tesseract로 읽느라 "4배 확대 → 색 마스킹 → 팽창 → 스펙클 제거 → bbox 크롭"
- * 전처리가 있었습니다. 그건 전부 OCR에 먹이기 위한 것이었고, 지금은 필요 없어서 지웠습니다.
+ * 왜 이걸 굳이 적어두는가: 예전에는 "4배 확대 → 색 마스킹 → 팽창 → 스펙클 제거 → bbox 크롭" 전처리가
+ * 있었습니다. 전부 범용 인식 엔진에 먹이기 위한 것이었고, 템플릿 매칭으로 바꾸면서 지웠습니다.
+ * 인식이 안 될 때 "전처리를 다시 넣으면 되지 않나"는 생각이 자연스럽게 들지만, 정반대입니다.
  */
 
 /**
@@ -18,7 +19,7 @@ import { computeLevelRoiFingerprint, type LevelRoiFingerprint } from "./levelRoi
  * 왜 여기서 `willReadFrequently`를 주는가:
  * 컨텍스트 속성은 **처음 getContext를 호출할 때만** 반영됩니다. 이후 호출은 다른 속성을 넘겨도
  * 이미 만들어진 컨텍스트를 그대로 돌려줍니다. 이 파일의 함수들이 캔버스를 먼저 만들기 때문에,
- * 여기서 플래그를 주지 않으면 나중에 `lib/pixelOcr.ts`가 `willReadFrequently: true`로 요청해도 무시됩니다.
+ * 여기서 플래그를 주지 않으면 나중에 `lib/pixelRecognizer.ts`가 `willReadFrequently: true`로 요청해도 무시됩니다.
  * 그러면 1초마다 도는 getImageData가 GPU→CPU readback 경로를 타서 느려집니다.
  */
 export function get2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {

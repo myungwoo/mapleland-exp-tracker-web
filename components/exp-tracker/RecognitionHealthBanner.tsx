@@ -1,9 +1,9 @@
 "use client";
 
-import type { OcrHealthNotice } from "@/lib/ocrHealth";
+import type { RecognitionHealthNotice } from "@/lib/recognitionHealth";
 
 type Props = {
-	notice: OcrHealthNotice | null;
+	notice: RecognitionHealthNotice | null;
 };
 
 /**
@@ -14,7 +14,7 @@ type Props = {
  *
  * 문제가 없을 때는 아무것도 렌더하지 않습니다. 평소 레이아웃을 건드리지 않으려는 의도입니다.
  */
-export default function OcrHealthBanner(props: Props) {
+export default function RecognitionHealthBanner(props: Props) {
 	const notice = props.notice;
 	if (!notice) return null;
 	const seconds = Math.floor(notice.stalledMs / 1000);

@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const libDir = join(here, "..", "..", "lib");
 
 /**
- * `lib/pixelFont.ts` / `lib/pixelOcr.ts` 를 Node에서 그대로 돌리기 위한 로더입니다.
+ * `lib/pixelFont.ts` / `lib/pixelRecognizer.ts` 를 Node에서 그대로 돌리기 위한 로더입니다.
  *
  * 별도 빌드 스텝 없이 TypeScript 컴파일러로 타입만 제거해서 임시 폴더에 .mjs 로 떨어뜨립니다.
  * (도구가 앱 코드와 항상 같은 구현을 쓰도록 하려는 목적입니다. 로직을 도구에 복사해두면 반드시 어긋납니다)
@@ -42,9 +42,9 @@ export async function loadLibModules(names, entry) {
 	return import(pathToFileURL(join(out, `${entry}.mjs`)).href);
 }
 
-export async function loadPixelOcr() {
-	const out = transpileToTemp(["pixelFont", "pixelOcr"]);
-	return import(pathToFileURL(join(out, "pixelOcr.mjs")).href);
+export async function loadPixelRecognizer() {
+	const out = transpileToTemp(["pixelFont", "pixelRecognizer"]);
+	return import(pathToFileURL(join(out, "pixelRecognizer.mjs")).href);
 }
 
 /** 템플릿 자체(`lib/pixelFont.ts`)를 Node에서 읽습니다. */

@@ -1,4 +1,4 @@
-import type { OcrSamplingSnapshot } from "@/features/exp-tracker/hooks/useOcrSampling";
+import type { SamplingSnapshot } from "@/features/exp-tracker/hooks/useSampling";
 import type { PaceSeriesSnapshot } from "@/features/exp-tracker/hooks/usePaceSeries";
 import type { StopwatchSnapshot } from "@/features/exp-tracker/hooks/useStopwatch";
 
@@ -7,8 +7,8 @@ import type { StopwatchSnapshot } from "@/features/exp-tracker/hooks/useStopwatc
  * - 설정(ROI, 측정 주기, 페이스 기준 시간, 차트 표시 옵션, 디버그 등)은 기록에 포함하지 않습니다.
  * - 차트는 원본 데이터(history)를 저장하고, 표시(페이스 스케일 등)는 현재 설정에 의해 계산됩니다.
  */
-export type ExpTrackerSnapshotV3 = {
-	version: 3;
+export type ExpTrackerSnapshotV4 = {
+	version: 4;
 	capturedAt: number; // epoch ms
 	runtime: {
 		hasStarted: boolean;
@@ -16,11 +16,12 @@ export type ExpTrackerSnapshotV3 = {
 		expCouponCount: number;
 	};
 	stopwatch: StopwatchSnapshot;
-	ocr: OcrSamplingSnapshot;
+	/** 왜: v3까지는 이 필드 이름이 `ocr`이었습니다. (v3 이하 복원은 snapshot.ts가 처리합니다) */
+	sampling: SamplingSnapshot;
 	pace: PaceSeriesSnapshot; // chart raw history
 };
 
-export type ExpTrackerSnapshot = ExpTrackerSnapshotV3;
+export type ExpTrackerSnapshot = ExpTrackerSnapshotV4;
 
 export type RecordItem = {
 	id: string;
