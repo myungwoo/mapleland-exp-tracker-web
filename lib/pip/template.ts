@@ -39,6 +39,20 @@ export function pipStyles(): string {
     /* Edge에서 타이머 블록이 40px 버튼과 상/하 정렬이 맞도록 보정 */
     #pip-timer { height: 40px; line-height: 40px; display: flex; align-items: center; }
     .label { font-size: 12px; opacity: 0.7; margin-right: 8px; }
+    /* 인식이 안 돼서 기록이 멈춘 경우에만 보이는 줄. 평소에는 감춰서 레이아웃을 건드리지 않습니다. */
+    .warn {
+      display: none;
+      margin-top: 6px;
+      padding: 4px 8px;
+      border: 1px solid #fbbf2455;
+      border-radius: 6px;
+      background: #fbbf2418;
+      color: #fcd34d;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .warn.on { display: block; }
   `;
 }
 
@@ -64,6 +78,9 @@ export function pipMarkup(): string {
     </div>
     <div class="row">
       <div class="big" id="pip-pace">-</div>
+    </div>
+    <div class="row">
+      <div class="warn" id="pip-health" role="status" aria-live="polite"></div>
     </div>
   `;
 }

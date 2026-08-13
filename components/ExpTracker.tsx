@@ -18,6 +18,7 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey";
 import TrackerToolbar from "@/components/exp-tracker/TrackerToolbar";
 import TrackerSummary from "@/components/exp-tracker/TrackerSummary";
 import DebugOcrPreview from "@/components/exp-tracker/DebugOcrPreview";
+import OcrHealthBanner from "@/components/exp-tracker/OcrHealthBanner";
 import RecordsModal from "@/components/exp-tracker/RecordsModal";
 import ShareResultsActions from "@/components/exp-tracker/ShareResultsActions";
 import { useDisplayCapture } from "@/features/exp-tracker/hooks/useDisplayCapture";
@@ -545,7 +546,11 @@ export default function ExpTracker() {
 			nextAt: stats ? stats.nextAt : null,
 			nextHours: stats ? stats.nextHours : null,
 			gainedText: `${formatNumber(ocr.cumExpValue)} [${ocr.cumExpPct.toFixed(2)}%]`,
-			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`
+			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`,
+			// PiP는 폭이 좁으므로 원인 한 줄만 보냅니다. (조치 안내는 메인 창에 있습니다)
+			healthText: ocr.healthNotice
+				? `${ocr.healthNotice.title} (${Math.floor(ocr.healthNotice.stalledMs / 1000)}초)`
+				: null
 		};
 		pipUpdate(state);
 	}, [
@@ -554,6 +559,7 @@ export default function ExpTracker() {
 		stats,
 		ocr.cumExpValue,
 		ocr.cumExpPct,
+		ocr.healthNotice,
 		paceAtWindow.val,
 		paceAtWindow.pct,
 		paceWindowMin,
@@ -618,6 +624,8 @@ export default function ExpTracker() {
 					void openPip();
 				}}
 			/>
+
+			<OcrHealthBanner notice={ocr.healthNotice} />
 
 			<TrackerSummary
 				captureRef={summaryCaptureRef}

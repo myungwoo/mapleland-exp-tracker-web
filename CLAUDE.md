@@ -13,10 +13,11 @@ npm run dev              # 개발 서버 (http://localhost:3000)
 npm run build            # 정적 export → out/  (next.config.js의 output: "export")
 npm run lint             # ESLint
 npx tsc --noEmit         # 타입 검사
-npm test                 # 자동 테스트 전체 (아래 셋)
+npm test                 # 자동 테스트 전체 (아래 넷)
 npm run test:pixel-font  # EXP 픽셀 글꼴 인식기 자체 검증
 npm run test:level-font  # 레벨 픽셀 글꼴 인식기 자체 검증 (실제 캡처 픽스처 포함)
 npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 규칙 검증
+npm run test:ocr-health  # 인식 실패 알림(유예 시간/원인 분류) 검증
 ```
 
 변경 후에는 **최소한 타입 검사와 lint**를, 인식 로직을 건드렸다면 `npm test`까지 돌려 주세요.
@@ -43,6 +44,7 @@ npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 �
 | `tools/pixel-font/`             | EXP 픽셀 글꼴 템플릿 추출·검증 Node 스크립트                         |
 | `tools/level-font/`             | 레벨 픽셀 글꼴 템플릿 추출·검증 (+ 실제 캡처 픽스처)                 |
 | `tools/level-roi/`              | 레벨 ROI 변화 감지 지문 / 판독 재사용 규칙 검증                      |
+| `tools/ocr-health/`             | 인식 실패 알림(유예 시간·원인 분류) 검증                             |
 | `tools/hotkey-ws/`              | (고급) 전역 핫키 → 로컬 WebSocket 브로드캐스트 Python GUI            |
 
 **원칙**: 측정 로직은 훅으로 분리하고, `ExpTracker`는 조립만 합니다. 계산이 필요한 코드는 React에 의존하지 않는 `lib/`의 순수 함수로 빼세요. (테스트와 재사용이 쉬워집니다)
@@ -72,6 +74,10 @@ npm run test:level-roi   # 레벨 ROI 변화 감지 지문 + 판독 재사용 �
 `features/exp-tracker/hooks/useOcrSampling.ts`가 `EXP_TABLE`(레벨별 필요 EXP)을 기준으로 인식 결과를 검증합니다: 값↔퍼센트 정합성(`pct_value_mismatch`), 같은 레벨에서의 과도한 급락(`implausible_drop`, 사망 패널티는 최대 10%p). 이상치는 누적/차트에 반영하지 않습니다. **임계값을 바꿀 때는 왜 그 값인지 주석에 남기세요.**
 
 ⚠️ **"레벨 급변"(예전 `level_jump`) 검사를 되살리지 마세요.** Tesseract가 확신에 찬 틀린 레벨을 뱉던 시절의 방어선입니다. 지금 인식기는 애매하면 `null`을 돌려주므로 막을 대상이 없고(§1), 반대로 자가 복구가 불가능한 함정이 있었습니다 — `prev`는 유효 샘플일 때만 갱신되므로 ROI가 오래 가려진 동안 레벨이 2번 오르면 가림이 풀린 뒤 모든 샘플이 영구히 폐기됩니다. 꼭 필요하다면 절대 레벨차가 아니라 "직전 유효 샘플로부터의 경과 시간"을 함께 봐야 합니다.
+
+**인식 실패는 왜 대체로 안전한가:** 실패한 샘플은 조용히 버려지지만, EXP는 절대값이라 가림이 풀린 뒤 직전 유효 샘플과의 차분으로 그동안 오른 EXP가 **한 번에 회수**됩니다. 그래서 포탈 이동(검은 화면 1~2초)은 누적 EXP에 손실이 없습니다. 이 성질에 의존하는 코드가 여럿 있으니, `prev`를 실패 시에 비우도록 바꾸지 마세요. (그러면 공백 구간의 EXP가 통째로 사라집니다)
+
+**다만 실패가 길어지면 사용자에게 알려야 합니다.** 마우스 포인터를 ROI 위에 올려둔 채 30분을 사냥하면 그 30분은 한 점도 기록되지 않는데, 화면에는 경과 시간만 늘어나므로 원인을 알 방법이 없었습니다. `lib/ocrHealth.ts`가 "무엇을 못 읽었는지 / 얼마나 됐는지"를 추적하고, 유예 시간(5초 — 포탈 이동을 걸러내되 그 이상 늦지 않게)을 넘기면 메인 창과 PiP에 함께 띄웁니다. 유예 시간을 키우면 알림이 늦어지는 손해만 있습니다.
 
 ### 3. ROI는 "비디오 픽셀 좌표"로 저장됩니다
 

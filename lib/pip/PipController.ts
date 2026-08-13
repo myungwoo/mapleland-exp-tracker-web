@@ -178,6 +178,12 @@ export class PipController {
 		if (gainedEl) gainedEl.textContent = state.gainedText;
 		const paceEl = qs("pip-pace");
 		if (paceEl) paceEl.textContent = state.paceText;
+		// 인식 경고: 문제가 없을 때는 줄 자체를 감춥니다.
+		const healthEl = qs("pip-health");
+		if (healthEl) {
+			healthEl.textContent = state.healthText ?? "";
+			healthEl.classList.toggle("on", !!state.healthText);
+		}
 	}
 
 	close(): void {

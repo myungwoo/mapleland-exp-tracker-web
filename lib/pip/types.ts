@@ -14,6 +14,11 @@ export type PipState = {
 	nextHours: number | null;
 	gainedText: string;
 	paceText: string;
+	/**
+	 * 인식이 안 돼서 기록이 멈춘 이유. 정상이면 null이고, 그때는 해당 줄을 감춥니다.
+	 * (PiP만 띄워두고 게임을 하는 경우가 많아, 메인 창과 같은 정보가 여기에도 있어야 합니다)
+	 */
+	healthText: string | null;
 };
 
 declare global {
