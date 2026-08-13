@@ -13,6 +13,9 @@ type Props = {
  * 영역입니다. 안에 넣으면 공유 이미지에 경고가 찍힙니다.
  *
  * 문제가 없을 때는 아무것도 렌더하지 않습니다. 평소 레이아웃을 건드리지 않으려는 의도입니다.
+ *
+ * 유예 시간이 없으므로(= `RECOGNITION_STALL_GRACE_MS` 0) 첫 실패 샘플에서 바로 나타납니다.
+ * 즉 포탈 이동 같은 짧은 실패에도 한두 번 깜빡입니다. 의도된 트레이드오프입니다.
  */
 export default function RecognitionHealthBanner(props: Props) {
 	const notice = props.notice;
@@ -45,7 +48,8 @@ export default function RecognitionHealthBanner(props: Props) {
 				 * 모노 글꼴을 쓰지 않는 이유: 문구가 대부분 한글인데 모노(D2Coding) 서브셋에는 한글이
 				 * 단위 몇 자만 들어 있어서, 나머지 글자가 폴백되며 글꼴이 섞여 보입니다.
 				 */}
-				<span className="ml-2 text-xs opacity-80">{seconds}초째 기록 안 됨</span>
+				{/* 첫 샘플에서는 0초이므로 "0초째"라고 쓰지 않습니다. */}
+				<span className="ml-2 text-xs opacity-80">{seconds >= 1 ? `${seconds}초째 기록 안 됨` : "기록 안 됨"}</span>
 				<div className="opacity-80">{notice.detail}</div>
 			</div>
 		</div>

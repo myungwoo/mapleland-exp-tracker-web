@@ -7,6 +7,7 @@ import { EXP_TABLE } from "@/lib/expTable";
 import { computeLevelUpEta } from "@/lib/levelProgress";
 import { couponAdjustedElapsedMs, couponAdjustedPace, normalizeCouponCount } from "@/lib/expCoupon";
 import { paceForDuration } from "@/lib/pace";
+import { formatRecognitionHealthOneLine } from "@/lib/recognitionHealth";
 import type { NoticeHandler } from "@/lib/notice";
 import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
 import AlertDialog from "@/components/AlertDialog";
@@ -577,9 +578,7 @@ export default function ExpTracker() {
 			gainedText: `${formatNumber(sampling.cumExpValue)} [${sampling.cumExpPct.toFixed(2)}%]`,
 			paceText: `${formatNumber(paceAtWindow.val)} [${paceAtWindow.pct.toFixed(2)}%] / ${paceWindowMin}분`,
 			// PiP는 폭이 좁으므로 원인 한 줄만 보냅니다. (조치 안내는 메인 창에 있습니다)
-			healthText: sampling.healthNotice
-				? `${sampling.healthNotice.title} (${Math.floor(sampling.healthNotice.stalledMs / 1000)}초)`
-				: null
+			healthText: sampling.healthNotice ? formatRecognitionHealthOneLine(sampling.healthNotice) : null
 		};
 		pipUpdate(state);
 	}, [
@@ -707,6 +706,7 @@ export default function ExpTracker() {
 				captureRef={summaryCaptureRef}
 				elapsedMs={elapsedMs}
 				isSampling={isSampling}
+				stalledReason={sampling.healthNotice ? formatRecognitionHealthOneLine(sampling.healthNotice) : null}
 				levelUpEta={levelUpEta}
 				stats={stats ? { nextAt: stats.nextAt, nextHours: stats.nextHours } : null}
 				cumExpValue={sampling.cumExpValue}

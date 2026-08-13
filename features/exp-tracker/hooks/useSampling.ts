@@ -176,6 +176,21 @@ export function useSampling(options: Options) {
 		setHealthNotice(null);
 	}, []);
 
+	/**
+	 * 지금 상태로 알림을 다시 판단합니다.
+	 *
+	 * 샘플을 처리한 직후와 매초 인터벌이 **같은 함수**를 씁니다.
+	 * 왜: 예전에는 인터벌만 판단했는데, 그러면 인식이 복귀해도 다음 초까지(최대 1초) 알림과
+	 * PiP 회색이 남아 있었습니다. 사용자는 원인(마우스 등)을 치운 직후 화면을 보므로, 그 지연이
+	 * "조치가 안 먹혔다"로 읽힙니다. 판단 시점을 샘플 처리에 붙여 뜨는 것도 사라지는 것도
+	 * 샘플 하나 안에서 끝나게 합니다.
+	 */
+	const evaluateHealth = useCallback(() => {
+		const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: samplingActive });
+		// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
+		setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
+	}, [samplingActive]);
+
 	const annotateOutlier = useCallback((sample: ReadSample, reason: string): ReadSample => {
 		return { ...sample, isValid: false, isOutlier: true, outlierReason: reason };
 	}, []);
@@ -399,11 +414,11 @@ export function useSampling(options: Options) {
 	}, [debugEnabled, samplingActive]);
 
 	/**
-	 * "기록이 멈췄다"는 알림을 매초 다시 판단합니다.
+	 * 알림을 매초에도 다시 판단합니다. (샘플 처리 시점의 판단은 `evaluateHealth`가 따로 합니다)
 	 *
-	 * 왜 샘플 처리 안에서 바로 정하지 않는가: 유예 시간(기본 5초)이 지나야 알림이 뜨는데,
-	 * 측정 주기가 길면(예: 10초) 다음 샘플이 올 때까지 알림이 뜨지 않습니다. 지속 시간 표시도
-	 * 매초 갱신되어야 합니다. 그래서 판단은 시간 축에서 따로 돌립니다.
+	 * 왜 시간 축에서도 돌리는가: 표시되는 지속 시간("N초째 기록 안 됨")이 매초 늘어나야 하고,
+	 * 측정 주기가 길면(예: 10초) 그동안 시간이 멈춰 보입니다. 유예 시간을 되살리는 경우에는
+	 * "샘플은 안 오는데 유예가 지나는" 구간도 이 인터벌이 담당해야 합니다.
 	 *
 	 * 측정 중이 아니면 알림 자체가 의미가 없으므로 인터벌을 돌리지 않고 알림을 지웁니다.
 	 */
@@ -412,17 +427,12 @@ export function useSampling(options: Options) {
 			setHealthNotice(null);
 			return;
 		}
-		const evaluate = () => {
-			const next = describeRecognitionHealth(healthStateRef.current, Date.now(), { active: true });
-			// 초 단위로 같은 알림이면 렌더를 만들지 않습니다.
-			setHealthNotice((cur) => (recognitionHealthNoticeEquals(cur, next) ? cur : next));
-		};
-		evaluate();
-		const id = window.setInterval(evaluate, 1000);
+		evaluateHealth();
+		const id = window.setInterval(evaluateHealth, 1000);
 		return () => {
 			window.clearInterval(id);
 		};
-	}, [samplingActive]);
+	}, [samplingActive, evaluateHealth]);
 
 	const resetTotals = useCallback(() => {
 		setCurrentLevel(null);
@@ -581,7 +591,7 @@ export function useSampling(options: Options) {
 			setSampleTick((t) => t + 1);
 		}
 
-		// 이 샘플이 기록됐는지, 안 됐다면 왜인지를 기록해 둡니다. (화면 알림은 아래 인터벌이 판단)
+		// 이 샘플이 기록됐는지, 안 됐다면 왜인지를 기록해 둡니다.
 		// levelRead에는 폴백 이전의 원본 판독(raw.level)을 넘겨야 "레벨을 못 읽고 있다"가 드러납니다.
 		healthStateRef.current = applyReadOutcome(
 			healthStateRef.current,
@@ -594,13 +604,16 @@ export function useSampling(options: Options) {
 			}),
 			sample.ts
 		);
+		// 이 샘플의 결과를 화면에 곧바로 반영합니다. (다음 초까지 기다리면 복귀가 늦어 보입니다)
+		evaluateHealth();
 	}, [
 		readOnce,
 		expTable,
 		annotateOutlier,
 		isPercentValueConsistent,
 		isPlausibleSameLevelDrop,
-		expPercentValidationEnabled
+		expPercentValidationEnabled,
+		evaluateHealth
 	]);
 
 	const getSnapshot = useCallback((): SamplingSnapshot => {

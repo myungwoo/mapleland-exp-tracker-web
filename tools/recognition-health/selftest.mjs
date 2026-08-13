@@ -5,14 +5,15 @@
  *   node tools/recognition-health/selftest.mjs
  *
  * 이 로직이 지켜야 하는 성질을 검증합니다.
- * - 포탈 이동처럼 짧은 실패에는 경고하지 않음 (오탐이 잦으면 사용자가 경고를 무시하게 됩니다)
- * - 실패가 유예 시간을 넘기면 경고하고, 원인을 정확히 지목함
+ * - 첫 실패 샘플부터 곧바로 경고함 (기본 유예 0 — 표시가 화면 상태를 즉시 따라가야 합니다)
+ * - 원인을 정확히 지목하고, 알 수 없는 것은 단정하지 않음
  * - 성공 한 번으로 즉시 정상 복귀 (실패 이력이 남아 경고가 끈적하게 붙어 있으면 안 됩니다)
  * - 측정 중이 아니면 절대 경고하지 않음
+ * - 유예를 다시 두고 싶으면 `graceMs`로 가능함 (되살릴 때의 탈출구)
  *
  * 왜 이 테스트가 중요한가:
- * 이 판정이 너무 예민하면 포탈만 타도 경고가 번쩍여서 사용자가 경고 자체를 무시하게 되고,
- * 너무 둔하면 원래 문제(마우스로 ROI를 가린 채 30분을 날리는 것)를 그대로 놓칩니다.
+ * 원래 문제는 "마우스로 ROI를 가린 채 30분을 날리는 것"입니다. 표시가 늦거나(유예가 크거나)
+ * 복귀가 늦으면 사용자가 원인과 표시를 연결할 수 없어 이 알림이 무의미해집니다.
  */
 import { loadLibModules } from "../pixel-font/loadLib.mjs";
 
@@ -21,6 +22,7 @@ const {
 	classifyReadOutcome,
 	applyReadOutcome,
 	describeRecognitionHealth,
+	formatRecognitionHealthOneLine,
 	recognitionHealthNoticeEquals,
 	RECOGNITION_STALL_GRACE_MS
 } = await loadLibModules(["recognitionHealth"], "recognitionHealth");
@@ -91,37 +93,35 @@ check(
 	'"EXP." 라벨이 앞에 있는 정상 판독이 여기에 해당합니다'
 );
 
-// ---- 유예 시간: 포탈 이동처럼 짧은 실패는 경고하지 않습니다 ----
+// ---- 첫 실패 샘플에서 곧바로 경고하고, 성공 한 번으로 즉시 복귀합니다 ----
 {
-	// 1초 주기로 3초간 검은 화면 → 그동안 한 번도 경고하지 않아야 합니다.
+	// 왜 이 성질인가: 유예를 두면 마우스를 ROI에 올려도 몇 초간 아무 반응이 없어서
+	// "이게 원인인가"를 확인할 수 없습니다. 표시가 화면 상태를 즉시 따라가야 합니다.
 	let st = feed(emptyRecognitionHealth(), OK, 0);
-	let warned = false;
-	for (let t = 1000; t <= 3000; t += 1000) {
-		st = feed(st, BLACK, t);
-		if (describeRecognitionHealth(st, t, { active: true })) warned = true;
-	}
-	check("3초 검은 화면에는 경고하지 않음", !warned, "포탈 이동마다 경고가 뜨면 사용자가 경고를 무시하게 됩니다");
+	st = feed(st, BLACK, 1000);
+	const first = describeRecognitionHealth(st, 1000, { active: true });
+	check("첫 실패 샘플에서 바로 경고", first != null, `기본 유예=${RECOGNITION_STALL_GRACE_MS}ms`);
+	check("첫 경고의 지속 시간은 0", first?.stalledMs === 0, `stalledMs=${first?.stalledMs}`);
+	check("원인은 검은 화면", first?.kind === "no_signal", `kind=${first?.kind}`);
 
-	// 화면이 돌아오면 즉시 정상입니다.
-	st = feed(st, OK, 4000);
-	check("복귀하면 경고 없음", describeRecognitionHealth(st, 4000, { active: true }) === null);
+	// 화면이 돌아오면 즉시 정상입니다. (같은 샘플 안에서 사라져야 합니다)
+	st = feed(st, OK, 2000);
+	check("복귀하면 경고 없음", describeRecognitionHealth(st, 2000, { active: true }) === null);
 	check("복귀하면 연속 실패 0", st.consecutiveFailures === 0);
 	check("복귀하면 failingSince 초기화", st.failingSince === null);
-	check("복귀 시각이 lastOkAt", st.lastOkAt === 4000);
+	check("복귀 시각이 lastOkAt", st.lastOkAt === 2000);
 }
 
-// ---- 유예 시간을 넘기면 경고합니다 ----
+// ---- 실패가 이어지면 지속 시간이 늘고, 원인을 정확히 지목합니다 ----
 {
 	let st = feed(emptyRecognitionHealth(), OK, 0);
 	for (let t = 1000; t <= 5000; t += 1000) st = feed(st, EXP_GONE, t);
-	const justBefore = describeRecognitionHealth(st, 1000 + RECOGNITION_STALL_GRACE_MS - 1, { active: true });
-	check("유예 시간 직전에는 경고 없음", justBefore === null);
-	const notice = describeRecognitionHealth(st, 1000 + RECOGNITION_STALL_GRACE_MS, { active: true });
-	check("유예 시간이 지나면 경고", notice != null);
+	const notice = describeRecognitionHealth(st, 5000, { active: true });
+	check("실패가 이어지면 경고", notice != null);
 	check("원인이 경험치 인식 실패", notice?.kind === "exp_missing", `kind=${notice?.kind}`);
 	check("경험치를 지목하는 문구", !!notice?.title.includes("경험치"), notice?.title);
 	check("조치 안내가 비어 있지 않음", !!notice?.detail && notice.detail.length > 0);
-	check("지속 시간은 첫 실패 기준", notice?.stalledMs === RECOGNITION_STALL_GRACE_MS, `stalledMs=${notice?.stalledMs}`);
+	check("지속 시간은 첫 실패 기준", notice?.stalledMs === 4000, `stalledMs=${notice?.stalledMs}`);
 }
 
 // ---- 지속 시간은 "연속 실패의 시작"부터 셉니다 ----
@@ -211,7 +211,25 @@ check(
 	check("null과 알림은 다름", !recognitionHealthNoticeEquals(a, null));
 }
 
-// ---- 유예 시간을 직접 넘길 수 있습니다 ----
+// ---- 한 줄 문구: 0초는 표기하지 않습니다 ----
+{
+	let st = feed(emptyRecognitionHealth(), OK, 0);
+	st = feed(st, EXP_GONE, 1000);
+	const first = describeRecognitionHealth(st, 1000, { active: true });
+	const later = describeRecognitionHealth(st, 8000, { active: true });
+	check(
+		"첫 알림에는 초를 붙이지 않음",
+		formatRecognitionHealthOneLine(first) === first.title,
+		formatRecognitionHealthOneLine(first)
+	);
+	check(
+		"1초 이상이면 초를 붙임",
+		formatRecognitionHealthOneLine(later) === `${later.title} (7초)`,
+		formatRecognitionHealthOneLine(later)
+	);
+}
+
+// ---- 유예 시간을 직접 넘길 수 있습니다 (되살릴 때의 탈출구) ----
 {
 	let st = feed(emptyRecognitionHealth(), OK, 0);
 	st = feed(st, BLACK, 1000);
