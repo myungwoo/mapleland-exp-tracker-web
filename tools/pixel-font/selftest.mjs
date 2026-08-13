@@ -4,16 +4,31 @@
  *
  *   node tools/pixel-font/selftest.mjs
  *
- * 템플릿으로 EXP 문자열을 직접 그린 뒤 다시 읽어서, 아래를 검증합니다.
- * - 캡처 배율(1x~4x) 자동 추정
- * - 글리프 분리(빈 열 기준)와 `%`(내부가 3조각인 글리프) 처리
- * - 어두운 UI 배경 위 흰 글자 / 연두색 대괄호 마스킹
- * - ROI 안에 게이지 바/UI 덩어리가 섞여 들어와도 무시하는지
+ * 두 가지를 돌립니다.
  *
- * 주의: 이 테스트는 "파이프라인"을 검증하는 것이지 "템플릿이 실제 게임과 같은지"를
- * 검증하지는 않습니다. 템플릿 검증은 tools/pixel-font/verify.mjs 로 실제 캡처에 대해 하세요.
+ * (1) **실제 게임 캡처** (`fixtures/`) — 합성 렌더로는 만들 수 없는 왜곡을 잡습니다.
+ *     `1301770001_89.15.png` 는 Retina + 화면 공유(3842x2392)에서 잡은 ROI입니다.
+ *     배율은 정수(4배)인데 여는 대괄호 상자만 8x36이 아니라 7x37로 잡혀서, 점수가 0.892로
+ *     떨어져 `1301770001_89.15%]` 가 나왔습니다. 값과 퍼센트를 다 읽었는데도 `[` 를 못 찾아
+ *     파싱이 통째로 실패합니다. 정렬 재시도(`alignSegment`)를 지우면 여기서 걸립니다.
+ *     (파일명이 곧 정답입니다: `<값>_<퍼센트>.png`)
+ *
+ * (2) **합성 렌더** — 템플릿으로 EXP 문자열을 직접 그린 뒤 다시 읽어서 파이프라인을 훑습니다.
+ *     - 캡처 배율(1x~4x) 자동 추정
+ *     - 글리프 분리(빈 열 기준)와 `%`(내부가 3조각인 글리프) 처리
+ *     - 어두운 UI 배경 위 흰 글자 / 연두색 대괄호 마스킹
+ *     - ROI 안에 게이지 바/UI 덩어리가 섞여 들어와도 무시하는지
+ *
+ *     주의: 합성 렌더는 "템플릿으로 그려서 템플릿으로 읽는" 자기충족이라 템플릿이 실제 게임과
+ *     같은지는 검증하지 못합니다. 그래서 (1)이 필요합니다.
  */
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readPng } from "./png.mjs";
 import { loadPixelRecognizer, loadPixelFont } from "./loadLib.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const { recognizePixelFontLine, parsePixelExpText, expValueHasUnknownPrefix } = await loadPixelRecognizer();
 const { PIXEL_FONT_GLYPHS } = await loadPixelFont();
@@ -84,6 +99,29 @@ function renderLine(text, scale, { pad = 4, withBar = false, withPanel = false }
 }
 
 let failures = 0;
+
+// (1) 실제 게임 캡처
+{
+	const dir = join(here, "fixtures");
+	const files = readdirSync(dir).filter((f) => f.endsWith(".png"));
+	if (files.length === 0) {
+		failures++;
+		console.log("FAIL: 픽스처가 하나도 없습니다");
+	}
+	for (const f of files) {
+		// 파일명이 곧 정답입니다. (예: 1301770001_89.15.png → value 1301770001, percent 89.15)
+		const [v, p] = f.replace(/\.png$/, "").split("_");
+		const res = recognizePixelFontLine(readPng(join(dir, f)));
+		const parsed = res ? parsePixelExpText(res.text) : null;
+		const ok = parsed && parsed.value === parseInt(v, 10) && parsed.percent === parseFloat(p);
+		if (!ok) {
+			failures++;
+			console.log(`FAIL 실제 캡처 ${f} → ${res ? `"${res.text}"` : "null"} / ${JSON.stringify(parsed)}`);
+		}
+	}
+}
+
+// (2) 합성 렌더
 const cases = [
 	"1214349360[83.16%]",
 	"0[0.00%]",
@@ -107,6 +145,95 @@ for (const scale of [1, 2, 3, 4]) {
 			}
 		}
 	}
+}
+
+// (3) 훼손 실험 — 이 인식기의 존재 이유인 안전 성질을 못박아 둡니다.
+//     **글리프를 다른 글리프로 잘못 읽지 않는다. 확신이 없으면 미인식이다.**
+//
+//     특히 `alignSegment`(정렬 재시도)가 이 성질을 깨지 않는지 봅니다. 재시도는 상자를
+//     ±1px씩 움직여 본 것 중 **최고점**을 고르는 최대화라, 하한이 혼동쌍(0.9429)보다 아래로
+//     내려가면 틀린 글리프가 채택될 수 있습니다. 그래서 하한 0.95와 이 실험은 한 묶음입니다.
+//
+//     실측 A/B (960건, 같은 시드):
+//       하한 0.92 / 재시도 없음: 정답 808 / null 146 / 잘림 6 / 오인식 0
+//       하한 0.95 / 재시도 있음: 정답 839 / null 114 / 잘림 7 / 오인식 0
+//     즉 null 32건이 정답으로 회복되고, **오인식은 양쪽 다 0**입니다. 잘림이 1건 늘어난 것은
+//     "이전에는 null이던 판독이 앞자리가 빠진 채 파싱까지 도달"한 경우입니다. (아래 주석 참고)
+{
+	// 왜: CI에서 결과가 흔들리면 안 되므로 시드 고정 난수를 씁니다.
+	let seed = 20260813;
+	const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+	const pick = (n) => Math.floor(rnd() * n);
+
+	let total = 0;
+	let nulls = 0;
+	let truncated = 0;
+	let wrong = 0;
+	for (const scale of [1, 2, 3, 4]) {
+		for (const text of cases) {
+			const expected = parsePixelExpText(text);
+			for (let trial = 0; trial < 40; trial++) {
+				const img = renderLine(text, scale);
+				const { width: w, height: h, data } = img;
+				// 실제 캡처에서 관측된 왜곡들을 흉내냅니다.
+				// (경계 번짐 / 획 소실 / 얼룩 / 대괄호 탈색)
+				const kind = trial % 4;
+				const hits = 1 + pick(6);
+				for (let i = 0; i < hits; i++) {
+					const x = pick(w);
+					const y = pick(h);
+					const p = (y * w + x) * 4;
+					if (kind === 0) {
+						// 번짐: 이웃 픽셀 색을 복사
+						const q = (Math.min(h - 1, y + 1) * w + Math.min(w - 1, x + 1)) * 4;
+						data[p] = data[q];
+						data[p + 1] = data[q + 1];
+						data[p + 2] = data[q + 2];
+					} else if (kind === 1) {
+						// 획 소실: 배경색으로 지움
+						data[p] = BG[0];
+						data[p + 1] = BG[1];
+						data[p + 2] = BG[2];
+					} else if (kind === 2) {
+						// 얼룩: 밝은 점
+						data[p] = 220;
+						data[p + 1] = 225;
+						data[p + 2] = 230;
+					} else {
+						// 대괄호 탈색: 채도를 떨어뜨림
+						const mx = Math.max(data[p], data[p + 1], data[p + 2]);
+						data[p] = data[p + 1] = data[p + 2] = mx;
+					}
+				}
+				const res = recognizePixelFontLine(img);
+				const parsed = res ? parsePixelExpText(res.text) : null;
+				total++;
+				if (!parsed) {
+					nulls++;
+					continue;
+				}
+				if (parsed.value === expected.value && parsed.percent === expected.percent) continue;
+				// 앞자리가 통째로 지워져 값이 **잘린** 경우는 여기서 잡지 않습니다.
+				// 남은 숫자는 전부 제대로 읽은 것이고(글리프 오인식이 아님), 이건 인식기가 지역적으로
+				// 판별할 수 없다고 이미 문서화한 한계입니다. (`expValueHasUnknownPrefix` 주석)
+				// 실제 방어선은 상위(`useSampling`)의 값↔퍼센트 정합성 검사입니다.
+				const truncation = String(expected.value).endsWith(String(parsed.value)) && parsed.percent === expected.percent;
+				if (truncation) {
+					truncated++;
+					continue;
+				}
+				// 여기 걸리는 것만이 진짜 오인식입니다. (`6`을 `8`로 읽는 식)
+				wrong++;
+				failures++;
+				console.log(`FAIL 훼손 오인식 scale=${scale} "${text}" → "${res.text}" (${parsed.value}/${parsed.percent})`);
+			}
+		}
+	}
+	// 잘림 건수는 정보로만 남깁니다. 늘어난다면 상위 정합성 검사에 기대는 부분이 커진다는 뜻이라
+	// 눈에 띄어야 하지만, 인식기 단독으로는 없앨 수 없어서 실패로 처리하지 않습니다.
+	console.log(
+		`훼손 실험 ${total}건: 정답 ${total - nulls - truncated - wrong} / null ${nulls} / 잘림 ${truncated} / 오인식 ${wrong}`
+	);
 }
 
 // 픽셀 글꼴이 아닌 입력(단색/노이즈)에서는 조용히 null 이어야 합니다.

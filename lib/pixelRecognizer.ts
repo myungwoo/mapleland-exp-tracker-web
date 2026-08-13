@@ -76,6 +76,26 @@ type Options = {
 	debug?: boolean;
 };
 
+/**
+ * 채택 기준
+ *
+ * 글리프끼리 가장 헷갈리기 쉬운 쌍은 `6`↔`8` 과 `8`↔`9` 로, 유사도가 0.9429입니다.
+ * (35픽셀 중 2픽셀 차이) 그래서 하한을 그 위인 0.95로 잡았습니다.
+ *
+ * 왜 이 값인가: 정수 배율 캡처에서 정답 글리프는 **정확히 1.0000** 이 나옵니다. 하한이
+ * 0.9429보다 위에 있으면, 정답이 무슨 이유로 후보에서 빠지더라도 **틀린 글리프가 단독으로
+ * 채택되는 일이 구조적으로 불가능**합니다. 마진 규칙에만 기대는 것보다 훨씬 강한 보장입니다.
+ * (레벨 인식기가 0.95를 쓰는 것도 같은 이유입니다. 그쪽 혼동쌍은 0.9388입니다)
+ *
+ * ⚠️ **되돌리지 마세요.** 예전 값은 0.92였는데, 그건 혼동쌍(0.9429)보다 **아래**라 위 보장이
+ * 없었습니다. 실측 캡처에서 `8`의 1등/2등이 1.000/0.943 이라 마진이 0.057, 규칙(0.05)에 겨우
+ * 걸쳐 있었습니다. 아래 `alignSegment` 는 여러 상자 중 최고점을 고르는 **최대화**라, 하한이
+ * 혼동쌍 아래면 마진 방어 하나만 남습니다. 즉 **하한 상향은 정렬 재시도의 전제조건**입니다.
+ * 하한을 낮추려면 정렬 재시도도 함께 걷어내야 합니다.
+ */
+const DEFAULT_MIN_SCORE = 0.95;
+const DEFAULT_MIN_MARGIN = 0.05;
+
 /** 0/1 마스크와 그 크기 */
 type Mask = { data: Uint8Array; w: number; h: number };
 
@@ -139,8 +159,16 @@ export function recognizePixelFontLine(
 	let unknown = 0;
 	const debug: SegmentDebug[] = [];
 	for (const seg of segments) {
-		const scored = scoreSegment(band, seg, digitTop, scale);
-		const ch = pickBest(scored, options);
+		let scored = scoreSegment(band, seg, digitTop, scale);
+		let ch = pickBest(scored, options);
+		if (ch == null) {
+			// 정렬이 어긋난 캡처를 한 번 더 구제합니다. (아래 alignSegment 주석 참고)
+			const realigned = alignSegment(band, seg, digitTop, scale, options);
+			if (realigned) {
+				scored = realigned;
+				ch = pickBest(scored, options);
+			}
+		}
 		if (ch == null) {
 			unknown++;
 			// 숫자와 크기/기준선이 같은데 못 읽은 것인지, 애초에 글리프가 아닌 것인지를 구분해 둡니다.
@@ -510,9 +538,79 @@ function scoreSegment(band: Mask, seg: Segment, digitTop: number, scale: number)
 	return out;
 }
 
+/** 정렬 재시도에서 각 변을 움직여 볼 범위(px). */
+const ALIGN_DELTA = 1;
+
+/**
+ * 세그먼트 상자를 각 변마다 ±1px 움직여 보고, 가장 잘 맞는 정렬에서의 점수표를 돌려줍니다.
+ *
+ * 왜 필요한가 — 캡처 배율이 **정수여도 글리프 상자는 어긋날 수 있습니다.**
+ * 실측(Retina 3842x2392 화면 공유, 배율 4배)에서 여는 대괄호가 8x36이 아니라 **7x37** 로
+ * 잡혔습니다. 상자가 가로로 1px 좁으면 템플릿 최근접 매핑에서 세로획 열이 통째로 밀려
+ * 28행이 전부 어긋나고, 점수가 0.892까지 떨어져 `_`(미인식)가 됩니다. 그러면 값과 퍼센트를
+ * 멀쩡히 읽었는데도 `parsePixelExpText` 가 `[` 를 못 찾아 **판독 전체가 버려집니다.**
+ * (실측: 0.892 → 상자 오른쪽 변을 1px 당기면 1.0000)
+ *
+ * ⚠️ **왜 하필 대괄호만 어긋나는가** — `buildBrightMask` 의 두 경로가 비대칭이기 때문입니다.
+ * 글자와 배경이 섞인 경계 픽셀은 흰 숫자라면 혼합비 0.83 이상이어야 전경이 됩니다.
+ * (섞이면 무채색이 되어 채도가 무너지고 `nearWhite` 문턱도 못 넘습니다) 반면 연두색 대괄호는
+ * 0.36만 넘어도 전경이 됩니다. (색상이 살아 있어 채도 경로로 들어옵니다) 그래서 같은 번짐에서
+ * **숫자 상자는 정확히 유지되고 대괄호 상자만 1px씩 어긋납니다.**
+ * 채도 경로는 밝은 UI 패널 위로 밀려난 `]` 를 살리려고 일부러 넣은 것이라 손대면 안 됩니다.
+ * 그래서 마스크가 아니라 **상자**를 고칩니다.
+ *
+ * ⚠️ **모든 후보를 "같은" 정렬에서 채점합니다.** 후보마다 각자 제일 좋은 정렬을 골라 주면
+ * 서로 다른 조건에서 나온 점수를 비교하게 되어 마진 규칙(1등과 2등의 차)이 무의미해집니다.
+ * 그래서 정렬을 먼저 하나 고르고(=1등 점수가 가장 높아지는 정렬), 그 정렬의 점수표를 통째로
+ * 돌려줍니다.
+ *
+ * 정렬을 못 맞추면 그냥 `null`입니다. 여기서도 하한·마진은 그대로 적용되므로, 이 재시도는
+ * **틀린 값을 채택하게 만드는 게 아니라 놓친 정답을 되살리는** 역할만 합니다. 단 그 성질은
+ * 하한이 혼동쌍보다 위일 때만 성립합니다. (`DEFAULT_MIN_SCORE` 주석 참고)
+ *
+ * 비용은 **확신이 없는 세그먼트에서만** 듭니다. 정상 캡처에서는 한 번도 돌지 않습니다.
+ */
+function alignSegment(
+	band: Mask,
+	seg: Segment,
+	digitTop: number,
+	scale: number,
+	options: Options
+): { char: string; score: number }[] | null {
+	const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+	let best: { char: string; score: number }[] | null = null;
+	let bestTop = -1;
+	for (let dLeft = -ALIGN_DELTA; dLeft <= ALIGN_DELTA; dLeft++) {
+		for (let dRight = -ALIGN_DELTA; dRight <= ALIGN_DELTA; dRight++) {
+			for (let dTop = -ALIGN_DELTA; dTop <= ALIGN_DELTA; dTop++) {
+				for (let dBottom = -ALIGN_DELTA; dBottom <= ALIGN_DELTA; dBottom++) {
+					if (dLeft === 0 && dRight === 0 && dTop === 0 && dBottom === 0) continue;
+					const win: Segment = {
+						x0: seg.x0 + dLeft,
+						x1: seg.x1 + dRight,
+						y0: seg.y0 + dTop,
+						y1: seg.y1 + dBottom
+					};
+					// 왜: 상자가 마스크 밖으로 나가면 `compareToTemplate` 의 인덱스가 이웃 행으로
+					// 감겨 엉뚱한 픽셀을 읽습니다. (band는 1차원 배열입니다) 범위를 벗어나거나
+					// 뒤집힌 상자는 아예 건너뜁니다.
+					if (win.x0 < 0 || win.y0 < 0 || win.x1 >= band.w || win.y1 >= band.h) continue;
+					if (win.x1 < win.x0 || win.y1 < win.y0) continue;
+					const scored = scoreSegment(band, win, digitTop, scale);
+					if (scored.length === 0 || scored[0].score <= bestTop) continue;
+					bestTop = scored[0].score;
+					best = scored;
+				}
+			}
+		}
+	}
+	// 하한도 못 넘는 정렬이면 되살릴 정답이 없는 것이므로 원래대로 미인식 처리합니다.
+	return bestTop >= minScore ? best : null;
+}
+
 function pickBest(scored: { char: string; score: number }[], options: Options): string | null {
-	const minScore = options.minScore ?? 0.92;
-	const minMargin = options.minMargin ?? 0.05;
+	const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+	const minMargin = options.minMargin ?? DEFAULT_MIN_MARGIN;
 	if (scored.length === 0) return null;
 	const best = scored[0];
 	const second = scored[1]?.score ?? 0;
@@ -532,6 +630,18 @@ function renderSegment(band: Mask, seg: Segment): string[] {
 }
 
 /**
+ * 최근접 매핑표를 담아두는 스크래치 버퍼.
+ *
+ * 왜: 아래 비교는 셀마다 나눗셈을 두 번 했는데, `alignSegment` 가 같은 크기의 상자를 수십 번
+ * 다시 채점하면서 그 비용이 그대로 곱해집니다. 행/열 매핑을 한 줄씩 미리 만들어 두면 셀마다
+ * 배열 조회로 끝나고, 계산 결과는 **완전히 동일**합니다.
+ * (실측, 픽스처 431x69 중앙값: 재시도 없던 시절 1936µs → 재시도 추가 2962µs → 매핑표 2313µs)
+ * 매번 새로 할당하면 GC 압박이 생기므로 재사용합니다. (레벨 인식기의 `fracScratch` 와 같은 방식)
+ */
+let txScratch = new Int32Array(0);
+let tyScratch = new Int32Array(0);
+
+/**
  * 잘라낸 글리프와 템플릿을 픽셀 단위로 비교합니다.
  *
  * 템플릿을 세그먼트 크기로 최근접 확대해서 비교합니다.
@@ -539,16 +649,17 @@ function renderSegment(band: Mask, seg: Segment): string[] {
  *  비정수 배율이라도 근사치로는 잘 맞습니다)
  */
 function compareToTemplate(band: Mask, seg: Segment, segW: number, segH: number, g: PixelGlyphMask): number {
+	if (txScratch.length < segW) txScratch = new Int32Array(segW);
+	if (tyScratch.length < segH) tyScratch = new Int32Array(segH);
+	for (let x = 0; x < segW; x++) txScratch[x] = Math.min(g.width - 1, Math.floor((x * g.width) / segW));
+	for (let y = 0; y < segH; y++) tyScratch[y] = Math.min(g.height - 1, Math.floor((y * g.height) / segH));
+
 	let agree = 0;
 	for (let y = 0; y < segH; y++) {
-		const ty = Math.min(g.height - 1, Math.floor((y * g.height) / segH));
-		const row = (seg.y0 + y) * band.w;
-		const trow = ty * g.width;
+		const row = (seg.y0 + y) * band.w + seg.x0;
+		const trow = tyScratch[y] * g.width;
 		for (let x = 0; x < segW; x++) {
-			const tx = Math.min(g.width - 1, Math.floor((x * g.width) / segW));
-			const a = band.data[row + seg.x0 + x];
-			const b = g.bits[trow + tx];
-			if (a === b) agree++;
+			if (band.data[row + x] === g.bits[trow + txScratch[x]]) agree++;
 		}
 	}
 	return agree / (segW * segH);
