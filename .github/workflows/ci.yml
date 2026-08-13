@@ -33,7 +33,7 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Self-tests (픽셀 글꼴 / 레벨 ROI 지문)
+      - name: Self-tests (EXP·레벨 픽셀 글꼴 / 레벨 ROI 지문)
         run: npm test
       - name: Build (static export)
         env:

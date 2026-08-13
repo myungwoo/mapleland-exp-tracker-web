@@ -13,7 +13,8 @@
 		"typecheck": "tsc --noEmit",
 		"test:pixel-font": "node tools/pixel-font/selftest.mjs",
 		"test:level-roi": "node tools/level-roi/selftest.mjs",
-		"test": "npm run test:pixel-font && npm run test:level-roi"
+		"test:level-font": "node tools/level-font/selftest.mjs",
+		"test": "npm run test:pixel-font && npm run test:level-font && npm run test:level-roi"
 	},
 	"dependencies": {
 		"classnames": "^2.5.1",
@@ -22,7 +23,6 @@
 		"next": "^15.5.9",
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1",
-		"tesseract.js": "^5.0.3",
 		"zustand": "^4.5.2"
 	},
 	"devDependencies": {
