@@ -28,14 +28,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       # 왜: 검증을 배포와 같은 job에 두면, 하나라도 실패했을 때 절대 배포되지 않습니다.
-      - name: Format check
-        run: npm run format:check
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Pixel font self-test
-        run: npm run test:pixel-font
+      # 검사 목록은 CI(ci.yml)와 반드시 같아야 하므로 둘 다 package.json의 `verify` 하나만 부릅니다.
+      # 여기에만 검사를 추가하면 PR에서 안 걸리고 배포에서만 터집니다.
+      - name: Verify (포맷·타입·린트·자체 테스트)
+        run: npm run verify
       - name: Build
         env:
           GITHUB_PAGES: "true"

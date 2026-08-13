@@ -372,9 +372,7 @@ const LEVEL_FONT_SIZE_GROUPS: { width: number; height: number; glyphs: LevelGlyp
 })();
 
 /** 블록별 전경 비율을 담아 두는 재사용 버퍼. (샘플마다 새로 만들면 GC 압박이 커집니다) */
-const fracScratch = new Float64Array(
-	LEVEL_FONT_SIZE_GROUPS.reduce((m, g) => Math.max(m, g.width * g.height), 0)
-);
+const fracScratch = new Float64Array(LEVEL_FONT_SIZE_GROUPS.reduce((m, g) => Math.max(m, g.width * g.height), 0));
 
 /** 세그먼트를 크기가 맞는 모든 템플릿과 비교해 점수 내림차순 목록을 돌려줍니다. */
 function scoreSegment(sat: Sat, seg: Segment, scale: number): { char: string; score: number }[] {
@@ -487,14 +485,7 @@ function renderSegment(band: Mask, seg: Segment): string[] {
  * 영역 평균은 경계 오차가 그 블록의 비율에만 반영되므로 훨씬 완만하게 감소합니다.
  * 정수 배율에서는 비율이 항상 0 또는 1이라 픽셀 단위 비교와 완전히 동일합니다.
  */
-function blockFractions(
-	sat: Sat,
-	seg: Segment,
-	segW: number,
-	segH: number,
-	gw: number,
-	gh: number
-): number {
+function blockFractions(sat: Sat, seg: Segment, segW: number, segH: number, gw: number, gh: number): number {
 	for (let ty = 0; ty < gh; ty++) {
 		const sy0 = Math.floor((ty * segH) / gh);
 		const sy1 = Math.max(sy0 + 1, Math.floor(((ty + 1) * segH) / gh));
