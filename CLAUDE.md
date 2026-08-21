@@ -171,11 +171,30 @@ EXP 쪽은 **여는 대괄호만** 어긋나는데, 이유는 마스크의 두 �
 
 ### 6. 상태 저장 위치
 
-- `localStorage`: 설정 (`intervalSec`, `roiLevel`, `roiExp`, `paceWindowMin`, `expPercentValidationEnabled`, `chartShowAxisLabels`, `chartShowGrid`, `onboardingDone`) — `lib/persist.ts`의 `usePersistentState`
-- `IndexedDB`: 측정 기록 (`features/exp-tracker/records/`) — 예전에는 localStorage였고 마이그레이션 코드가 남아 있습니다.
+- `localStorage`: 설정 (`intervalSec`, `roiLevel`, `roiExp`, `paceWindowMin`, `expPercentValidationEnabled`, `chartShowAxisLabels`, `chartShowGrid`, `onboardingDone`) — `lib/persist.ts`의 `usePersistentState`. **실제 키에는 `ml:exp:` 접두어가 붙습니다**(`ml:exp:roiLevel`). 접두어는 `lib/storage-keys.ts`가 붙이므로 호출부는 접두어 없는 이름만 넘깁니다.
+- `IndexedDB`: 측정 기록 (`features/exp-tracker/records/`, DB 이름 `mlExpTracker`) — 예전에는 localStorage였고 마이그레이션 코드가 남아 있습니다.
 - 기록 스냅샷은 **버전이 있고 하위 호환을 지킵니다.** 포맷을 바꾸면 `records/snapshot.ts`의 `normalizeSnapshot`에 마이그레이션을 추가하세요. 사용자가 내보낸 JSON 파일이 있으므로 옛 버전을 깨면 안 됩니다. (현재 v4. v3까지는 측정 스냅샷 필드 이름이 `sampling`이 아니라 `ocr`이었고, 그 폴백이 `normalizeSnapshot`에 남아 있습니다)
 
-### 7. 서버가 없습니다
+### 7. 저장 키에는 반드시 앱 접두어를 붙입니다 (오리진 공유)
+
+이 앱은 **다른 유틸들과 브라우저 저장소를 공유합니다.**
+
+- `https://myungwoo.github.io/mapleland-exp-tracker-web/` — 다른 프로젝트 페이지들과 오리진(`myungwoo.github.io`)이 같습니다.
+- `https://mapleland.myungwoo.kr/exp/` — [메이플랜드 유틸 모음](https://github.com/myungwoo/mapleland-utils)이 유틸 다섯 개를 한 도메인의 하위 경로로 함께 배포합니다.
+
+**localStorage / sessionStorage / IndexedDB 는 오리진 단위입니다. 경로로 갈라지지 않습니다.** `/exp` 와 `/hunt` 는 같은 저장소를 봅니다. 그래서 `roiLevel`, `onboardingDone` 처럼 흔한 이름을 접두어 없이 쓰면, 다른 유틸이 같은 이름을 쓰는 순간 서로의 값을 덮어씁니다. 증상이 에러가 아니라 "ROI가 이상해졌다"로 나타나서 원인을 찾기 어렵습니다. (데미지 계산기와 사냥 타이머가 `theme` 키를 두고 실제로 이 문제를 겪었습니다)
+
+새 기능에서 값을 저장할 때:
+
+- **설정은 `usePersistentState`를 쓰세요.** 접두어는 자동으로 붙습니다. `window.localStorage.setItem("myFlag", …)`처럼 직접 쓰면 접두어가 빠집니다.
+- 훅을 못 쓰는 자리(모듈 스코프, 이벤트 핸들러 등)에서는 `lib/storage-keys.ts`의 `storageKey("myFlag")`로 키를 만드세요. 읽기만 할 때는 `readPersistedRaw`, 예전 키에서 옮겨 와야 하면 `migrateLegacyKey`가 있습니다.
+- IndexedDB DB 이름도 같은 규칙입니다. 현재 `mlExpTracker` 하나뿐이고, 새로 만들면 `ml:exp:` 규칙에 맞춰 앱을 알 수 있는 이름을 쓰세요.
+- **키 이름을 바꿀 때는 예전 키를 지우지 마세요.** 새 키가 비어 있을 때만 한 번 복사합니다(`migrateLegacyKey`가 그렇게 합니다). 배포를 되돌릴 일이 생겨도 사용자 설정이 남아 있어야 하고, 그래야 마이그레이션이 여러 번 돌아도 결과가 같습니다.
+- 예외는 **테마(`ml:theme`)** 처럼 유틸들이 일부러 공유하는 값입니다. 값 집합은 `'light' | 'dark' | 'system'` 이고, 모르는 값을 만나면 시스템 설정으로 보고 **덮어쓰지 않는다**는 규칙까지 지켜야 합니다. 이 앱에는 아직 공유 값이 없습니다.
+
+`tools/storage-keys/selftest.mjs`가 접두어·이관·멱등·저장소 차단 환경을 검증합니다. 저장 관련 코드를 고쳤으면 `npm test`로 같이 돌려 보세요.
+
+### 8. 서버가 없습니다
 
 `output: "export"` 정적 빌드이고 GitHub Pages 서브패스로 배포됩니다. 그래서:
 
