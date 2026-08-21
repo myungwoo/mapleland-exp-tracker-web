@@ -10,6 +10,7 @@ import { paceForDuration } from "@/lib/pace";
 import { formatRecognitionHealthOneLine } from "@/lib/recognitionHealth";
 import type { NoticeHandler } from "@/lib/notice";
 import { isBooleanValue, oneOf, usePersistentState } from "@/lib/persist";
+import { readPersistedRaw } from "@/lib/storage-keys";
 import AlertDialog from "@/components/AlertDialog";
 import { useDocumentPip, isDocumentPipSupported } from "@/lib/pip/useDocumentPip";
 import type { PipState } from "@/lib/pip/types";
@@ -373,18 +374,19 @@ export default function ExpTracker() {
 	// 외부(로컬) WebSocket 메시지로 측정 제어 (고급 사용자용, UI 비노출)
 	// - 기본값: 비활성 (성능 영향 없음)
 	// - 활성화 방법(개발자 도구 Console):
-	//   localStorage.setItem("externalWsEnabled", "true")
-	//   localStorage.setItem("externalWsUrl", "ws://127.0.0.1:21537")
+	//   localStorage.setItem("ml:exp:externalWsEnabled", "true")
+	//   localStorage.setItem("ml:exp:externalWsUrl", "ws://127.0.0.1:21537")
 	//   이후 페이지 새로고침
+	// - 접두어 없던 예전 키(`externalWsEnabled`)도 그대로 읽습니다.
 	const [externalWsConfig, setExternalWsConfig] = useState<{ enabled: boolean; url: string }>(() => ({
 		enabled: false,
 		url: "ws://127.0.0.1:21537"
 	}));
 	useEffect(() => {
 		try {
-			const enabledRaw = window.localStorage.getItem("externalWsEnabled");
+			const enabledRaw = readPersistedRaw("externalWsEnabled");
 			const enabled = enabledRaw === "true" || enabledRaw === "1" || enabledRaw === "yes";
-			const url = window.localStorage.getItem("externalWsUrl") || "ws://127.0.0.1:21537";
+			const url = readPersistedRaw("externalWsUrl") || "ws://127.0.0.1:21537";
 			setExternalWsConfig({ enabled, url });
 		} catch {
 			// localStorage 접근이 막힌 환경에서는 자동으로 비활성 상태를 유지합니다.

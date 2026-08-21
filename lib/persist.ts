@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { migrateLegacyKey, storageKey } from "./storage-keys";
+
 /**
  * 저장된 값이 기대한 타입인지 확인하는 타입 가드입니다.
  *
@@ -18,7 +20,16 @@ export function isBooleanValue(parsed: unknown): parsed is boolean {
 	return typeof parsed === "boolean";
 }
 
-export function usePersistentState<T>(key: string, initialValue: T, validate?: PersistedValidator<T>) {
+/**
+ * localStorage에 붙어 있는 상태입니다.
+ *
+ * `name`은 접두어 **없는** 이름입니다(`"roiLevel"`). 실제 저장 키는 `storageKey`가
+ * 앱 접두어를 붙여 만듭니다. 한 오리진을 여러 유틸이 공유하므로, 호출부가 접두어를
+ * 신경 쓰지 않아도 키가 겹치지 않게 하려는 것입니다.
+ */
+export function usePersistentState<T>(name: string, initialValue: T, validate?: PersistedValidator<T>) {
+	const key = storageKey(name);
+
 	/**
 	 * SSR/첫 클라이언트 렌더에서는 `initialValue`로 시작하고,
 	 * 마운트 이후에 localStorage 값을 읽어 “수화(hydration) 불일치”를 피합니다.
@@ -43,7 +54,9 @@ export function usePersistentState<T>(key: string, initialValue: T, validate?: P
 
 	useEffect(() => {
 		try {
-			const raw = window.localStorage.getItem(key);
+			// 접두어를 붙이기 전에는 이름 그대로 저장했습니다. 새 키가 비어 있으면 여기서
+			// 한 번 옮겨 옵니다.
+			const raw = migrateLegacyKey(name);
 			if (raw != null) {
 				const parsed = JSON.parse(raw) as unknown;
 				const check = validateRef.current;
@@ -56,7 +69,7 @@ export function usePersistentState<T>(key: string, initialValue: T, validate?: P
 			// 무시
 		}
 		setHydratedKey(key);
-	}, [key]);
+	}, [key, name]);
 
 	useEffect(() => {
 		if (hydratedKey !== key) return;
